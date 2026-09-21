@@ -22,3 +22,18 @@ func TestSum(t *testing.T) {
 		t.Error("Sum")
 	}
 }
+
+// TestAbsNegative repeats part of TestAbs, so minimize.json reports it as
+// subsumed by TestAbs.
+func TestAbsNegative(t *testing.T) {
+	if Abs(-3) != 3 {
+		t.Error("Abs")
+	}
+}
+
+// TestRegression_Clamp repeats part of TestClamp but is kept by name.
+func TestRegression_Clamp(t *testing.T) {
+	if Clamp(11, 1, 10) != 10 {
+		t.Error("Clamp")
+	}
+}

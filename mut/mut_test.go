@@ -2,6 +2,10 @@ package mut
 
 import (
 	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,4 +111,31 @@ func TestUnknownOperatorPanics(t *testing.T) {
 		}
 	}()
 	Arith("x", 1, 2, "&", "|")
+}
+
+// With GOMUTANT_TRACE set, every reached site is written once, whichever
+// helper reaches it and whether or not its mutant is active.
+func TestTraceRecordsReachedSites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace")
+	prev := trace
+	trace = newTracer(path)
+	t.Cleanup(func() { trace = prev })
+	setActive(t, "b")
+
+	Active("a")
+	Cmp("b", 1, 2, "<", "<=")
+	Arith("c", 1, 2, "+", "-")
+	Active("a")
+	Not("d", true)
+
+	data, err := os.ReadFile(path) //nolint:gosec // test-controlled path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Fields(string(data)), []string{"a", "b", "c", "d"}; !slices.Equal(got, want) {
+		t.Errorf("trace = %v, want %v", got, want)
+	}
+	if newTracer("") != nil {
+		t.Error("an empty GOMUTANT_TRACE must disable tracing")
+	}
 }

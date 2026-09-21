@@ -73,13 +73,13 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                                            | Depends on                                |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output, schemata lowering. Bazel-independent | `go/ast`, `go/types`, `go/packages`       |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset                                       | stdlib only                               |
-| `runner`   | Re-exec a test binary per mutant, sharding, `report.json`, incremental re-runs                                            | `mutator` (for `Mutant`)                  |
-| `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset                       | `x/tools/cover`, `bits-and-blooms/bitset` |
-| `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                                    | `bitset` only                             |
+| Package    | Responsibility                                                                                                              | Depends on                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output, schemata lowering. Bazel-independent   | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites | stdlib only                         |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental    | `mutator` (for `Mutant`)            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`    | `bits-and-blooms/bitset`            |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)              | `criteria`, `bitset`, `go/parser`   |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -101,6 +101,13 @@ run on the result.
   assignment, and an import or variable left unused by a return replacement. Those fail at
   build time; count build failures as NOT VIABLE.
 - Equivalent mutants are not detected; surviving mutants are simply dropped from requirements.
+- Per-test coverage is site coverage, not `go tool cover` blocks: with `GOMUTANT_TRACE` set the
+  `mut` runtime appends every site ID the process reaches, and the runner runs each test once
+  on its own that way. `-cover` cannot be used instead: `go test -c -cover -overlay` ignores
+  the overlay when instrumenting, and under Bazel coverage instrumentation only exists in
+  `bazel coverage`. Site coverage is exact for narrowing (a test that reaches no site of a
+  mutant cannot kill it, reported `NO_COVERAGE`) and build-agnostic; its blind spot is code
+  with no mutant site at all.
 - Exclude: `_test.go`, `.pb.go`, `mock_*.go`, `//go:generate` outputs, cgo.
 
 ### Bazel integration: mutant schemata
@@ -126,11 +133,13 @@ loading/analysis.
 
 ### Minimizer
 
-Gain = (w_cov × new blocks + w_mut × new kills) / test time, default weights 1 : 5.
-Two-stage verdict: coverage-only subsumption yields a "candidate"; mutation restricted to the
-candidate's covered code confirms it. The tool never deletes tests; it reports subsumption and
-weak spots and leaves the decision to a human or LLM. Tests matching `TestRegression_*` or a
-comment tag are always kept. Exact solutions go through an exported JSON matrix + external MIP.
+Gain = (w_site × new sites reached + w_kill × new kills) / test time, default weights 1 : 5.
+Coverage is the cheap first pass (it narrows which tests run per mutant); kills are the
+objective. The tool never deletes tests; `mutrim minimize` reports each redundant test with
+the selected tests that subsume it, and the functions whose mutants survive (weak spots), and
+leaves the decision to a human or LLM. Tests matching `-keep` (default `^TestRegression_`) or
+carrying `//mutrim:keep` in their doc comment are always kept. Exact solutions go through the
+exported JSON matrix (`-matrix`) + an external MIP solver.
 
 ### Build: go.mod is primary, Bazel is secondary
 

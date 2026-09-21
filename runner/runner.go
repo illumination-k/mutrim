@@ -1,7 +1,7 @@
 // Package runner executes a compiled test binary once per mutant and
 // classifies the outcome. It is what a Bazel mutation_test target runs; it
-// only needs the binary, mutants.json and the GOMUTANT_ID convention of the
-// mut runtime.
+// only needs the binary, mutants.json and the GOMUTANT_ID / GOMUTANT_TRACE
+// conventions of the mut runtime.
 package runner
 
 import (
@@ -12,7 +12,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +40,8 @@ type Options struct {
 	Dir string
 	// Args are passed to the binary after the runner's own test flags.
 	Args []string
-	// Tests restricts the run to these top-level tests; nil runs everything.
+	// Tests restricts the run to these top-level tests; nil means every
+	// test the binary lists.
 	Tests []string
 	// Timeout per mutant; zero derives 3× the baseline run, at least MinTimeout.
 	Timeout time.Duration
@@ -51,8 +54,12 @@ type Options struct {
 	Log io.Writer
 }
 
-// Run executes every viable mutant of the shard and returns the report.
-// The baseline (no mutant) must pass first, or Run fails.
+// Run executes every viable mutant of the shard against the tests that
+// reach it and returns the report. The baseline (no mutant) must pass
+// first, or Run fails; then every test runs once on its own with
+// GOMUTANT_TRACE set to learn which sites it reaches, so a mutant only
+// runs the tests that can kill it and the report holds a per-test kill
+// matrix.
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.TestBin == "" {
 		return nil, errors.New("runner: test binary is required")
@@ -67,7 +74,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	base, err := o.exec(ctx, "", 0)
+	base, err := o.exec(ctx, "", "", o.Tests, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +87,17 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	logger.Printf("baseline %dms, timeout %s, %d tests", base.DurationMS, timeout, base.TestsRun)
 
+	tests, err := o.traceTests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reachers := map[string][]string{}
+	for _, t := range tests {
+		for _, id := range t.Sites {
+			reachers[id] = append(reachers[id], t.Name)
+		}
+	}
+
 	previous := map[string]Result{}
 	if o.Previous != nil {
 		for _, r := range o.Previous.Results {
@@ -87,7 +105,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: timeout.Milliseconds(), Results: []Result{}}
+	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: timeout.Milliseconds(), Tests: tests, Results: []Result{}}
 	for _, m := range o.Mutants {
 		if !inShard(m.ID, o.Shard, o.Shards) {
 			continue
@@ -96,11 +114,14 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		switch prev, cached := previous[m.ID]; {
 		case !m.Viable:
 			r = Result{MutantID: m.ID, Status: NotViable}
-		case cached && prev.Status != NotViable:
+		case len(reachers[m.ID]) == 0:
+			r = Result{MutantID: m.ID, Status: NoCoverage}
+			logger.Printf("%s %s %s:%d %s %q", m.ID, r.Status, m.File, m.Line, m.Func, m.Description)
+		case cached && prev.Status.executed():
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
-			res, err := o.exec(ctx, m.ID, timeout)
+			res, err := o.exec(ctx, m.ID, "", reachers[m.ID], timeout)
 			if err != nil {
 				return nil, err
 			}
@@ -111,6 +132,62 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	report.total()
 	return report, nil
+}
+
+// traceTests runs every top-level test on its own with GOMUTANT_TRACE set
+// and returns, per test, its duration and the sites it reached. A test
+// that fails on its own is an error, like a failing baseline.
+func (o Options) traceTests(ctx context.Context) ([]Test, error) {
+	names := o.Tests
+	if names == nil {
+		var err error
+		if names, err = o.list(ctx); err != nil {
+			return nil, err
+		}
+	}
+	dir, err := os.MkdirTemp("", "mutrim-trace-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
+
+	tests := make([]Test, 0, len(names))
+	for _, name := range names {
+		trace := filepath.Join(dir, name+".trace")
+		res, err := o.exec(ctx, "", trace, []string{name}, 0)
+		if err != nil {
+			return nil, err
+		}
+		if res.Status != Lived {
+			return nil, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, res.Status, res.output)
+		}
+		data, err := os.ReadFile(trace) //nolint:gosec // our own temp file
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		sites := strings.Fields(string(data))
+		slices.Sort(sites)
+		tests = append(tests, Test{Name: name, DurationMS: res.DurationMS, Sites: sites})
+	}
+	return tests, nil
+}
+
+// list asks the binary for its top-level tests.
+func (o Options) list(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, o.TestBin, append([]string{"-test.list", "^Test"}, o.Args...)...) //nolint:gosec // running the user's test binary is the point
+	cmd.Dir = o.Dir
+	cmd.Env = childEnv(os.Environ(), "", "")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("runner: list tests of %s: %w", o.TestBin, err)
+	}
+	var names []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if name := strings.TrimSpace(line); strings.HasPrefix(name, "Test") {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // inShard reports whether id belongs to shard index out of total.
@@ -129,21 +206,23 @@ type execResult struct {
 
 var (
 	runLine  = regexp.MustCompile(`(?m)^=== RUN\s+(\S+)$`)
+	doneLine = regexp.MustCompile(`(?m)^--- (?:PASS|FAIL|SKIP): (\S+)`)
 	failLine = regexp.MustCompile(`(?m)^--- FAIL: (\S+)`)
 )
 
-// exec runs the test binary with mutant id active (none when empty) and
-// classifies the exit. A zero timeout means none.
-func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*execResult, error) {
+// exec runs the tests (all when nil) with mutant id active (none when
+// empty), tracing to the trace file when given, and classifies the exit.
+// A zero timeout means none.
+func (o Options) exec(ctx context.Context, id, trace string, tests []string, timeout time.Duration) (*execResult, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	args := []string{"-test.v", "-test.failfast"}
-	if len(o.Tests) > 0 {
-		quoted := make([]string, len(o.Tests))
-		for i, t := range o.Tests {
+	args := []string{"-test.v"}
+	if len(tests) > 0 {
+		quoted := make([]string, len(tests))
+		for i, t := range tests {
 			quoted[i] = regexp.QuoteMeta(t)
 		}
 		args = append(args, "-test.run", "^("+strings.Join(quoted, "|")+")$")
@@ -152,7 +231,7 @@ func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*e
 
 	cmd := exec.CommandContext(ctx, o.TestBin, args...) //nolint:gosec // running the user's test binary is the point
 	cmd.Dir = o.Dir
-	cmd.Env = childEnv(os.Environ(), id)
+	cmd.Env = childEnv(os.Environ(), id, trace)
 	cmd.WaitDelay = time.Second
 
 	start := time.Now()
@@ -160,14 +239,6 @@ func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*e
 	res := &execResult{output: out}
 	res.MutantID = id
 	res.DurationMS = time.Since(start).Milliseconds()
-	for _, m := range runLine.FindAllSubmatch(out, -1) {
-		if !strings.Contains(string(m[1]), "/") {
-			res.TestsRun++
-		}
-	}
-	for _, m := range failLine.FindAllSubmatch(out, -1) {
-		res.KilledBy = append(res.KilledBy, string(m[1]))
-	}
 
 	var exitErr *exec.ExitError
 	switch {
@@ -182,17 +253,43 @@ func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*e
 	default:
 		return nil, fmt.Errorf("runner: exec %s: %w", o.TestBin, err)
 	}
+	res.TestsRun, res.KilledBy = parseOutput(out, res.Status == Timeout)
 	return res, nil
 }
 
+// parseOutput counts the top-level tests that started and lists those
+// that failed. On a timeout the tests that started but never finished are
+// the ones that hung, so they count as killers too.
+func parseOutput(out []byte, timedOut bool) (started int, failed []string) {
+	done := map[string]bool{}
+	for _, m := range doneLine.FindAllSubmatch(out, -1) {
+		done[string(m[1])] = true
+	}
+	for _, m := range failLine.FindAllSubmatch(out, -1) {
+		failed = append(failed, string(m[1]))
+	}
+	for _, m := range runLine.FindAllSubmatch(out, -1) {
+		name := string(m[1])
+		if strings.Contains(name, "/") {
+			continue
+		}
+		started++
+		if timedOut && !done[name] {
+			failed = append(failed, name)
+		}
+	}
+	return started, failed
+}
+
 // droppedEnv lists the variables the test binary must not inherit: the
-// mutant selection itself, and the parts of Bazel's test protocol that a
-// rules_go test binary acts on. Under a sharded mutation_test the binary
-// would otherwise shard its own tests again, apply --test_filter over the
-// runner's -test.run, fail fast, time itself out, and overwrite the
-// runner's test.xml with the last mutant's outcome.
+// mutant selection and tracing themselves, and the parts of Bazel's test
+// protocol that a rules_go test binary acts on. Under a sharded
+// mutation_test the binary would otherwise shard its own tests again,
+// apply --test_filter over the runner's -test.run, fail fast, time itself
+// out, and overwrite the runner's test.xml with the last mutant's outcome.
 var droppedEnv = map[string]bool{
 	"GOMUTANT_ID":                      true,
+	"GOMUTANT_TRACE":                   true,
 	"TEST_TOTAL_SHARDS":                true,
 	"TEST_SHARD_INDEX":                 true,
 	"TEST_SHARD_STATUS_FILE":           true,
@@ -203,14 +300,19 @@ var droppedEnv = map[string]bool{
 }
 
 // childEnv derives the test binary's environment from env, with mutant id
-// selected (none when empty).
-func childEnv(env []string, id string) []string {
-	out := make([]string, 0, len(env)+1)
+// selected (none when empty) and reached sites traced to the trace file
+// (not traced when empty).
+func childEnv(env []string, id, trace string) []string {
+	out := make([]string, 0, len(env)+2)
 	for _, kv := range env {
 		key, _, _ := strings.Cut(kv, "=")
 		if !droppedEnv[key] {
 			out = append(out, kv)
 		}
 	}
-	return append(out, "GOMUTANT_ID="+id)
+	out = append(out, "GOMUTANT_ID="+id)
+	if trace != "" {
+		out = append(out, "GOMUTANT_TRACE="+trace)
+	}
+	return out
 }

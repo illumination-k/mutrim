@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/illumination-k/mutrim/criteria"
 	"github.com/illumination-k/mutrim/mutator"
 	"github.com/illumination-k/mutrim/runner"
 )
@@ -224,6 +225,9 @@ func TestCommandErrors(t *testing.T) {
 		"run without flags":        {"run"},
 		"run missing mutants file": {"run", "-test-bin", "x.test", "-mutants", missing},
 		"run missing previous":     {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
+		"minimize no report":       {"minimize"},
+		"minimize missing report":  {"minimize", missing},
+		"minimize bad keep":        {"minimize", "-keep", "(", missing},
 	}
 	for name, args := range cases {
 		var stdout bytes.Buffer
@@ -249,5 +253,94 @@ func TestShardEnvRejectsBadValues(t *testing.T) {
 	t.Setenv("TEST_SHARD_INDEX", "1")
 	if index, total, err := shardEnv(); err != nil || index != 1 || total != 2 {
 		t.Errorf("shardEnv() = %d, %d, %v", index, total, err)
+	}
+}
+
+// The Phase 4 pipeline: run writes the per-test kill matrix, minimize
+// composes it and reports the redundant test, the protected ones and the
+// function no test reaches.
+func TestMinimize(t *testing.T) {
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
+	}
+	bin := filepath.Join(dir, "schemata.test")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, schemataFixture) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	reportPath := filepath.Join(dir, "report.json")
+	if err := run(t.Context(), []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-timeout", "1s", "-out", reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+
+	matrixPath := filepath.Join(dir, "matrix.json")
+	args := []string{"minimize", "-mutants", mutantsPath, "-srcs", schemataFixture, "-matrix", matrixPath, reportPath}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize: %v\n%s", err, stderr.String())
+	}
+	var result minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("minimize output is not JSON: %v\n%s", err, stdout.String())
+	}
+	protected := map[string]bool{}
+	for _, s := range result.Selected {
+		if s.Protected {
+			protected[s.Name] = true
+		}
+	}
+	if len(protected) != 2 || !protected["TestRegression_Sign"] || !protected["TestTagged"] {
+		t.Errorf("protected = %v, want TestRegression_Sign (by name) and TestTagged (by tag)", protected)
+	}
+	if len(result.Selected) != 7 {
+		t.Errorf("selected = %+v, want the 7 non-redundant tests", result.Selected)
+	}
+	if len(result.Redundant) != 1 || result.Redundant[0].Name != "TestLessRedundant" || strings.Join(result.Redundant[0].SubsumedBy, ",") != "TestComparisons" {
+		t.Errorf("redundant = %+v, want TestLessRedundant subsumed by TestComparisons", result.Redundant)
+	}
+	if len(result.WeakSpots) != 1 || result.WeakSpots[0].Func != "Untested" || result.WeakSpots[0].NoCoverage != 2 {
+		t.Errorf("weak_spots = %+v, want Untested", result.WeakSpots)
+	}
+
+	var matrix criteria.Matrix
+	if err := readJSON(matrixPath, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	if len(matrix.Tests) != 8 || len(matrix.Requirements) == 0 {
+		t.Errorf("matrix has %d tests and %d requirements", len(matrix.Tests), len(matrix.Requirements))
+	}
+	kills, sites := 0, 0
+	for _, r := range matrix.Requirements {
+		switch {
+		case strings.HasPrefix(r.Label, "kill:") && r.Weight == 5:
+			kills++
+		case strings.HasPrefix(r.Label, "site:") && r.Weight == 1:
+			sites++
+		default:
+			t.Errorf("unexpected requirement %+v", r)
+		}
+	}
+	if kills == 0 || sites < kills {
+		t.Errorf("matrix has %d kills and %d sites", kills, sites)
+	}
+
+	// Without -srcs the tag is unknown, and shard reports can be passed together.
+	stdout.Reset()
+	if err := run(t.Context(), []string{"minimize", "-keep", "^$", reportPath, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize without sources: %v\n%s", err, stderr.String())
+	}
+	var unprotected minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &unprotected); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range unprotected.Selected {
+		if s.Protected {
+			t.Errorf("%s protected without a rule", s.Name)
+		}
+	}
+	if len(unprotected.Redundant) != 3 || len(unprotected.WeakSpots) != 0 {
+		t.Errorf("without protection the by-name and tagged tests are redundant too: %+v, %+v", unprotected.Redundant, unprotected.WeakSpots)
 	}
 }

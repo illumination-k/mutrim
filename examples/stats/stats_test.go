@@ -19,3 +19,12 @@ func TestSpread(t *testing.T) {
 		t.Error("Spread")
 	}
 }
+
+// TestMeanEmpty repeats part of TestMean but is kept by its tag.
+//
+//mutrim:keep
+func TestMeanEmpty(t *testing.T) {
+	if _, err := Mean(); !errors.Is(err, ErrEmpty) {
+		t.Errorf("Mean() error = %v", err)
+	}
+}
