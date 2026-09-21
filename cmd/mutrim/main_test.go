@@ -251,7 +251,11 @@ func TestCommandErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	report := filepath.Join(dir, "report.json")
-	if err := writeJSON(report, nil, runner.Report{}); err != nil {
+	if err := writeJSON(report, nil, runner.Report{Pkg: "example.com/a"}); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other.json")
+	if err := writeJSON(other, nil, runner.Report{Pkg: "example.com/b"}); err != nil {
 		t.Fatal(err)
 	}
 	const notADir = "/dev/null/x"
@@ -277,6 +281,7 @@ func TestCommandErrors(t *testing.T) {
 		"minimize missing report":    {"minimize", missing},
 		"minimize bad keep":          {"minimize", "-keep", "(", missing},
 		"minimize missing srcs":      {"minimize", "-srcs", missing, report},
+		"minimize several packages":  {"minimize", report, other},
 		"minimize missing mutants":   {"minimize", "-mutants", missing, report},
 		"minimize unwritable":        {"minimize", "-o", notADir, report},
 		"minimize unwritable matrix": {"minimize", "-matrix", notADir, report},
@@ -382,7 +387,8 @@ func TestMinimize(t *testing.T) {
 		t.Errorf("matrix has %d kills and %d sites", kills, sites)
 	}
 
-	// Without -srcs the tag is unknown, and shard reports can be passed together.
+	// Without -srcs the tag is unknown, and the shards of a package can be
+	// passed together.
 	stdout.Reset()
 	if err := run(t.Context(), []string{"minimize", "-keep", "^$", reportPath, reportPath}, &stdout, &stderr); err != nil {
 		t.Fatalf("minimize without sources: %v\n%s", err, stderr.String())

@@ -12,6 +12,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -213,7 +214,7 @@ func funcName(fn *ast.FuncDecl) string {
 // (which is how cgo-processed files show up).
 func excluded(pkg *packages.Package, f *ast.File) bool {
 	name := pkg.Fset.Position(f.Package).Filename
-	base := name[strings.LastIndex(name, "/")+1:]
+	base := filepath.Base(name)
 	switch {
 	case strings.HasSuffix(base, "_test.go"),
 		strings.HasSuffix(base, ".pb.go"),

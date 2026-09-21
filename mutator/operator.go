@@ -46,22 +46,6 @@ func (c *Context) isConst(e ast.Expr) bool {
 	return c.Info.Types[e].Value != nil
 }
 
-// isTypedOperand reports whether e can be passed to a generic runtime
-// helper without changing its type: either a constant, which converts to
-// the other operand's type as it did in the original expression, or an
-// expression with a proper type.
-func (c *Context) isTypedOperand(e ast.Expr) bool {
-	tv, ok := c.Info.Types[e]
-	if !ok {
-		return false
-	}
-	if tv.Value != nil {
-		return true
-	}
-	b, ok := types.Unalias(tv.Type).(*types.Basic)
-	return !ok || b.Info()&types.IsUntyped == 0
-}
-
 // isMapIndex reports whether e is an index expression on a map, the one
 // operand of ++/-- that is not addressable.
 func (c *Context) isMapIndex(e ast.Expr) bool {

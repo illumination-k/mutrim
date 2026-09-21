@@ -34,13 +34,13 @@ func TestExcluded(t *testing.T) {
 	}
 }
 
-// An expression the type checker never saw is neither a bool nor a typed
-// operand, so no operator builds a schemata call around it.
+// An expression the type checker never saw is not a bool, so no operator
+// builds a schemata call around it.
 func TestContextWithoutTypeInfo(t *testing.T) {
 	ctx := &Context{Info: &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}}
 	e := ast.NewIdent("unknown")
-	if ctx.isBool(e) || ctx.isTypedOperand(e) {
-		t.Error("an untyped expression must not be a bool or a typed operand")
+	if ctx.isBool(e) {
+		t.Error("an untyped expression must not be a bool")
 	}
 	if signatureOf(&types.Info{Defs: map[*ast.Ident]types.Object{}}, e) != nil {
 		t.Error("an undefined identifier has no signature")

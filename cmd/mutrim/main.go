@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,8 +36,9 @@ commands:
   overlay   write one mutant and print a go build -overlay file for it
   run       execute a schemata test binary once per mutant, against the
             tests that reach it, and report the per-test kill matrix
-  minimize  from report.json, list the tests a greedy set cover finds
-            redundant and the functions whose mutants survive`
+  minimize  from the report.json of one package (all of its shards),
+            list the tests a greedy set cover finds redundant and the
+            functions whose mutants survive`
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -249,9 +251,11 @@ type minimizeOutput struct {
 }
 
 // runMinimize is `mutrim minimize`: it composes the site-coverage and
-// kill matrices of the given reports (shards of one package, or several
-// packages), runs the weighted greedy set cover, and reports. Nothing is
-// deleted.
+// kill matrices of the given reports (the shards of one package), runs
+// the weighted greedy set cover, and reports. Nothing is deleted. Reports
+// of several packages are refused: their test names would collide, and
+// no test of one package can cover a requirement of another, so nothing
+// is gained by minimizing them together.
 func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("minimize", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -275,12 +279,19 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	}
 
 	var reports []*runner.Report
+	pkgs := map[string]bool{}
 	for _, path := range fs.Args() {
 		r, err := runner.ReadReport(path)
 		if err != nil {
 			return err
 		}
 		reports = append(reports, r)
+		if r.Pkg != "" {
+			pkgs[r.Pkg] = true
+		}
+	}
+	if len(pkgs) > 1 {
+		return fmt.Errorf("minimize: the reports span several packages (%s); pass one package's shards at a time", strings.Join(slices.Sorted(maps.Keys(pkgs)), ", "))
 	}
 	durations := map[string]int64{}
 	sites, kills := criteria.SiteCoverage{}, criteria.Mutation{}

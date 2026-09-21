@@ -2,7 +2,10 @@
 // requirement of a criteria.Matrix and reports the rest as redundant.
 // It is a weighted greedy set cover: at each step the test with the best
 // gain, the weight of the requirements it newly satisfies per millisecond
-// of its own run time, is selected until nothing gains anything.
+// of its own run time, is selected until nothing gains anything. A
+// selected test whose requirements the other selected tests also satisfy
+// (a fast test picked early, then overtaken by a broader one) is dropped
+// afterwards.
 //
 // Nothing is deleted. Protected tests are selected first whatever their
 // gain, and every redundant test comes with the selected tests that
@@ -93,6 +96,7 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 		}
 		select_(best, false)
 	}
+	prune(m, byName, covered, remaining, &res, select_)
 
 	res.Redundant = []Redundancy{}
 	for _, t := range m.Tests { // m.Tests is sorted by name
@@ -109,6 +113,37 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 		res.Redundant = append(res.Redundant, r)
 	}
 	return res
+}
+
+// prune drops every selected test whose requirements the other selected
+// tests satisfy between them, later selections first, so that of two
+// tests with the same requirements the earlier, higher-gain one stays.
+// Protected tests are never dropped. The selection is then replayed so
+// that New and Gain describe the final order.
+func prune(m *criteria.Matrix, byName map[string]criteria.Test, covered *bitset.BitSet, remaining map[string]bool, res *Result, select_ func(criteria.Test, bool)) {
+	kept := slices.Clone(res.Selected)
+	for i := len(kept) - 1; i >= 0; i-- {
+		if kept[i].Protected {
+			continue
+		}
+		others := bitset.New(uint(len(m.Requirements))) //nolint:gosec // a slice length
+		for j, s := range kept {
+			if j != i && s.Name != "" {
+				others.InPlaceUnion(byName[s.Name].Covers)
+			}
+		}
+		if others.IsSuperSet(byName[kept[i].Name].Covers) {
+			remaining[kept[i].Name] = true
+			kept[i].Name = ""
+		}
+	}
+	res.Selected = []Selection{}
+	covered.ClearAll()
+	for _, s := range kept {
+		if s.Name != "" {
+			select_(byName[s.Name], s.Protected)
+		}
+	}
 }
 
 // gain is the weight of the requirements in fresh per millisecond.

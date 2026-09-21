@@ -79,8 +79,8 @@ func TestRunReportGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.BaselineMS < 0 || report.TimeoutMS != 1000 {
-		t.Errorf("unexpected timing metadata: %+v", report)
+	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 1000 {
+		t.Errorf("unexpected report metadata: %+v", report)
 	}
 	if !strings.Contains(logs.String(), "timeout 1s, 8 tests\n") {
 		t.Errorf("the baseline must run every test:\n%s", logs.String())
