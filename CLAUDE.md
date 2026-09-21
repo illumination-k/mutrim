@@ -70,11 +70,11 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                          | Depends on                              |
-| ---------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output. Bazel-independent  | `go/ast`, `go/types`, `go/packages`     |
-| `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset     | `x/tools/cover`, `bits-and-blooms/bitset` |
-| `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                  | `bitset` only                           |
+| Package    | Responsibility                                                                                         | Depends on                                |
+| ---------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output. Bazel-independent | `go/ast`, `go/types`, `go/packages`       |
+| `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset    | `x/tools/cover`, `bits-and-blooms/bitset` |
+| `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                 | `bitset` only                             |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `mutation_test` macro) and a thin
 CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev loop and
@@ -84,10 +84,14 @@ non-Bazel users are both served.
 
 - Operators: relational (`<` ↔ `<=`, `==` ↔ `!=`), arithmetic, logical (`&&` ↔ `||`),
   condition negation, increment (`i++` ↔ `i--`), return replacement (`return x` → zero value).
-- **Type-check pre-filter is the key differentiator.** After each AST rewrite, re-run
-  `types.Config.Check` on the package and drop mutants that fail. Load once with
-  `go/packages` (`NeedTypes|NeedDeps`); re-check should be tens of ms per package.
-- Unused var/import are not `go/types` errors; count build failures as NOT VIABLE.
+- **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
+  (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
+  locally with `types.CheckExpr` in their original scope, so the cost is microseconds per
+  mutant and the package is never re-checked. Statement mutants (condition negation,
+  `++`/`--`, return-to-zero) are well-typed by construction and skip the check.
+- The local check misses context-dependent failures: constant overflow in the enclosing
+  assignment, and an import or variable left unused by a return replacement. Those fail at
+  build time; count build failures as NOT VIABLE.
 - Equivalent mutants are not detected; surviving mutants are simply dropped from requirements.
 - Exclude: `_test.go`, `.pb.go`, `mock_*.go`, `//go:generate` outputs, cgo.
 

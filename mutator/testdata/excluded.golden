@@ -1,0 +1,2 @@
+normal.go:3:30 Normal return "return -> zero values" viable=true | func Normal(a, b int) bool { return false }
+normal.go:3:39 Normal relational "< -> <=" viable=true | func Normal(a, b int) bool { return a <= b }

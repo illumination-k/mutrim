@@ -1,0 +1,3 @@
+logical.go:4:2 Both return "return -> zero values" viable=true | return false
+logical.go:4:16 Both logical "|| -> &&" viable=true | return a && b && !a
+logical.go:4:11 Both logical "&& -> ||" viable=true | return a || b || !a

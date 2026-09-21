@@ -1,0 +1,12 @@
+arith.go:4:2 Ops return "return -> zero values" viable=true | return 0
+arith.go:4:27 Ops arithmetic "+ -> -" viable=true | return a + b - a*b + a/b - a%b
+arith.go:4:21 Ops arithmetic "+ -> -" viable=true | return a + b - a*b - a/b + a%b
+arith.go:4:15 Ops arithmetic "- -> +" viable=true | return a + b + a*b + a/b + a%b
+arith.go:4:11 Ops arithmetic "+ -> -" viable=true | return a - b - a*b + a/b + a%b
+arith.go:4:18 Ops arithmetic "* -> /" viable=true | return a + b - a/b + a/b + a%b
+arith.go:4:24 Ops arithmetic "/ -> *" viable=true | return a + b - a*b + a*b + a%b
+arith.go:4:30 Ops arithmetic "% -> *" viable=true | return a + b - a*b + a/b + a*b
+arith.go:9:2 Concat return "return -> zero values" viable=true | return ""
+arith.go:9:11 Concat arithmetic "+ -> -" viable=false | return s - "!"
+arith.go:14:2 Zero return "return -> zero values" viable=true | return 0
+arith.go:14:12 Zero arithmetic "* -> /" viable=false | return 10 / 0
