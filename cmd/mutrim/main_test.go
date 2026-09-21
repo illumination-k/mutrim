@@ -120,3 +120,44 @@ func TestUnknownCommand(t *testing.T) {
 		t.Fatalf("want usage error, got %v", err)
 	}
 }
+
+// Every command reports bad input as an error instead of writing partial
+// JSON.
+func TestCommandErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	cases := map[string][]string{
+		"no command":               {},
+		"gen bad package":          {"gen", "./does/not/exist"},
+		"gen bad flag":             {"gen", "-bogus"},
+		"overlay without id":       {"overlay", fixture},
+		"overlay unknown id":       {"overlay", "-id", "0000000000000000", fixture},
+		"run without flags":        {"run"},
+		"run missing mutants file": {"run", "-test-bin", "x.test", "-mutants", missing},
+		"run missing previous":     {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
+	}
+	for name, args := range cases {
+		var stdout bytes.Buffer
+		if err := run(t.Context(), args, &stdout, &bytes.Buffer{}); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("%s: wrote to stdout on error: %s", name, stdout.String())
+		}
+	}
+}
+
+func TestShardEnvRejectsBadValues(t *testing.T) {
+	t.Setenv("TEST_TOTAL_SHARDS", "two")
+	if _, _, err := shardEnv(); err == nil {
+		t.Error("TEST_TOTAL_SHARDS=two: expected an error")
+	}
+	t.Setenv("TEST_TOTAL_SHARDS", "2")
+	t.Setenv("TEST_SHARD_INDEX", "")
+	if _, _, err := shardEnv(); err == nil {
+		t.Error("empty TEST_SHARD_INDEX: expected an error")
+	}
+	t.Setenv("TEST_SHARD_INDEX", "1")
+	if index, total, err := shardEnv(); err != nil || index != 1 || total != 2 {
+		t.Errorf("shardEnv() = %d, %d, %v", index, total, err)
+	}
+}

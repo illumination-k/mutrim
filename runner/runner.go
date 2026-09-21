@@ -20,10 +20,12 @@ import (
 	"github.com/illumination-k/mutrim/mutator"
 )
 
-// MinTimeout is the floor of the derived per-mutant timeout, so that a
-// package with a millisecond baseline is not killed by process startup
-// jitter.
-const MinTimeout = 2 * time.Second
+// MinTimeout is the floor of the derived per-mutant timeout. A short
+// baseline says little about the worst case: process startup jitter, and
+// tests that spawn the Go toolchain and miss the build cache under a
+// mutant, can exceed 3× a sub-second baseline. Mutating mutrim itself
+// produced false TIMEOUTs with a 2s floor.
+const MinTimeout = 10 * time.Second
 
 // Options configures Run.
 type Options struct {

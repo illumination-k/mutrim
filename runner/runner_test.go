@@ -76,6 +76,24 @@ func TestRunReportGolden(t *testing.T) {
 	if report.BaselineMS < 0 || report.TimeoutMS != 1000 {
 		t.Errorf("unexpected timing metadata: %+v", report)
 	}
+	for _, r := range report.Results {
+		switch r.Status {
+		case runner.Lived:
+			// The fixture has five top-level tests; a surviving mutant sees them all.
+			if r.TestsRun != 5 || len(r.KilledBy) != 0 {
+				t.Errorf("%s LIVED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
+			}
+		case runner.Killed:
+			// failfast stops at the first failing test, so exactly one is recorded.
+			if r.TestsRun == 0 || r.TestsRun > 5 || len(r.KilledBy) != 1 {
+				t.Errorf("%s KILLED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
+			}
+		case runner.NotViable:
+			if r.TestsRun != 0 || r.DurationMS != 0 {
+				t.Errorf("%s NOT_VIABLE was executed: %+v", r.MutantID, r)
+			}
+		}
+	}
 
 	byID := map[string]mutator.Mutant{}
 	for _, m := range mutants {
@@ -197,14 +215,65 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 	}
 }
 
-func TestRunRejectsFailingBaseline(t *testing.T) {
+// The derived timeout is 3× the baseline with MinTimeout as the floor, and
+// a GOMUTANT_ID inherited from the environment must not leak into the
+// baseline run.
+func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
 	bin, mutants := buildFixture(t)
-	_, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Args: []string{"-test.run", "NoSuchTest", "-test.v"}})
-	if err != nil {
-		t.Fatalf("a run with no tests must still pass the baseline: %v", err)
+	var killed string
+	for _, m := range mutants {
+		if m.Func == "Less" && m.Operator == "relational" {
+			killed = m.ID
+		}
 	}
-	_, err = runner.Run(t.Context(), runner.Options{TestBin: "/nonexistent/test.bin", Mutants: mutants})
-	if err == nil {
-		t.Fatal("expected an error for a missing binary")
+	t.Setenv("GOMUTANT_ID", killed)
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir,
+		Tests: []string{"TestComparisons"}, // excludes the looping mutant, so no TIMEOUT wait
+	})
+	if err != nil {
+		t.Fatalf("baseline must ignore the inherited GOMUTANT_ID: %v", err)
+	}
+	if want := max(3*report.BaselineMS, runner.MinTimeout.Milliseconds()); report.TimeoutMS != want {
+		t.Errorf("timeout_ms = %d, want %d (baseline %dms)", report.TimeoutMS, want, report.BaselineMS)
+	}
+	for _, r := range report.Results {
+		if r.Status == runner.Lived && r.TestsRun != 1 {
+			t.Errorf("%s: -test.run narrowing ran %d tests, want 1", r.MutantID, r.TestsRun)
+		}
+		if r.MutantID == killed && r.Status != runner.Killed {
+			t.Errorf("%s: want KILLED by TestComparisons, got %s", killed, r.Status)
+		}
+	}
+}
+
+func TestRunErrors(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	if _, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Args: []string{"-test.run", "NoSuchTest"}}); err != nil {
+		t.Errorf("a run with no tests must still pass the baseline: %v", err)
+	}
+	cases := map[string]runner.Options{
+		"missing binary":   {TestBin: "/nonexistent/test.bin", Mutants: mutants},
+		"no binary":        {Mutants: mutants},
+		"bad mutant id":    {TestBin: bin, Mutants: []mutator.Mutant{{ID: "not-hex", Viable: true}}},
+		"failing baseline": {TestBin: bin, Mutants: mutants, Dir: fixtureDir, Args: []string{"-test.run", "TestSkipped", "-test.failfast=false", "-test.count=1", "-test.timeout=1ns"}},
+	}
+	for name, opts := range cases {
+		if _, err := runner.Run(t.Context(), opts); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+func TestReadReportErrors(t *testing.T) {
+	if _, err := runner.ReadReport(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Error("missing file: expected an error")
+	}
+	bad := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(bad, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.ReadReport(bad); err == nil {
+		t.Error("malformed JSON: expected an error")
 	}
 }

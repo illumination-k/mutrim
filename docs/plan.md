@@ -113,7 +113,8 @@ Goal: one build per package; the test binary re-executed per mutant.
    and pins the generated file with a golden.
 2. **Runner** (`mutrim run -test-bin <path> -mutants mutants.json`). For each viable mutant
    whose `id % TEST_TOTAL_SHARDS == TEST_SHARD_INDEX`: exec the binary with `GOMUTANT_ID=id`,
-   `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 2s), classify
+   `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 10s: tests that
+   spawn the Go toolchain can miss the build cache under a mutant), classify
    KILLED / LIVED / TIMEOUT. `-tests` is an allowlist for `-test.run`; without it the whole
    binary runs (Phase 4 narrows by per-test coverage).
 3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
