@@ -25,3 +25,7 @@ mise.*.local.toml
 /dist/
 /vendor/
 go.work.sum
+
+# Bazel
+/bazel-*
+/user.bazelrc

@@ -145,6 +145,62 @@ func TestGenSchemataThenRun(t *testing.T) {
 	}
 }
 
+// Bazel mode: gen type-checks the given files from export data instead of
+// running go list, and the schemata directory holds the complete package,
+// files without a mutant copied as they are.
+func TestGenFromFiles(t *testing.T) {
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	const importPath = "github.com/illumination-k/mutrim/mutator/testdata/killable"
+	var stdout, stderr bytes.Buffer
+	args := []string{"gen", "-importpath", importPath, "-schemata", dir, "-o", mutantsPath, filepath.Join(fixture, "killable.go")}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -importpath: %v\n%s", err, stderr.String())
+	}
+	var mutants []mutator.Mutant
+	if err := readJSON(mutantsPath, &mutants); err != nil {
+		t.Fatal(err)
+	}
+	if len(mutants) == 0 || mutants[0].Pkg != importPath {
+		t.Fatalf("unexpected mutants: %+v", mutants)
+	}
+	src, err := os.ReadFile(filepath.Clean(filepath.Join(dir, filepath.FromSlash(importPath), "killable.go")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), mutator.RuntimePath) {
+		t.Errorf("schemata source does not import the runtime:\n%s", src)
+	}
+
+	// The excluded fixture has one mutable file and three that gen leaves
+	// alone; all four end up in the schemata directory.
+	stdout.Reset()
+	excluded := "../../mutator/testdata/excluded"
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, excluded}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
+	}
+	var overlay mutator.Overlay
+	if err := readJSON(filepath.Join(dir, "overlay.json"), &overlay); err != nil {
+		t.Fatal(err)
+	}
+	if len(overlay.Replace) != 4 {
+		t.Errorf("want every package file in the overlay, got %v", overlay.Replace)
+	}
+	for orig, copied := range overlay.Replace {
+		want, err := os.ReadFile(filepath.Clean(orig))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(filepath.Clean(copied))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filepath.Base(orig) != "normal.go" && string(got) != string(want) {
+			t.Errorf("%s was rewritten although it has no mutant", orig)
+		}
+	}
+}
+
 func TestUnknownCommand(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run(t.Context(), []string{"bogus"}, &bytes.Buffer{}, &stderr)
@@ -161,6 +217,8 @@ func TestCommandErrors(t *testing.T) {
 		"no command":               {},
 		"gen bad package":          {"gen", "./does/not/exist"},
 		"gen bad flag":             {"gen", "-bogus"},
+		"gen importpath no files":  {"gen", "-importpath", "example.com/x"},
+		"gen importpath bad file":  {"gen", "-importpath", "example.com/x", missing},
 		"overlay without id":       {"overlay", fixture},
 		"overlay unknown id":       {"overlay", "-id", "0000000000000000", fixture},
 		"run without flags":        {"run"},

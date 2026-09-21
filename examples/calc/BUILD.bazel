@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:defs.bzl", "mutation_test")
+
+go_library(
+    name = "calc",
+    srcs = ["calc.go"],
+    importpath = "github.com/illumination-k/mutrim/examples/calc",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "calc_test",
+    srcs = ["calc_test.go"],
+    embed = [":calc"],
+)
+
+mutation_test(
+    name = "mutant_calc",
+    srcs = ["calc_test.go"],
+    embed = [":calc"],
+    shard_count = 2,
+)

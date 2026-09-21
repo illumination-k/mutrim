@@ -152,7 +152,7 @@ func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*e
 
 	cmd := exec.CommandContext(ctx, o.TestBin, args...) //nolint:gosec // running the user's test binary is the point
 	cmd.Dir = o.Dir
-	cmd.Env = append(envWithout("GOMUTANT_ID"), "GOMUTANT_ID="+id)
+	cmd.Env = childEnv(os.Environ(), id)
 	cmd.WaitDelay = time.Second
 
 	start := time.Now()
@@ -185,13 +185,32 @@ func (o Options) exec(ctx context.Context, id string, timeout time.Duration) (*e
 	return res, nil
 }
 
-func envWithout(key string) []string {
-	env := os.Environ()
-	out := env[:0:0]
+// droppedEnv lists the variables the test binary must not inherit: the
+// mutant selection itself, and the parts of Bazel's test protocol that a
+// rules_go test binary acts on. Under a sharded mutation_test the binary
+// would otherwise shard its own tests again, apply --test_filter over the
+// runner's -test.run, fail fast, time itself out, and overwrite the
+// runner's test.xml with the last mutant's outcome.
+var droppedEnv = map[string]bool{
+	"GOMUTANT_ID":                      true,
+	"TEST_TOTAL_SHARDS":                true,
+	"TEST_SHARD_INDEX":                 true,
+	"TEST_SHARD_STATUS_FILE":           true,
+	"TESTBRIDGE_TEST_ONLY":             true,
+	"TESTBRIDGE_TEST_RUNNER_FAIL_FAST": true,
+	"TEST_TIMEOUT":                     true,
+	"XML_OUTPUT_FILE":                  true,
+}
+
+// childEnv derives the test binary's environment from env, with mutant id
+// selected (none when empty).
+func childEnv(env []string, id string) []string {
+	out := make([]string, 0, len(env)+1)
 	for _, kv := range env {
-		if !strings.HasPrefix(kv, key+"=") {
+		key, _, _ := strings.Cut(kv, "=")
+		if !droppedEnv[key] {
 			out = append(out, kv)
 		}
 	}
-	return out
+	return append(out, "GOMUTANT_ID="+id)
 }

@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "mutator",
+    srcs = [
+        "load.go",
+        "loadfiles.go",
+        "mutator.go",
+        "operator.go",
+        "ops_binary.go",
+        "ops_return.go",
+        "ops_stmt.go",
+        "overlay.go",
+        "schemata.go",
+    ],
+    importpath = "github.com/illumination-k/mutrim/mutator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_x_tools//go/ast/astutil",
+        "@org_golang_x_tools//go/gcexportdata",
+        "@org_golang_x_tools//go/packages",
+    ],
+)

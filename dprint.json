@@ -6,7 +6,8 @@
   "yaml": {},
   "excludes": [
     "**/*-lock.json",
-    ".github/dependabot.yml"
+    ".github/dependabot.yml",
+    "MODULE.bazel.lock"
   ],
   "plugins": [
     "https://plugins.dprint.dev/json-0.21.1.wasm",

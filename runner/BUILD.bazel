@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "runner",
+    srcs = [
+        "report.go",
+        "runner.go",
+    ],
+    importpath = "github.com/illumination-k/mutrim/runner",
+    visibility = ["//visibility:public"],
+    deps = ["//mutator"],
+)

@@ -1,0 +1,12 @@
+# Shared Bazel settings. Per-developer overrides go in user.bazelrc (ignored by git).
+common --enable_platform_specific_config
+test --test_output=errors
+
+# CI keeps downloads and build results between runs through actions/cache.
+common:ci --repository_cache=~/.cache/bazel-repo
+common:ci --disk_cache=~/.cache/bazel-disk
+common:ci --color=yes
+common:ci --curses=no
+common:ci --show_timestamps
+
+try-import %workspace%/user.bazelrc
