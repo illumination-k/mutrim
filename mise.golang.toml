@@ -1,0 +1,25 @@
+[tools]
+go = "1.27.0"
+"aqua:golangci/golangci-lint" = "2.13.1"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.7.0"
+
+[tasks."fmt:golang"]
+description = "Format Go code with golangci-lint"
+run = "golangci-lint fmt"
+
+[tasks."lint:golang"]
+description = "Lint Go with go vet, golangci-lint, fmt check, and govulncheck"
+run = [
+  "go vet ./...",
+  "golangci-lint run",
+  "golangci-lint fmt --diff",
+  "govulncheck ./...",
+]
+
+[tasks."test:golang"]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks."ci:golang"]
+description = "Run Go lint and test tasks"
+depends = ["lint:golang", "test:golang"]

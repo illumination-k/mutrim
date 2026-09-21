@@ -1,0 +1,78 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - errcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - noctx
+    - prealloc
+    - revive
+    - rowserrcheck
+    - staticcheck
+    - unparam
+    - unused
+
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-keys-type
+        - name: early-return
+        - name: empty-lines
+        - name: error-return
+        - name: error-strings
+        - name: exported
+          disabled: true
+        - name: if-return
+        - name: increment-decrement
+        - name: receiver-naming
+        - name: redundant-import-alias
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+
+    misspell:
+      locale: US
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  settings:
+    gofumpt:
+      module-path: github.com/illumination-k/mutrim
+      extra-rules: true
+
+    goimports:
+      local-prefixes:
+        - github.com/illumination-k/mutrim
