@@ -141,6 +141,14 @@ undeclared test output. Tag `v0.1.0`.
   export for an external MIP solver.
 - `mutrim minimize` CLI printing redundant tests and functions no test kills. Never deletes.
 
+## Testing approach
+
+Golden files under `mutator/testdata/` list every mutant with its position, operator,
+viability and the source line after the rewrite, and the test re-generates after all
+apply/undo round trips to prove the AST is restored. The per-mutant expected-output idea
+follows go-mutesting's test layout; the fixtures and expectations here are written from
+scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
+
 ## Risks and open questions
 
 - **Type-check cost under schemata.** Each mutant is still checked individually on the

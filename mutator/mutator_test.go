@@ -27,19 +27,43 @@ func load(t *testing.T, name string) *packages.Package {
 }
 
 // render lists mutants in a position-first, path-free form for golden files.
-func render(ms []mutator.Mutant) string {
+// Each line ends with the source line as it reads after the mutant is applied,
+// so the golden files also pin the rewrite itself, not only its location.
+func render(t *testing.T, pkg *packages.Package, ms []mutator.Mutant) string {
+	t.Helper()
 	var b strings.Builder
 	for _, m := range ms {
-		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v\n",
-			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable)
+		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v | %s\n",
+			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable,
+			mutatedLine(t, pkg, m))
 	}
 	return b.String()
+}
+
+func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
+	t.Helper()
+	_, src, err := mutator.Source(pkg, m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(src), "\n")
+	if m.Line > len(lines) {
+		t.Fatalf("%s: line %d beyond mutated source (%d lines)", m.ID, m.Line, len(lines))
+	}
+	return strings.TrimSpace(lines[m.Line-1])
 }
 
 func TestGenerateGolden(t *testing.T) {
 	for _, name := range []string{"relational", "arith", "logical", "control", "ret", "excluded"} {
 		t.Run(name, func(t *testing.T) {
-			got := render(mutator.Generate(load(t, name), mutator.Options{TypeCheck: true}))
+			pkg := load(t, name)
+			mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})
+			got := render(t, pkg, mutants)
+			// Every Source call above applied and undid a mutant; the tree
+			// must be back to the original so that a second pass agrees.
+			if again := render(t, pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true})); again != got {
+				t.Fatalf("mutants differ after apply/undo round trip:\n--- first ---\n%s--- second ---\n%s", got, again)
+			}
 			golden := filepath.Join("testdata", name+".golden")
 			if *update {
 				if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
