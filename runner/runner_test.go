@@ -1,7 +1,10 @@
 package runner_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -65,17 +68,22 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 
 func TestRunReportGolden(t *testing.T) {
 	bin, mutants := buildFixture(t)
+	var logs bytes.Buffer
 	report, err := runner.Run(t.Context(), runner.Options{
 		TestBin: bin,
 		Mutants: mutants,
 		Dir:     fixtureDir,
 		Timeout: time.Second,
+		Log:     &logs,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.BaselineMS < 0 || report.TimeoutMS != 1000 {
 		t.Errorf("unexpected timing metadata: %+v", report)
+	}
+	if !strings.Contains(logs.String(), "timeout 1s, 8 tests\n") {
+		t.Errorf("the baseline must run every test:\n%s", logs.String())
 	}
 	// Every top-level test ran on its own and reached some sites.
 	reached := map[string]map[string]bool{}
@@ -198,19 +206,23 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 	}
 
 	// Copy-forward: seed the previous report with a fake status and see it
-	// reappear untouched, while NOT_VIABLE is always recomputed.
-	var timedOut, notViable string
+	// reappear untouched, while NOT_VIABLE is always recomputed and a
+	// previously unreached mutant that a test now reaches is executed.
+	var timedOut, notViable, reached string
 	for _, res := range first.Results {
-		switch res.Status {
-		case runner.Timeout:
+		switch {
+		case res.Status == runner.Timeout:
 			timedOut = res.MutantID
-		case runner.NotViable:
+		case res.Status == runner.NotViable:
 			notViable = res.MutantID
+		case res.Status == runner.Killed && slices.Contains(res.KilledBy, "TestStatements"):
+			reached = res.MutantID
 		}
 	}
 	prev := &runner.Report{Results: []runner.Result{
 		{MutantID: timedOut, Status: runner.Lived, DurationMS: 42},
 		{MutantID: notViable, Status: runner.Killed},
+		{MutantID: reached, Status: runner.NoCoverage},
 	}}
 	start := time.Now()
 	second, err := runner.Run(t.Context(), runner.Options{
@@ -232,6 +244,10 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 		case notViable:
 			if res.Status != runner.NotViable {
 				t.Errorf("non-viable mutant took its previous status: %+v", res)
+			}
+		case reached:
+			if res.Status != runner.Killed {
+				t.Errorf("previously unreached mutant was not executed: %+v", res)
 			}
 		}
 	}
@@ -301,5 +317,35 @@ func TestReadReportErrors(t *testing.T) {
 	}
 	if _, err := runner.ReadReport(bad); err == nil {
 		t.Error("malformed JSON: expected an error")
+	}
+}
+
+// writeJSON writes v as indented JSON, the way mutrim run does.
+func writeJSON(t *testing.T, path string, v any) error {
+	t.Helper()
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
+// A canceled context stops the run with its error instead of a verdict,
+// and a binary that cannot list its tests is an error too.
+func TestRunAbortsOnContextAndListFailure(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := runner.Run(ctx, runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir}); !errors.Is(err, context.Canceled) {
+		t.Errorf("canceled context: got %v, want context.Canceled", err)
+	}
+
+	// The script passes as a test run but fails -test.list.
+	script := filepath.Join(t.TempDir(), "nolist.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ncase \"$1\" in -test.list) exit 1;; esac\nexit 0\n"), 0o700); err != nil { //nolint:gosec // it must be executable
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(t.Context(), runner.Options{TestBin: script}); err == nil || !strings.Contains(err.Error(), "list tests") {
+		t.Errorf("failing -test.list: got %v, want a list error", err)
 	}
 }

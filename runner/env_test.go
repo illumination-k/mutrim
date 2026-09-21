@@ -51,3 +51,37 @@ func TestParseOutput(t *testing.T) {
 		t.Errorf("parseOutput(timed out) = %d, %v", started, failed)
 	}
 }
+
+// Only statuses that came from running the tests are copied forward from a
+// previous report.
+func TestStatusExecuted(t *testing.T) {
+	for s, want := range map[Status]bool{Killed: true, Lived: true, Timeout: true, NoCoverage: false, NotViable: false, "": false} {
+		if got := s.executed(); got != want {
+			t.Errorf("%q.executed() = %v, want %v", s, got, want)
+		}
+	}
+}
+
+// Totals count every status; the score counts timeouts as kills and
+// unreached mutants as survivors, and is zero when nothing is viable.
+func TestTotals(t *testing.T) {
+	r := &Report{Results: []Result{
+		{Status: Killed},
+		{Status: Killed},
+		{Status: Timeout},
+		{Status: Lived},
+		{Status: NoCoverage},
+		{Status: NotViable},
+		{Status: NotViable},
+	}}
+	r.total()
+	want := Totals{Mutants: 7, Killed: 2, Lived: 1, Timeout: 1, NoCoverage: 1, NotViable: 2, Score: 0.6}
+	if r.Totals != want {
+		t.Errorf("totals = %+v, want %+v", r.Totals, want)
+	}
+	r = &Report{Results: []Result{{Status: NotViable}}}
+	r.total()
+	if r.Totals.Score != 0 || r.Totals.Mutants != 1 {
+		t.Errorf("totals of nothing viable = %+v", r.Totals)
+	}
+}

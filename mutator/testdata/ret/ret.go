@@ -1,6 +1,9 @@
 package ret
 
-import "errors"
+import (
+	"errors"
+	"unsafe"
+)
 
 type Pair struct{ A, B int }
 
@@ -14,16 +17,19 @@ func Slice(s []int) []int { return s }
 
 // Err's mutant leaves "errors" unused. The local check does not see that;
 // the build does, and the runner reports it as not viable.
-func Err() error               { return errors.New("x") }
-func Named(x ID) ID            { return x }
-func Multi(x int) (int, error) { return x, nil }
-func Fn() func()               { return func() {} }
+func Err() error                             { return errors.New("x") }
+func Named(x ID) ID                          { return x }
+func Multi(x int) (int, error)               { return x, nil }
+func Fn() func()                             { return func() {} }
+func Unsafe(p unsafe.Pointer) unsafe.Pointer { return p }
 
 // Skipped: struct result, generic result, already-zero results, multi-value
 // call, bare return.
 func Struct(p Pair) Pair         { return p }
 func Generic[T any](v T) T       { return v }
 func AlreadyZero() (int, error)  { return 0, nil }
+func EmptyStr() string           { return "" }
+func EmptyRaw() string           { return `` }
 func Forward(x int) (int, error) { return Multi(x) }
 func Bare() (n int)              { return }
 func Array(a [2]int) [2]int      { return a }

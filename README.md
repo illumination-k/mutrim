@@ -104,3 +104,8 @@ go test ./mutator -run '^$' -bench . -benchpkg go/types    # one extra package
 ```
 
 `BenchmarkGenerate` reports `ms/mutant` for the full pipeline.
+
+`mise run dogfood` (`tools/dogfood.sh`) runs the schemata pipeline on mutrim's own packages and
+writes `report.json` and `minimize.json` per package under `.mutrim/`. It takes a while:
+the `runner` tests build and execute test binaries, and every mutant reruns them. Pass package
+directories to limit it, for example `tools/dogfood.sh criteria minimize`.

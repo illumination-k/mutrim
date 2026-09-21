@@ -115,6 +115,9 @@ func TestKept(t *testing.T) {}
 
 func TestPlain(t *testing.T) {}
 
+// TestDocumented has a doc comment, but not the tag.
+func TestDocumented(t *testing.T) {}
+
 // mutrim:keep on a helper, not a test.
 func helper() {}
 

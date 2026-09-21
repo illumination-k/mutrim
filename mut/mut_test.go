@@ -26,6 +26,9 @@ func TestIdentityWhenInactive(t *testing.T) {
 	if got := Arith("x", 7, 2, "+", "-"); got != 9 {
 		t.Errorf("Arith + = %d", got)
 	}
+	if got := Arith("x", 7.0, 2.0, "/", "*"); got != 3.5 {
+		t.Errorf("Arith / = %v", got)
+	}
 	if got := ArithInt("x", 7, 2, "%", "*"); got != 1 {
 		t.Errorf("ArithInt %% = %d", got)
 	}
@@ -105,12 +108,30 @@ func TestMutantWhenActive(t *testing.T) {
 }
 
 func TestUnknownOperatorPanics(t *testing.T) {
+	for name, call := range map[string]func(){
+		"arith": func() { Arith("x", 1, 2, "&", "|") },
+		"cmp":   func() { Cmp("x", 1, 2, "==", "!=") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("expected a panic")
+				}
+			}()
+			call()
+		})
+	}
+}
+
+// A trace file that cannot be opened is a runner bug, not something to
+// silently ignore: the process must not start.
+func TestTraceUnopenablePanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Error("expected a panic")
 		}
 	}()
-	Arith("x", 1, 2, "&", "|")
+	newTracer(filepath.Join(t.TempDir(), "missing", "trace"))
 }
 
 // With GOMUTANT_TRACE set, every reached site is written once, whichever

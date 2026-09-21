@@ -1,6 +1,14 @@
 package mutname
 
-// mut takes the default runtime import name.
-var mut = 3
+// mut1 takes the first fallback runtime import name; mut, the default, is
+// only bound inside Above, where the package scope does not see it.
+var mut1 = 1
 
-func Above(x int) bool { return x > mut }
+// Above is documented; the schemata source drops this comment but keeps
+// the directive below it.
+//
+//go:noinline
+func Above(x int) bool {
+	mut := 3
+	return x > mut+mut1
+}

@@ -102,9 +102,10 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 			}
 			return true
 		})
-		if !astutil.AddNamedImport(pkg.Fset, f, runtime, RuntimePath) {
-			return nil, fmt.Errorf("mutator: %s already imports %s", name, RuntimePath)
-		}
+		// runtimeName never reuses a name the file already binds, so the
+		// import is always added (a second import of RuntimePath under a
+		// new name when the package already uses the runtime).
+		astutil.AddNamedImport(pkg.Fset, f, runtime, RuntimePath)
 		keepDirectives(f)
 
 		var buf bytes.Buffer
@@ -134,11 +135,11 @@ func runtimeName(pkg *packages.Package, f *ast.File) string {
 	return name
 }
 
-// keepDirectives drops every comment except //go: directives (build
-// constraints, embed, noinline). Rewritten bodies have no positions the
-// printer could place ordinary comments against, and dropping them keeps
-// the output valid; directives keep their meaning because declarations
-// are printed where they were.
+// keepDirectives drops every comment group without a //go: directive
+// (build constraints, embed, noinline). Rewritten bodies have no
+// positions the printer could place ordinary comments against, and
+// dropping them keeps the output valid; directives keep their meaning
+// because declarations are printed where they were.
 func keepDirectives(f *ast.File) {
 	kept := []*ast.CommentGroup{}
 	for _, g := range f.Comments {
