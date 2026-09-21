@@ -7,8 +7,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// benchPkg adds one more package pattern to the benchmarks, e.g.
-// -benchpkg go/types (about 2300 mutants, tens of seconds per iteration).
+// benchPkg adds one more package pattern to the benchmark, e.g.
+// -benchpkg go/types (about 2300 mutants).
 var benchPkg = flag.String("benchpkg", "", "extra package pattern to benchmark")
 
 // benchPackages returns a tiny fixture and a mid-sized standard library
@@ -30,24 +30,8 @@ func loadBench(b *testing.B, pattern string) *packages.Package {
 	return pkgs[0]
 }
 
-// BenchmarkCheck measures one go/types re-check of an unmodified package,
-// which is the per-mutant cost of the pre-filter.
-func BenchmarkCheck(b *testing.B) {
-	for _, pattern := range benchPackages() {
-		b.Run(pattern, func(b *testing.B) {
-			c := newChecker(loadBench(b, pattern))
-			b.ResetTimer()
-			for b.Loop() {
-				if err := c.check(); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 // BenchmarkGenerate measures the full pipeline with the pre-filter on and
-// reports the cost per mutant, which is what scales with package size.
+// reports the cost per mutant.
 func BenchmarkGenerate(b *testing.B) {
 	for _, pattern := range benchPackages() {
 		b.Run(pattern, func(b *testing.B) {

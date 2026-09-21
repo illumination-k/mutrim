@@ -51,8 +51,8 @@ func (s site) position() token.Pos {
 type Options struct {
 	// Operators to apply; nil means DefaultOperators.
 	Operators []Operator
-	// TypeCheck re-runs go/types after each rewrite and marks failing mutants
-	// as not viable. Disable it to enumerate candidates quickly.
+	// TypeCheck runs each site's local go/types check after the rewrite and
+	// marks failing mutants as not viable.
 	TypeCheck bool
 }
 
@@ -63,17 +63,13 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 		ops = DefaultOperators
 	}
 
+	ctx := &Context{Fset: pkg.Fset, Pkg: pkg.Types, Info: pkg.TypesInfo}
 	var sites []site
 	for _, f := range pkg.Syntax {
 		if excluded(pkg, f) {
 			continue
 		}
-		sites = append(sites, collectSites(f, pkg.TypesInfo, ops)...)
-	}
-
-	var checker *checker
-	if opts.TypeCheck {
-		checker = newChecker(pkg)
+		sites = append(sites, collectSites(f, ctx, ops)...)
 	}
 
 	mutants := make([]Mutant, 0, len(sites))
@@ -91,9 +87,9 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			Viable:      true,
 			site:        s,
 		}
-		if checker != nil {
+		if opts.TypeCheck && s.Check != nil {
 			s.Apply()
-			m.Viable = checker.check() == nil
+			m.Viable = s.Check() == nil
 			s.Undo()
 		}
 		mutants = append(mutants, m)
@@ -114,7 +110,7 @@ func mutantID(pkgPath string, s site) string {
 
 // collectSites walks every top-level function body in f and asks each
 // operator for the sites it can mutate.
-func collectSites(f *ast.File, info *types.Info, ops []Operator) []site {
+func collectSites(f *ast.File, ctx *Context, ops []Operator) []site {
 	var out []site
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -122,11 +118,11 @@ func collectSites(f *ast.File, info *types.Info, ops []Operator) []site {
 			continue
 		}
 		w := &walker{
-			info:     info,
+			ctx:      ctx,
 			ops:      ops,
 			file:     f,
 			funcName: funcName(fn),
-			sigs:     []*types.Signature{signatureOf(info, fn.Name)},
+			sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
 			counters: []int{0},
 		}
 		ast.Inspect(fn.Body, w.visit)
@@ -136,7 +132,7 @@ func collectSites(f *ast.File, info *types.Info, ops []Operator) []site {
 }
 
 type walker struct {
-	info     *types.Info
+	ctx      *Context
 	ops      []Operator
 	file     *ast.File
 	funcName string
@@ -155,10 +151,11 @@ func (w *walker) visit(n ast.Node) bool {
 	}
 	w.push(n)
 
-	ctx := &Context{Info: w.info, Sig: w.sigs[len(w.sigs)-1]}
+	ctx := *w.ctx
+	ctx.Sig = w.sigs[len(w.sigs)-1]
 	astPath := strings.Join(w.path, "/")
 	for _, op := range w.ops {
-		for _, s := range op.Sites(ctx, n) {
+		for _, s := range op.Sites(&ctx, n) {
 			s.Operator = op.Name()
 			w.out = append(w.out, site{
 				Site:     s,
@@ -179,7 +176,7 @@ func (w *walker) push(n ast.Node) {
 	w.path = append(w.path, fmt.Sprintf("%T[%d]", n, idx))
 	w.nodes = append(w.nodes, n)
 	if lit, ok := n.(*ast.FuncLit); ok {
-		sig, _ := w.info.TypeOf(lit).(*types.Signature)
+		sig, _ := w.ctx.Info.TypeOf(lit).(*types.Signature)
 		w.sigs = append(w.sigs, sig)
 	}
 }
@@ -235,48 +232,4 @@ func excluded(pkg *packages.Package, f *ast.File) bool {
 		}
 	}
 	return true
-}
-
-// checker re-type-checks a package in place after a rewrite.
-type checker struct {
-	cfg   types.Config
-	fset  *token.FileSet
-	path  string
-	files []*ast.File
-}
-
-func newChecker(pkg *packages.Package) *checker {
-	imports := importer{}
-	for _, p := range pkg.Types.Imports() {
-		imports[p.Path()] = p
-	}
-	c := &checker{
-		cfg: types.Config{
-			Importer: imports,
-			Sizes:    pkg.TypesSizes,
-			Error:    func(error) {}, // keep going; we only need the first error
-		},
-		fset:  pkg.Fset,
-		path:  pkg.PkgPath,
-		files: pkg.Syntax,
-	}
-	if pkg.Module != nil && pkg.Module.GoVersion != "" {
-		c.cfg.GoVersion = "go" + pkg.Module.GoVersion
-	}
-	return c
-}
-
-func (c *checker) check() error {
-	_, err := c.cfg.Check(c.path, c.fset, c.files, nil)
-	return err
-}
-
-// importer serves the already type-checked direct dependencies of a package.
-type importer map[string]*types.Package
-
-func (m importer) Import(path string) (*types.Package, error) {
-	if p, ok := m[path]; ok {
-		return p, nil
-	}
-	return nil, fmt.Errorf("mutator: package %q not loaded", path)
 }

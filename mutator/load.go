@@ -10,13 +10,9 @@ import (
 // LoadMode is the go/packages mode required by Generate.
 const LoadMode = packages.NeedName |
 	packages.NeedFiles |
-	packages.NeedCompiledGoFiles |
-	packages.NeedImports |
 	packages.NeedTypes |
-	packages.NeedTypesSizes |
 	packages.NeedTypesInfo |
-	packages.NeedSyntax |
-	packages.NeedModule
+	packages.NeedSyntax
 
 // Load loads the packages matching patterns relative to dir.
 // It fails if any package has errors, since mutants of a broken package

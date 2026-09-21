@@ -13,7 +13,7 @@ type BinaryOp struct {
 
 func (b BinaryOp) Name() string { return b.OpName }
 
-func (b BinaryOp) Sites(_ *Context, n ast.Node) []Site {
+func (b BinaryOp) Sites(ctx *Context, n ast.Node) []Site {
 	e, ok := n.(*ast.BinaryExpr)
 	if !ok {
 		return nil
@@ -29,6 +29,7 @@ func (b BinaryOp) Sites(_ *Context, n ast.Node) []Site {
 		Description: from.String() + " -> " + to.String(),
 		Apply:       func() { e.Op = to },
 		Undo:        func() { e.Op = from },
+		Check:       func() error { return ctx.CheckExpr(e) },
 	}}
 }
 

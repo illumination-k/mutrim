@@ -12,7 +12,8 @@ func Bool(b bool) bool    { return b }
 func Ptr(p *int) *int     { return p }
 func Slice(s []int) []int { return s }
 
-// Err's mutant leaves "errors" unused, so it does not compile.
+// Err's mutant leaves "errors" unused. The local check does not see that;
+// the build does, and the runner reports it as not viable.
 func Err() error               { return errors.New("x") }
 func Named(x ID) ID            { return x }
 func Multi(x int) (int, error) { return x, nil }

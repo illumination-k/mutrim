@@ -66,10 +66,11 @@ and `mutrim overlay` lets `go test -overlay` run a single mutant.
 3. **Mutant ID.** `sha256(pkgPath, enclosing func name, AST path from func root, operator
    name, description)` truncated to 16 hex chars. Position-independent by construction; a test
    asserts that inserting lines above a site does not change its ID.
-4. **Type-check pre-filter.** For each site: `Apply`, run `types.Config.Check` over the
-   package's syntax with an importer backed by the already-loaded direct dependencies, record
-   `viable=false` on error, `Undo`. "Imported and not used" after a return replacement counts
-   as not viable, since the mutant would not build.
+4. **Type-check pre-filter.** For each binary-operator site: `Apply`, run `types.CheckExpr`
+   on the rewritten expression in its original scope, record `viable=false` on error, `Undo`.
+   Statement mutants are well-typed by construction and have no check. Context-dependent
+   failures (constant overflow, unused import after a return replacement) are left to the
+   build, which the runner counts as NOT VIABLE.
 5. **`mutants.json`.** One entry per candidate:
    `{id, pkg, file, line, col, func, operator, description, viable}`. Non-viable entries are
    kept in the file (so the runner can report NOT_VIABLE counts) but never executed.
@@ -151,8 +152,6 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 
 ## Risks and open questions
 
-- **Type-check cost under schemata.** Each mutant is still checked individually on the
-  original AST before being embedded; if that dominates, batch candidates per function.
 - **Generic helpers vs. untyped constants.** `mut.Cmp(site, 1, x)` must not change constant
   typing; the lowering keeps the original expression types by wrapping operands in
   conversions when `go/types` reports an untyped constant.

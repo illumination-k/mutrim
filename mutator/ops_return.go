@@ -9,7 +9,9 @@ import (
 // Return replaces every result of a return statement with its zero value.
 // Statements that already return only zero values, bare returns, and result
 // types without a spellable zero value (structs, arrays, type parameters)
-// are skipped.
+// are skipped. The rewrite is well-typed by construction; if it leaves an
+// import or variable unused, the build fails and the runner counts the
+// mutant as not viable.
 type Return struct{}
 
 func (Return) Name() string { return "return" }
