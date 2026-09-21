@@ -1,0 +1,23 @@
+"""mutrim: Bazel-native mutation testing for Go.
+
+Consumers add `bazel_dep(name = "mutrim", version = ...)` and load
+`mutation_test` from `@mutrim//:defs.bzl`.
+"""
+
+module(
+    name = "mutrim",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_go", version = "0.63.0")
+bazel_dep(name = "gazelle", version = "0.54.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
+bazel_dep(name = "buildifier_prebuilt", version = "10.0.1", dev_dependency = True)
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.from_file(go_mod = "//:go.mod")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//:go.mod")
+use_repo(go_deps, "org_golang_x_tools")

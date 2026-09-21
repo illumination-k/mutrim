@@ -9,7 +9,9 @@ Follow the YANGI, SOLID, DRY, and KISS principles in all code and documentation.
 
 ## Development Process
 
-Run `mise install` first to install the toolchain and project tools.
+Run `mise install` first to install the toolchain and project tools. Task files are selected
+by `MISE_ENV` (`base`, `golang`, `bazel`; `.claude/settings.json` enables all of them), so the
+tasks below cover Go and Bazel alike.
 
 At the end of a session, run `mise run ci` and make sure it passes. Use the narrower tasks while iterating:
 
@@ -35,20 +37,21 @@ mise run test  # Run all test:* tasks
 
 All tools are managed by mise. Run `mise install` to install them.
 
-| Tool          | Purpose                             |
-| ------------- | ----------------------------------- |
-| uv            | Python package manager              |
-| dprint        | Code formatter                      |
-| prek          | Pre-commit hook runner              |
-| shfmt         | Shell script formatter              |
-| actionlint    | GitHub Actions linter               |
-| zizmor        | GitHub Actions security linter      |
-| shellcheck    | Shell script linter                 |
-| ghalint       | GitHub Actions linter               |
-| pinact        | Pin GitHub Actions versions to SHAs |
-| go            | Go toolchain                        |
-| golangci-lint | Go linter suite and formatter       |
-| govulncheck   | Go vulnerability scanner            |
+| Tool          | Purpose                                       |
+| ------------- | --------------------------------------------- |
+| uv            | Python package manager                        |
+| dprint        | Code formatter                                |
+| prek          | Pre-commit hook runner                        |
+| shfmt         | Shell script formatter                        |
+| actionlint    | GitHub Actions linter                         |
+| zizmor        | GitHub Actions security linter                |
+| shellcheck    | Shell script linter                           |
+| ghalint       | GitHub Actions linter                         |
+| pinact        | Pin GitHub Actions versions to SHAs           |
+| go            | Go toolchain                                  |
+| golangci-lint | Go linter suite and formatter                 |
+| govulncheck   | Go vulnerability scanner                      |
+| bazel         | Bazel (gazelle and buildifier run through it) |
 
 ## Purpose
 
@@ -78,9 +81,12 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset                       | `x/tools/cover`, `bits-and-blooms/bitset` |
 | `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                                    | `bitset` only                             |
 
-Bazel-specific logic is confined to Starlark (`defs.bzl`, `mutation_test` macro) and a thin
-CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev loop and
-non-Bazel users are both served.
+Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
+thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
+loop and non-Bazel users are both served. Under Bazel there is no `go list`: `mutrim gen
+-importpath` type-checks the package's files against the export data rules_go compiled for
+its dependencies (`mutator.LoadFiles`, the nogo approach), and the same `Generate`/`Lower`
+run on the result.
 
 ### Mutation engine
 
@@ -104,9 +110,13 @@ at runtime via `GOMUTANT_ID`. One build per package; target count = packages × 
 Do **not** expand one `go_test` per mutant — tens of thousands of targets break Bazel
 loading/analysis.
 
-- Runner wraps `go_binary`, re-execs the test binary per mutant with `GOMUTANT_ID=k`,
-  runs only tests that cover that mutant (`-test.run`), and writes `report.json`
-  (KILLED / LIVED / TIMEOUT) as undeclared test outputs. TIMEOUT counts as KILLED.
+- `mutation_test(name, srcs, embed, deps, shard_count)` mirrors the package's `go_test`:
+  `mutrim_schemata` lowers the embedded library (one `MutrimGen` action) and provides it as a
+  `GoInfo` with the same import path; a `go_test` embeds it (the identity check); an `sh_test`
+  re-execs that binary per mutant with `GOMUTANT_ID=k` and writes `report.json`
+  (KILLED / LIVED / TIMEOUT) to the undeclared outputs. TIMEOUT counts as KILLED. The runner
+  drops Bazel's test-protocol variables from the child environment, since the rules_go test
+  main would otherwise shard, filter and report a second time.
 - Sharding via `shard_count` + `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` (`id % TOTAL == INDEX`).
 - Mutant IDs are content hashes (function name + AST path + operator), not positions, so the
   runner can do incremental re-runs from the previous `report.json`. Weekly full run corrects
@@ -127,12 +137,15 @@ comment tag are always kept. Exact solutions go through an exported JSON matrix 
 - `go.mod` is the source of truth. Day-to-day development uses the mise tasks
   (`go test ./...`, golangci-lint, govulncheck). `mutator` / `criteria` / `minimize` must build
   and test without Bazel.
-- Bazel (`MODULE.bazel` with rules_go + gazelle) is added from the Bazel-integration phase for
-  two purposes: distribution as a Bazel module, and dogfooding. `examples/` holds fixture
-  packages that call `mutation_test(...)` on themselves, so `bazel test //...` is the
-  integration test for `defs.bzl` and the shard runner.
-- BUILD files are generated by gazelle; do not hand-edit them. `lint:bazel` runs
-  `gazelle --mode=diff` and buildifier, `test:bazel` runs `bazel test //...`.
+- Bazel (`MODULE.bazel` with rules_go + gazelle) serves two purposes: distribution as a Bazel
+  module, and dogfooding. `examples/` holds fixture packages that call `mutation_test(...)` on
+  themselves, so `bazel test //...` is the integration test for `defs.bzl` and the shard
+  runner. `go.mod` must pin a full Go version (`go 1.27.0`): rules_go downloads that SDK.
+- BUILD files are generated by gazelle; do not hand-edit them, except to add
+  `mutation_test(...)` calls, which gazelle leaves alone. Tests that shell out to `go` or read
+  `mutator/testdata` are excluded from Bazel in the root `BUILD.bazel`; `go test ./...` covers
+  them. `lint:bazel` runs `gazelle -mode=diff` and buildifier, `test:bazel` runs
+  `bazel test //...`.
 - Bazel CI runs in its own workflow on `ubuntu-latest` (compute-bound); the Go lint/test
   workflow stays on the template defaults.
 

@@ -128,21 +128,40 @@ Done: `runner/testdata/schemata.golden` is the report of the schemata fixture, p
 `gen -schemata` + `go test -c -overlay` + `run`, and every embedded mutant of a tested
 function is KILLED there; the CLI test runs the same pipeline through `mutrim`.
 
-## Phase 3 — Bazel integration (first release)
+## Phase 3 — Bazel integration (first release, done)
 
-Goal: `bazel_dep(name = "mutrim")` + `mutation_test(name, deps=..., shard_count=N)`.
+Goal: `bazel_dep(name = "mutrim")` + `mutation_test(name, srcs, embed, shard_count = N)`.
 
-- `MODULE.bazel` with rules_go + gazelle; BUILD files generated only by gazelle.
-- `defs.bzl`: `mutation_test` macro expands to a rule that runs `mutrim gen`
-  (schemata sources + `mutants.json`) → `go_test` on the generated sources → a `sh_test` /
-  `go_test` runner target `mutant_<pkg>` with `shard_count`, writing `report.json` to
-  undeclared outputs.
-- `examples/` fixtures dogfood the macro; `bazel test //...` is the integration test.
-- New mise tasks `lint:bazel` (`gazelle --mode=diff`, buildifier) and `test:bazel`; a separate
-  `ci_bazel.yml` workflow on `ubuntu-latest`.
+1. **Loading without `go list`.** A sandboxed action has no module cache, so
+   `mutrim gen -importpath <path> -importcfg <file> -stdlib <dir> files...` type-checks the
+   package's files with `go/types`, reading dependency types from the export data rules_go
+   already compiled (`mutator.LoadFiles`, `gcexportdata`; the same approach as nogo). The
+   importcfg has `go build`'s format; the standard library is found under
+   `<stdlib>/<goos_goarch>/<path>.a`. Files excluded by build constraints are copied through
+   untouched, so the schemata directory is always a complete copy of the package.
+2. **`mutrim_schemata` rule** (`bazel/mutation_test.bzl`). Reads the library's `GoInfo` /
+   `GoArchive`, writes the importcfg from `GoArchive.transitive`, runs one `MutrimGen` action
+   producing the schemata sources and `mutants.json`, and provides a `GoInfo` with the same
+   import path plus a dependency on `//mut`, so a `go_test` can embed it in place of the
+   original library.
+3. **`mutation_test` macro** expands to that rule, a `go_test` on the schemata sources (the
+   identity check: with `GOMUTANT_ID` unset the tests must still pass), and an `sh_test`
+   (`bazel/run.sh`) that runs `mutrim run` on the test binary with `shard_count`; `report.json`
+   lands in the undeclared outputs. The runner strips Bazel's test-protocol variables
+   (`TEST_TOTAL_SHARDS`, `TESTBRIDGE_TEST_ONLY`, `XML_OUTPUT_FILE`, ...) from the child
+   environment: the rules_go test main acts on them too.
+4. **Repository.** `MODULE.bazel` (rules_go 0.63, gazelle 0.54, rules_shell; buildifier as a
+   dev dependency), gazelle-generated BUILD files, `examples/calc` and `examples/stats`
+   (a dependency on another workspace package and on the standard library) dogfooding the
+   macro, `mise.bazel.toml` (`fmt:bazel`, `lint:bazel`, `test:bazel`, `ci:bazel`) and the
+   `ci_bazel.yml` workflow on `ubuntu-latest`.
 
-Done when: `bazel test //...:mutant_*` passes in CI and the report is visible as an
-undeclared test output. Tag `v0.1.0`.
+Not supported: cgo packages, and `//go:embed` in the library under test (the schemata sources
+are generated into a subdirectory, so the embed paths no longer resolve). mutrim's own tests
+that shell out to `go` are excluded from the Bazel build and stay on `go test ./...`.
+
+Done: `bazel test //...` passes and `report.json` is visible as an undeclared test output.
+Tag `v0.1.0`.
 
 ## Phase 4 — Criteria and minimizer (second release)
 
@@ -174,5 +193,6 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 
 ## Immediate next steps
 
-1. Phase 3: `MODULE.bazel`, `defs.bzl` with `mutation_test`, and an `examples/` fixture that
-   runs `mutrim gen -schemata` → `go_test` → `mutrim run` under `shard_count`.
+1. Tag `v0.1.0` once the Bazel workflow is green on `main`.
+2. Phase 4: `criteria.BlockCoverage` from per-test cover profiles, then narrow the runner's
+   `-test.run` to the tests covering each mutant.

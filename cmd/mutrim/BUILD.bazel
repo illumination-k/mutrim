@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "mutrim_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/illumination-k/mutrim/cmd/mutrim",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//mutator",
+        "//runner",
+        "@org_golang_x_tools//go/packages",
+    ],
+)
+
+go_binary(
+    name = "mutrim",
+    embed = [":mutrim_lib"],
+    visibility = ["//visibility:public"],
+)

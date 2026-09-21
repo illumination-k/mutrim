@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:defs.bzl", "mutation_test")
+
+go_library(
+    name = "stats",
+    srcs = ["stats.go"],
+    importpath = "github.com/illumination-k/mutrim/examples/stats",
+    visibility = ["//visibility:public"],
+    deps = ["//examples/calc"],
+)
+
+go_test(
+    name = "stats_test",
+    srcs = ["stats_test.go"],
+    embed = [":stats"],
+)
+
+mutation_test(
+    name = "mutant_stats",
+    srcs = ["stats_test.go"],
+    embed = [":stats"],
+)

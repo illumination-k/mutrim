@@ -1,6 +1,6 @@
 module github.com/illumination-k/mutrim
 
-go 1.27
+go 1.27.0
 
 require golang.org/x/tools v0.50.0
 

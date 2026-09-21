@@ -1,0 +1,24 @@
+[tools]
+bazel = "9.2.0"
+
+[tasks."fmt:bazel"]
+description = "Regenerate BUILD files with gazelle and format Starlark with buildifier"
+run = [
+  "bazel run //:gazelle",
+  "bazel run //tools:buildifier",
+]
+
+[tasks."lint:bazel"]
+description = "Check BUILD files are up to date (gazelle) and formatted (buildifier)"
+run = [
+  "bazel run //:gazelle -- -mode=diff",
+  "bazel run //tools:buildifier.check",
+]
+
+[tasks."test:bazel"]
+description = "Build everything and run the Bazel tests, including examples/"
+run = "bazel test //..."
+
+[tasks."ci:bazel"]
+description = "Run Bazel lint and test tasks"
+depends = ["lint:bazel", "test:bazel"]

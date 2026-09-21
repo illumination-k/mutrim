@@ -1,0 +1,4 @@
+exports_files(
+    ["run.sh"],
+    visibility = ["//visibility:public"],
+)

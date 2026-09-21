@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,7 +27,8 @@ const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
   gen       list mutants of the packages as JSON; -schemata also writes
-            sources with every mutant embedded
+            sources with every mutant embedded; -importpath type-checks
+            the given files from export data (Bazel mode)
   overlay   write one mutant and print a go build -overlay file for it
   run       execute a schemata test binary once per mutant and report`
 
@@ -59,13 +61,30 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	out := fs.String("o", "", "write mutants.json here instead of stdout")
 	noCheck := fs.Bool("no-check", false, "skip the go/types pre-filter")
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
+	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
+	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
+	stdlib := fs.String("stdlib", "", "directory of compiled standard-library packages, <dir>/<goos_goarch>/<path>.a (with -importpath)")
+	tags := fs.String("tags", "", "comma-separated build tags (with -importpath)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	pkgs, err := mutator.Load(".", patterns(fs)...)
-	if err != nil {
-		return err
+	var pkgs []*packages.Package
+	if *importPath != "" {
+		cfg := mutator.FilesConfig{ImportPath: *importPath, Files: fs.Args(), Importcfg: *importcfg, Stdlib: *stdlib}
+		if *tags != "" {
+			cfg.Tags = strings.Split(*tags, ",")
+		}
+		pkg, err := mutator.LoadFiles(cfg)
+		if err != nil {
+			return err
+		}
+		pkgs = []*packages.Package{pkg}
+	} else {
+		var err error
+		if pkgs, err = mutator.Load(".", patterns(fs)...); err != nil {
+			return err
+		}
 	}
 	mutants := []mutator.Mutant{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
@@ -86,8 +105,11 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	return writeJSON(*out, stdout, mutants)
 }
 
-// writeSchemata lowers pkg into dir/<import path>/ and marks mutants the
-// lowering declined as not viable, so the runner never selects them.
+// writeSchemata writes the complete package under dir/<import path>/:
+// files with an embedded mutant are lowered, the rest (including files
+// excluded by build constraints) are copied as they are, so the directory
+// can replace the package. Mutants the lowering declined are marked not
+// viable, so the runner never selects them.
 func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
 	sch, err := mutator.Lower(pkg, ms)
 	if err != nil {
@@ -100,14 +122,27 @@ func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overl
 	if err := os.MkdirAll(pkgDir, 0o750); err != nil {
 		return err
 	}
-	for orig, src := range sch.Files {
-		mutated := filepath.Join(pkgDir, filepath.Base(orig))
+	for _, orig := range slices.Concat(pkg.GoFiles, pkg.IgnoredFiles) {
+		src, err := schemataSource(sch, orig)
+		if err != nil {
+			return err
+		}
+		mutated := filepath.Clean(filepath.Join(pkgDir, filepath.Base(orig)))
 		if err := os.WriteFile(mutated, src, 0o600); err != nil {
 			return err
 		}
 		overlay.Replace[orig] = mutated
 	}
 	return nil
+}
+
+// schemataSource is the lowered source of orig, or the original when no
+// mutant is embedded in it.
+func schemataSource(sch *mutator.Schemata, orig string) ([]byte, error) {
+	if src, ok := sch.Files[orig]; ok {
+		return src, nil
+	}
+	return os.ReadFile(filepath.Clean(orig))
 }
 
 func runOverlay(args []string, stdout, stderr io.Writer) error {
