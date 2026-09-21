@@ -111,6 +111,38 @@ func TestGenSchemataThenRun(t *testing.T) {
 	if report.Totals.Killed == 0 || !strings.Contains(stderr.String(), "KILLED") {
 		t.Errorf("expected killed mutants and a log line per mutant:\n%s", stderr.String())
 	}
+
+	// Under Bazel the report goes to the undeclared outputs; with -previous
+	// every result is copied forward instead of executed.
+	outDir := filepath.Join(dir, "outputs")
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", outDir)
+	first := filepath.Join(dir, "first.json")
+	if err := writeJSON(first, nil, report); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	args = append(args[:len(args)-2], "-previous", first)
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run -previous: %v\n%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("report must go to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
+	}
+	var second runner.Report
+	if err := readJSON(filepath.Join(outDir, "report.json"), &second); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Results) != len(report.Results) {
+		t.Fatalf("second run has %d results, first %d", len(second.Results), len(report.Results))
+	}
+	for i, r := range second.Results {
+		if prev := report.Results[i]; r.MutantID != prev.MutantID || r.Status != prev.Status || r.DurationMS != prev.DurationMS {
+			t.Errorf("result not copied forward from -previous: %+v vs %+v", r, prev)
+		}
+	}
 }
 
 func TestUnknownCommand(t *testing.T) {
