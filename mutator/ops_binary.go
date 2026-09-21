@@ -30,7 +30,78 @@ func (b BinaryOp) Sites(ctx *Context, n ast.Node) []Site {
 		Apply:       func() { e.Op = to },
 		Undo:        func() { e.Op = from },
 		Check:       func() error { return ctx.CheckExpr(e) },
+		Schemata:    binarySchemata(ctx, e, to),
 	}}
+}
+
+// binarySchemata picks the runtime helper for a binary-operator swap.
+// Constant expressions are left alone (a call is not a constant), as are
+// operands whose type the helper could not infer and boolean results of a
+// defined type.
+//
+//   - == <-> !=: mut.Not(id, a == b)
+//   - < <= > >=: mut.Cmp(id, a, b, "<", "<=")
+//   - + - * / %: mut.Arith(id, a, b, "+", "-"), ArithInt when % is involved
+//   - && ||: mut.And(id, a, func() bool { return b }), likewise Or
+func binarySchemata(ctx *Context, e *ast.BinaryExpr, to token.Token) func(*Lowering) ast.Node {
+	if ctx.isConst(e) || opClass(e.Op) != opClass(to) {
+		return nil
+	}
+	switch opClass(e.Op) {
+	case classEquality:
+		if !ctx.isBool(e) {
+			return nil
+		}
+		return func(l *Lowering) ast.Node { return l.Call("Not", e) }
+	case classOrdered:
+		if !ctx.isBool(e) || !ctx.isTypedOperand(e.X) || !ctx.isTypedOperand(e.Y) {
+			return nil
+		}
+		return func(l *Lowering) ast.Node { return l.Call("Cmp", e.X, e.Y, opLit(e.Op), opLit(to)) }
+	case classArith:
+		if !ctx.isTypedOperand(e.X) || !ctx.isTypedOperand(e.Y) {
+			return nil
+		}
+		fn := "Arith"
+		if e.Op == token.REM || to == token.REM {
+			fn = "ArithInt"
+		}
+		return func(l *Lowering) ast.Node { return l.Call(fn, e.X, e.Y, opLit(e.Op), opLit(to)) }
+	case classLogical:
+		if !ctx.isBool(e) || !ctx.isBool(e.X) || !ctx.isBool(e.Y) || ctx.callsRecover(e.Y) {
+			return nil
+		}
+		fn := "And"
+		if e.Op == token.LOR {
+			fn = "Or"
+		}
+		return func(l *Lowering) ast.Node { return l.Call(fn, e.X, boolClosure(e.Y)) }
+	}
+	return nil
+}
+
+type opClassKind int
+
+const (
+	classNone opClassKind = iota
+	classEquality
+	classOrdered
+	classArith
+	classLogical
+)
+
+func opClass(t token.Token) opClassKind {
+	switch t {
+	case token.EQL, token.NEQ:
+		return classEquality
+	case token.LSS, token.LEQ, token.GTR, token.GEQ:
+		return classOrdered
+	case token.ADD, token.SUB, token.MUL, token.QUO, token.REM:
+		return classArith
+	case token.LAND, token.LOR:
+		return classLogical
+	}
+	return classNone
 }
 
 // Relational flips comparison operators: boundary for ordered comparisons,

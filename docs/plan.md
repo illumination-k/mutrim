@@ -17,12 +17,12 @@ decides _what to build in which order_ and what "done" means for each step.
 ## Repository layout
 
 ```
-cmd/mutrim/          CLI: `gen`, `overlay`, later `run` and `minimize` (thin; JSON on stdout)
+cmd/mutrim/          CLI: `gen`, `overlay`, `run`, later `minimize` (thin; JSON on stdout)
 mutator/             AST rewriting, operators (ops_*.go), type-check pre-filter, mutant IDs,
-                     mutants.json, overlay source
+                     mutants.json, overlay source, schemata lowering (schemata.go)
 mutator/testdata/    fixture packages + golden files for the mutator tests
-mutator/schemata/    schemata lowering + `mut` runtime package used by generated code (Phase 2)
-runner/              re-exec test binary per mutant, sharding, report.json, incremental (Phase 2)
+mut/                 runtime package imported by schemata sources; reads GOMUTANT_ID
+runner/              re-exec test binary per mutant, sharding, report.json, incremental
 criteria/            Criterion interface, BlockCoverage, Mutation (Phase 4)
 minimize/            matrix + greedy set cover (Phase 4)
 examples/            Bazel fixtures calling mutation_test on themselves (Phase 3)
@@ -81,39 +81,52 @@ and `mutrim overlay` lets `go test -overlay` run a single mutant.
 Done: golden tests cover every operator, the ID stability test passes, and a test runs
 `go test -overlay` with a known-killable mutant on a fixture and asserts the test fails.
 
-## Phase 2 — Schemata and runner
+## Phase 2 — Schemata and runner (done)
 
 Goal: one build per package; the test binary re-executed per mutant.
 
-1. **Schemata lowering** in `mutator/schemata`. Every viable mutant of a package is embedded
-   into rewritten sources that import the `mut` runtime package:
+1. **Schemata lowering** (`mutator.Lower`, driven by each operator's `Site.Schemata`
+   callback). Every viable mutant of a package is embedded into rewritten sources that import
+   the `mut` runtime package. Helpers take the operands eagerly wherever Go evaluates them
+   eagerly, so evaluation order and `recover()` semantics are untouched and the operand types
+   are inferred by generics instead of being spelled out:
 
-   | Original   | Lowered                                                     |
-   | ---------- | ----------------------------------------------------------- |
-   | `a < b`    | `mut.Cmp(site, a, b)` with a generated per-site op table    |
-   | `a && b`   | closure that keeps short-circuit evaluation, switches on id |
-   | `!c` / `c` | `mut.Not(site, c)`                                          |
-   | `a + b`    | `mut.Arith(site, a, b)` (generic on numeric constraint)     |
-   | `i++`      | `if mut.Active(id) { i-- } else { i++ }`                    |
-   | `return x` | `if mut.Active(id) { return <zero> }; return x`             |
+   | Original         | Lowered                                                     |
+   | ---------------- | ----------------------------------------------------------- |
+   | `a < b`          | `mut.Cmp(id, a, b, "<", "<=")` (generic over `Ordered`)     |
+   | `a == b`         | `mut.Not(id, a == b)` (`!=` is exactly the negation)        |
+   | `a + b`, `a % b` | `mut.Arith(id, a, b, "+", "-")`, `mut.ArithInt` for `%`     |
+   | `a && b`         | `mut.And(id, a, func() bool { return b })` (short-circuit)  |
+   | `if c`           | `if mut.Not(id, c)`                                         |
+   | `i++`            | `mut.Inc(id, &i)`; map elements use `if mut.Active(id) {…}` |
+   | `return x`       | `{ if mut.Active(id) { return <zero> }; return x }`         |
+
+   Sites the lowering declines stay as they are and their mutants are reported `NOT_VIABLE`
+   under schemata: constant expressions (a call is not a constant), boolean results or
+   operands of a defined type (the helpers return plain `bool`), untyped non-constant
+   operands, `&&`/`||` whose right operand calls `recover()`, and `m[k]++` in a `for` post
+   statement. `mutrim gen -schemata` flips `viable` to false for them so the runner never
+   selects an ID the binary does not contain.
 
    The `mut` runtime reads `GOMUTANT_ID` once at init. With the variable unset every helper
-   is the identity; an equivalence test runs the fixture suite against the schemata source and
-   the original and asserts identical results.
-2. **Runner** (`mutrim run --test-bin <path> --mutants mutants.json`). For each viable mutant
-   whose `id % TEST_TOTAL_SHARDS == TEST_SHARD_INDEX`: exec the binary with `GOMUTANT_ID=id`
-   and a timeout (default 3× baseline run), classify KILLED / LIVED / TIMEOUT. `-test.run`
-   narrowing uses per-test coverage when available (Phase 4 provides it properly; until then
-   the runner has a `--tests` allowlist flag and otherwise runs the whole binary).
-3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `--out`):
-   `{mutant_id, status, tests_run, duration_ms}` plus totals. TIMEOUT counts as KILLED in
-   totals.
-4. **Incremental re-runs.** `--previous report.json`: mutants whose ID is present with a
-   terminal status are skipped and copied forward; new IDs are executed. IDs are content
-   hashes, so an untouched function keeps its result.
+   is the identity; `TestSchemataIdentity` runs the fixture suite against the schemata source
+   and pins the generated file with a golden.
+2. **Runner** (`mutrim run -test-bin <path> -mutants mutants.json`). For each viable mutant
+   whose `id % TEST_TOTAL_SHARDS == TEST_SHARD_INDEX`: exec the binary with `GOMUTANT_ID=id`,
+   `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 10s: tests that
+   spawn the Go toolchain can miss the build cache under a mutant), classify
+   KILLED / LIVED / TIMEOUT. `-tests` is an allowlist for `-test.run`; without it the whole
+   binary runs (Phase 4 narrows by per-test coverage).
+3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
+   `{mutant_id, status, tests_run, killed_by, duration_ms}` plus totals and the baseline /
+   timeout used. TIMEOUT counts as KILLED in the score.
+4. **Incremental re-runs.** `-previous report.json`: mutants whose ID is present are copied
+   forward; new IDs are executed; `NOT_VIABLE` is always recomputed from `mutants.json`. IDs
+   are content hashes, so an untouched function keeps its result.
 
-Done when: on a fixture package, `mutrim gen` + build + `mutrim run` produces a report whose
-KILLED set matches the golden expectations, and the schemata identity test passes.
+Done: `runner/testdata/schemata.golden` is the report of the schemata fixture, produced by
+`gen -schemata` + `go test -c -overlay` + `run`, and every embedded mutant of a tested
+function is KILLED there; the CLI test runs the same pipeline through `mutrim`.
 
 ## Phase 3 — Bazel integration (first release)
 
@@ -152,15 +165,14 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 
 ## Risks and open questions
 
-- **Generic helpers vs. untyped constants.** `mut.Cmp(site, 1, x)` must not change constant
-  typing; the lowering keeps the original expression types by wrapping operands in
-  conversions when `go/types` reports an untyped constant.
+- **Generic helpers vs. untyped constants.** `mut.Cmp(id, 1, x, …)` infers `T` from the
+  typed operand and converts the constant exactly as the original expression did. Only an
+  untyped _non-constant_ operand (a bare shift) with no typed sibling is declined.
 - **`//go:generate` output detection** is heuristic (`Code generated ... DO NOT EDIT`
   header); document it rather than trying to be clever.
 - **Timeouts** need a per-package baseline run; the runner measures it once before mutating.
 
 ## Immediate next steps
 
-1. Phase 2 step 1: the `mut` runtime and schemata lowering for `BinaryOp`, with the identity
-   test.
-2. Phase 2 step 2: the runner over a plain `go test -c` binary.
+1. Phase 3: `MODULE.bazel`, `defs.bzl` with `mutation_test`, and an `examples/` fixture that
+   runs `mutrim gen -schemata` → `go_test` → `mutrim run` under `shard_count`.

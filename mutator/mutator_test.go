@@ -81,6 +81,21 @@ func TestGenerateGolden(t *testing.T) {
 	}
 }
 
+func TestLoadErrors(t *testing.T) {
+	if _, err := mutator.Load(".", "./testdata/does-not-exist"); err == nil {
+		t.Error("unknown package: expected an error")
+	}
+	if _, err := mutator.Load(".", "./testdata/broken"); err == nil {
+		t.Error("package with type errors: expected an error")
+	}
+}
+
+func TestSourceUnknownMutant(t *testing.T) {
+	if _, _, err := mutator.Source(load(t, "killable"), "0000000000000000"); err == nil {
+		t.Error("expected an error for an unknown mutant ID")
+	}
+}
+
 // Mutant IDs must not depend on source positions: inserting lines above a
 // site keeps its ID.
 func TestMutantIDStableAcrossLineShift(t *testing.T) {
