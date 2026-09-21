@@ -137,3 +137,27 @@ func TestSkipped(t *testing.T) {
 		t.Error("SkipMapPost")
 	}
 }
+
+// TestLessRedundant repeats part of TestComparisons, so the minimizer
+// reports it as subsumed.
+func TestLessRedundant(t *testing.T) {
+	if !Less(1, 2) || Less(2, 2) {
+		t.Error("Less")
+	}
+}
+
+// TestRegression_Sign repeats part of TestStatements but is kept by name.
+func TestRegression_Sign(t *testing.T) {
+	if Sign(1) != 1 || Sign(0) != -1 {
+		t.Error("Sign")
+	}
+}
+
+// TestTagged repeats part of TestArithmetic but is kept by its tag.
+//
+//mutrim:keep
+func TestTagged(t *testing.T) {
+	if Add(2, 3) != 5 {
+		t.Error("Add")
+	}
+}

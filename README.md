@@ -27,12 +27,30 @@ go test -c -overlay out/overlay.json -o pkg.test ./path/to/pkg
 
 # Re-execute it once per mutant and write report.json.
 go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -dir ./path/to/pkg -out report.json
+
+# Report redundant tests and functions whose mutants survive. Never deletes anything.
+go run ./cmd/mutrim minimize -mutants mutants.json -srcs ./path/to/pkg report.json
 ```
 
 The schemata sources import `github.com/illumination-k/mutrim/mut`, so the target module
 needs mutrim as a dependency. `run` honors `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` and
 `TEST_UNDECLARED_OUTPUTS_DIR`, and `-previous report.json` copies earlier results forward
 so only new mutants execute.
+
+`run` first runs every top-level test on its own with `GOMUTANT_TRACE` set, which makes the
+`mut` runtime record the mutant sites the test reaches. Each mutant then runs only against
+the tests reaching it, and `report.json` holds the per-test kill matrix: `tests` (name,
+duration, reached sites) and, per mutant, every test that killed it. A mutant no test reaches
+is `NO_COVERAGE` and never executed.
+
+`minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
+of test time; `-w-site` / `-w-kill`) and runs a greedy set cover. `selected` lists the tests
+kept in order with their gain, `redundant` the rest with the selected tests that subsume each
+of them, and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
+matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their doc comment
+(`-srcs` names the `_test.go` files or directories to scan) are always kept. `-matrix` exports
+the composed test × requirement matrix as JSON for an exact solver. Several reports (shards,
+packages) can be passed together.
 
 ## Usage (Bazel)
 
@@ -56,10 +74,12 @@ mutation_test(
 
 `bazel test //pkg:mutant_calc` builds the package once with every mutant embedded, runs the
 tests against it (`mutant_calc_schemata_test`, which must pass like the original tests), then
-re-executes that binary once per mutant and writes `report.json` to the test's undeclared
-outputs (`bazel-testlogs/pkg/mutant_calc/test.outputs/`, one directory per shard). Mutants
-are generated hermetically: the rule type-checks the library against the export data
-rules_go compiled for its dependencies, so no `go` command runs inside the sandbox.
+re-executes that binary once per mutant against the tests reaching it and writes
+`report.json` and `minimize.json` to the test's undeclared outputs
+(`bazel-testlogs/pkg/mutant_calc/test.outputs/`, one directory per shard; pass the shards'
+reports together to `mutrim minimize` for a whole-package verdict). Mutants are generated
+hermetically: the rule type-checks the library against the export data rules_go compiled for
+its dependencies, so no `go` command runs inside the sandbox.
 
 Not supported yet: cgo packages and `//go:embed` directives in the library under test (the
 schemata sources live in a generated directory). `examples/` dogfoods the macro; run

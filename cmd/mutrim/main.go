@@ -13,12 +13,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 
+	"github.com/illumination-k/mutrim/criteria"
+	"github.com/illumination-k/mutrim/minimize"
 	"github.com/illumination-k/mutrim/mutator"
 	"github.com/illumination-k/mutrim/runner"
 )
@@ -30,7 +33,10 @@ commands:
             sources with every mutant embedded; -importpath type-checks
             the given files from export data (Bazel mode)
   overlay   write one mutant and print a go build -overlay file for it
-  run       execute a schemata test binary once per mutant and report`
+  run       execute a schemata test binary once per mutant, against the
+            tests that reach it, and report the per-test kill matrix
+  minimize  from report.json, list the tests a greedy set cover finds
+            redundant and the functions whose mutants survive`
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -50,6 +56,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runOverlay(args[1:], stdout, stderr)
 	case "run":
 		return runRun(ctx, args[1:], stdout, stderr)
+	case "minimize":
+		return runMinimize(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
@@ -232,6 +240,93 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		}
 	}
 	return writeJSON(*out, stdout, report)
+}
+
+// minimizeOutput is the JSON of `mutrim minimize`.
+type minimizeOutput struct {
+	minimize.Result
+	WeakSpots []runner.Spot `json:"weak_spots"`
+}
+
+// runMinimize is `mutrim minimize`: it composes the site-coverage and
+// kill matrices of the given reports (shards of one package, or several
+// packages), runs the weighted greedy set cover, and reports. Nothing is
+// deleted.
+func runMinimize(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("minimize", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	out := fs.String("o", "", "write the result here instead of stdout")
+	mutantsPath := fs.String("mutants", "", "mutants.json of the reports; enables the weak_spots listing")
+	keep := fs.String("keep", `^TestRegression_`, "regexp of test names that are always kept")
+	tag := fs.String("tag", "mutrim:keep", "tests whose doc comment contains this are always kept (needs -srcs)")
+	srcs := fs.String("srcs", "", "comma-separated _test.go files or directories to scan for -tag")
+	wSite := fs.Float64("w-site", 1, "weight of a reached mutant site")
+	wKill := fs.Float64("w-kill", 5, "weight of a killed mutant")
+	matrixPath := fs.String("matrix", "", "also write the composed test × requirement matrix here, for an exact solver")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() == 0 {
+		return errors.New("minimize: at least one report.json is required")
+	}
+	keepRE, err := regexp.Compile(*keep)
+	if err != nil {
+		return fmt.Errorf("minimize: -keep: %w", err)
+	}
+
+	var reports []*runner.Report
+	for _, path := range fs.Args() {
+		r, err := runner.ReadReport(path)
+		if err != nil {
+			return err
+		}
+		reports = append(reports, r)
+	}
+	durations := map[string]int64{}
+	sites, kills := criteria.SiteCoverage{}, criteria.Mutation{}
+	for _, r := range reports {
+		for _, t := range r.Tests {
+			durations[t.Name] = t.DurationMS
+			sites[t.Name] = t.Sites // identical across the shards of one package
+		}
+		for _, res := range r.Results {
+			for _, t := range res.KilledBy {
+				kills[t] = append(kills[t], res.MutantID)
+			}
+		}
+	}
+	matrix := criteria.Compose(durations,
+		criteria.Weighted{Criterion: sites, Weight: *wSite},
+		criteria.Weighted{Criterion: kills, Weight: *wKill},
+	)
+	if *matrixPath != "" {
+		if err := writeJSON(*matrixPath, nil, matrix); err != nil {
+			return err
+		}
+	}
+
+	tagged := map[string]bool{}
+	if *srcs != "" {
+		names, err := minimize.Tagged(strings.Split(*srcs, ","), *tag)
+		if err != nil {
+			return err
+		}
+		for _, n := range names {
+			tagged[n] = true
+		}
+	}
+	result := minimizeOutput{
+		Result:    minimize.Greedy(matrix, minimize.Options{Protected: func(name string) bool { return tagged[name] || keepRE.MatchString(name) }}),
+		WeakSpots: []runner.Spot{},
+	}
+	if *mutantsPath != "" {
+		var mutants []mutator.Mutant
+		if err := readJSON(*mutantsPath, &mutants); err != nil {
+			return err
+		}
+		result.WeakSpots = runner.WeakSpots(mutants, reports...)
+	}
+	return writeJSON(*out, stdout, result)
 }
 
 // shardEnv reads Bazel's sharding protocol and acknowledges it by touching

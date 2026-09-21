@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:defs.bzl", "mutation_test")
+
+go_library(
+    name = "minimize",
+    srcs = [
+        "keep.go",
+        "minimize.go",
+    ],
+    importpath = "github.com/illumination-k/mutrim/minimize",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//criteria",
+        "@com_github_bits_and_blooms_bitset//:bitset",
+    ],
+)
+
+go_test(
+    name = "minimize_test",
+    srcs = ["minimize_test.go"],
+    deps = [
+        ":minimize",
+        "//criteria",
+    ],
+)
+
+mutation_test(
+    name = "mutant_minimize",
+    srcs = ["minimize_test.go"],
+    embed = [":minimize"],
+    deps = ["//criteria"],
+)

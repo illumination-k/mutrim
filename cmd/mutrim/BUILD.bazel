@@ -6,6 +6,8 @@ go_library(
     importpath = "github.com/illumination-k/mutrim/cmd/mutrim",
     visibility = ["//visibility:private"],
     deps = [
+        "//criteria",
+        "//minimize",
         "//mutator",
         "//runner",
         "@org_golang_x_tools//go/packages",

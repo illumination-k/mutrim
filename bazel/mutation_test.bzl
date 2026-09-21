@@ -134,8 +134,12 @@ def mutation_test(name, srcs, embed, deps = [], shard_count = None, env = {}, **
       `<name>.mutants.json` listing them,
     - `<name>_schemata_test`: a go_test of those sources with no mutant
       selected, which must pass like the original tests do,
-    - `<name>`: a test that re-executes that binary once per mutant and
-      writes `report.json` to its undeclared outputs.
+    - `<name>`: a test that re-executes that binary once per mutant against
+      the tests reaching it, writes `report.json` (the per-test kill matrix)
+      to its undeclared outputs, and `minimize.json` next to it: the tests a
+      greedy set cover over that matrix finds redundant, and the functions
+      whose mutants survive. Tests named `TestRegression_*` or tagged
+      `//mutrim:keep` in their doc comment are never called redundant.
 
     Args:
         name: name of the runner test.
@@ -167,7 +171,7 @@ def mutation_test(name, srcs, embed, deps = [], shard_count = None, env = {}, **
         **kwargs
     )
     mutrim = str(Label("//cmd/mutrim"))
-    inputs = [mutrim, ":" + schemata + "_test", ":" + mutants]
+    inputs = [mutrim, ":" + schemata + "_test", ":" + mutants] + srcs
     sh_test(
         name = name,
         srcs = [Label("//bazel:run.sh")],

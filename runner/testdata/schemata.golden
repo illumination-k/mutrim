@@ -1,5 +1,5 @@
-schemata.go:19 Less "return -> zero values" KILLED by TestComparisons
-schemata.go:19 Less "< -> <=" KILLED by TestComparisons
+schemata.go:19 Less "return -> zero values" KILLED by TestComparisons,TestLessRedundant
+schemata.go:19 Less "< -> <=" KILLED by TestComparisons,TestLessRedundant
 schemata.go:20 LessEq "return -> zero values" KILLED by TestComparisons
 schemata.go:20 LessEq "<= -> <" KILLED by TestComparisons
 schemata.go:21 Greater "return -> zero values" KILLED by TestComparisons
@@ -16,8 +16,8 @@ schemata.go:26 IsTarget "return -> zero values" KILLED by TestComparisons
 schemata.go:26 IsTarget "== -> !=" KILLED by TestComparisons
 schemata.go:27 SameInterface "return -> zero values" KILLED by TestComparisons
 schemata.go:27 SameInterface "== -> !=" KILLED by TestComparisons
-schemata.go:31 Add "return -> zero values" KILLED by TestArithmetic
-schemata.go:31 Add "+ -> -" KILLED by TestArithmetic
+schemata.go:31 Add "return -> zero values" KILLED by TestArithmetic,TestTagged
+schemata.go:31 Add "+ -> -" KILLED by TestArithmetic,TestTagged
 schemata.go:32 Sub "return -> zero values" KILLED by TestArithmetic
 schemata.go:32 Sub "- -> +" KILLED by TestArithmetic
 schemata.go:33 Scale "return -> zero values" KILLED by TestArithmetic
@@ -43,13 +43,13 @@ schemata.go:45 Between "&& -> ||" KILLED by TestLogical
 schemata.go:45 Between "< -> <=" KILLED by TestLogical
 schemata.go:45 Between "< -> <=" KILLED by TestLogical
 schemata.go:45 Between "== -> !=" KILLED by TestLogical
-schemata.go:49 Sign "cond -> !(cond)" KILLED by TestStatements
-schemata.go:49 Sign "> -> >=" KILLED by TestStatements
-schemata.go:50 Sign "return -> zero values" KILLED by TestStatements
-schemata.go:52 Sign "return -> zero values" KILLED by TestStatements
+schemata.go:49 Sign "cond -> !(cond)" KILLED by TestStatements,TestRegression_Sign
+schemata.go:49 Sign "> -> >=" KILLED by TestStatements,TestRegression_Sign
+schemata.go:50 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
+schemata.go:52 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
 schemata.go:57 CountTo "cond -> !(cond)" KILLED by TestStatements
 schemata.go:57 CountTo "< -> <=" KILLED by TestStatements
-schemata.go:57 CountTo "++ -> --" TIMEOUT
+schemata.go:57 CountTo "++ -> --" TIMEOUT by TestStatements
 schemata.go:58 CountTo "++ -> --" KILLED by TestStatements
 schemata.go:60 CountTo "return -> zero values" KILLED by TestStatements
 schemata.go:63 Tally "++ -> --" KILLED by TestStatements
@@ -71,5 +71,5 @@ schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "cond -> !(cond)" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "< -> <=" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "++ -> --" NOT_VIABLE
-schemata.go:104 Untested "return -> zero values" LIVED
-schemata.go:104 Untested "+ -> -" LIVED
+schemata.go:104 Untested "return -> zero values" NO_COVERAGE
+schemata.go:104 Untested "+ -> -" NO_COVERAGE

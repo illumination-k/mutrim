@@ -23,8 +23,8 @@ mutator/             AST rewriting, operators (ops_*.go), type-check pre-filter,
 mutator/testdata/    fixture packages + golden files for the mutator tests
 mut/                 runtime package imported by schemata sources; reads GOMUTANT_ID
 runner/              re-exec test binary per mutant, sharding, report.json, incremental
-criteria/            Criterion interface, BlockCoverage, Mutation (Phase 4)
-minimize/            matrix + greedy set cover (Phase 4)
+criteria/            Criterion interface, SiteCoverage, Mutation, matrix composition
+minimize/            greedy set cover, subsumption, protection rules
 examples/            Bazel fixtures calling mutation_test on themselves (Phase 3)
 defs.bzl, MODULE.bazel
 ```
@@ -116,7 +116,7 @@ Goal: one build per package; the test binary re-executed per mutant.
    `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 10s: tests that
    spawn the Go toolchain can miss the build cache under a mutant), classify
    KILLED / LIVED / TIMEOUT. `-tests` is an allowlist for `-test.run`; without it the whole
-   binary runs (Phase 4 narrows by per-test coverage).
+   binary runs (Phase 4 narrows by per-test coverage and drops failfast).
 3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
    `{mutant_id, status, tests_run, killed_by, duration_ms}` plus totals and the baseline /
    timeout used. TIMEOUT counts as KILLED in the score.
@@ -163,16 +163,44 @@ that shell out to `go` are excluded from the Bazel build and stay on `go test ./
 Done: `bazel test //...` passes and `report.json` is visible as an undeclared test output.
 Tag `v0.1.0`.
 
-## Phase 4 — Criteria and minimizer (second release)
+## Phase 4 — Criteria and minimizer (second release, done)
 
-- `criteria.Criterion` interface; `BlockCoverage` builds test → bitset from per-test cover
-  profiles (`-test.run '^Name$' -test.coverprofile`); `Mutation` builds it from `report.json`.
-  The runner then uses `BlockCoverage` for `-test.run` narrowing.
-- `minimize`: compose the matrix, weighted greedy set cover with
-  gain = (w_cov × new blocks + w_mut × new kills) / test time, default weights 1 : 5;
-  subsumption detection; protection rules (`TestRegression_*`, comment tag); JSON matrix
-  export for an external MIP solver.
-- `mutrim minimize` CLI printing redundant tests and functions no test kills. Never deletes.
+Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
+
+1. **Per-test coverage without `-cover`.** The plan was block coverage from
+   `-test.coverprofile`, but `go test -c -cover -overlay` instruments the on-disk sources and
+   ignores the overlay (the mutants are not even selectable in such a binary), and under Bazel
+   instrumentation only exists in `bazel coverage`. Instead the `mut` runtime got a trace mode:
+   with `GOMUTANT_TRACE=<file>` every site the process reaches appends its ID once. The
+   runner lists the binary's tests (`-test.list`), runs each on its own that way, and records
+   per test its duration and reached sites (`report.json` → `tests`). This is _site coverage_:
+   exact for narrowing, identical under Bazel and `go test`, blind only to code with no mutant
+   site at all. Block coverage can still be added as another `Criterion` later.
+2. **Narrowed runner.** Each mutant runs only against the tests that reach its site, without
+   failfast, so `killed_by` is the complete kill matrix (a timed-out mutant is attributed to the
+   tests that started and never finished). A mutant no test reaches is `NO_COVERAGE`, never
+   executed, and counts as surviving in the score. `-previous` copies forward KILLED / LIVED /
+   TIMEOUT only; NOT_VIABLE and NO_COVERAGE are recomputed, both being free.
+3. **`criteria`.** `Criterion` (`Name`, `Rows`: test → labels) with `SiteCoverage` and
+   `Mutation`; `Compose` unions weighted criteria into a `Matrix` of `Requirement{Label,
+   Weight}` columns and `Test{Name, DurationMS, Covers bitset}` rows, sorted so the output is
+   deterministic. The JSON form (indices per test) is the export for an exact solver.
+4. **`minimize`.** `Greedy`: protected tests first, then repeatedly the test with the best
+   gain = Σ weight of newly satisfied requirements / max(duration ms, 1), ties broken by name,
+   until no test gains. Every other test is redundant and comes with the selected tests that
+   each subsume it. Protection: a name regexp (default `^TestRegression_`) and `Tagged`, which
+   parses `_test.go` files for a `//mutrim:keep` doc-comment line (a directive-shaped line,
+   so it is read from the raw comments, not `CommentGroup.Text`).
+5. **CLI and Bazel.** `mutrim minimize -mutants mutants.json -srcs dir [-keep re] [-tag t]
+   [-w-site 1] [-w-kill 5] [-matrix out.json] report.json...` prints `selected`, `redundant`
+   and `weak_spots` (functions with LIVED or NO_COVERAGE mutants, from `runner.WeakSpots`).
+   `bazel/run.sh` runs it after `mutrim run`, with the macro's `srcs` as data, so every
+   `mutation_test` leaves `report.json` and `minimize.json` in its undeclared outputs.
+
+Done: the schemata fixture has a redundant test, a `TestRegression_*` test and a tagged test;
+the runner golden shows complete `killed_by` lists and `NO_COVERAGE` for the untested
+function, and the CLI test checks the minimize verdict end to end. `criteria` and `minimize`
+run `mutation_test` on themselves under Bazel, next to `examples/`.
 
 ## Testing approach
 
@@ -193,6 +221,8 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 
 ## Immediate next steps
 
-1. Tag `v0.1.0` once the Bazel workflow is green on `main`.
-2. Phase 4: `criteria.BlockCoverage` from per-test cover profiles, then narrow the runner's
-   `-test.run` to the tests covering each mutant.
+1. Tag `v0.2.0` once the Bazel workflow is green on `main`.
+2. A block-coverage `Criterion` for code without mutant sites, once a build-agnostic source of
+   per-test cover profiles exists (rules_go instrumented builds outside `bazel coverage`).
+3. Merge shard reports inside the Bazel test tree (a `mutrim_minimize` rule over the shards'
+   outputs) instead of asking the user to pass them together.

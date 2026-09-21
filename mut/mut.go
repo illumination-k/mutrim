@@ -6,16 +6,61 @@
 // With GOMUTANT_ID unset every helper is the identity, so schemata sources
 // behave exactly like the original package. The package has no
 // dependencies beyond the standard library and never allocates on the hot
-// path; the only cost of an inactive site is one string comparison.
+// path; the only cost of an inactive site is one string comparison and a
+// nil check.
+//
+// With GOMUTANT_TRACE naming a file, every site the process reaches
+// appends its ID to that file once. The runner uses it to learn which
+// tests execute which mutant, so each mutant is run only against those.
 package mut
 
-import "os"
+import (
+	"os"
+	"sync"
+)
 
 // active is the mutant selected for this process, read once at init.
 var active = os.Getenv("GOMUTANT_ID")
 
+// trace receives the reached sites, or is nil when GOMUTANT_TRACE is unset.
+var trace = newTracer(os.Getenv("GOMUTANT_TRACE"))
+
 // Active reports whether the mutant id is the one selected by GOMUTANT_ID.
-func Active(id string) bool { return active == id }
+// Every helper calls it, so it is where reached sites are recorded.
+func Active(id string) bool {
+	if trace != nil {
+		trace.record(id)
+	}
+	return active == id
+}
+
+// tracer appends each reached site ID to a file, once per process.
+type tracer struct {
+	mu   sync.Mutex
+	seen map[string]bool
+	file *os.File
+}
+
+func newTracer(path string) *tracer {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // path chosen by the runner
+	if err != nil {
+		panic("mut: GOMUTANT_TRACE: " + err.Error())
+	}
+	return &tracer{seen: map[string]bool{}, file: f}
+}
+
+func (t *tracer) record(id string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.seen[id] {
+		return
+	}
+	t.seen[id] = true
+	_, _ = t.file.WriteString(id + "\n") // best effort: a lost line only widens the runner's narrowing
+}
 
 // Number is the type set on which the arithmetic helpers and Inc/Dec are
 // defined: every Go numeric type, including defined types over them.

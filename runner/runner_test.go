@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -76,21 +77,37 @@ func TestRunReportGolden(t *testing.T) {
 	if report.BaselineMS < 0 || report.TimeoutMS != 1000 {
 		t.Errorf("unexpected timing metadata: %+v", report)
 	}
+	// Every top-level test ran on its own and reached some sites.
+	reached := map[string]map[string]bool{}
+	for _, tt := range report.Tests {
+		reached[tt.Name] = map[string]bool{}
+		for _, id := range tt.Sites {
+			reached[tt.Name][id] = true
+		}
+		if len(tt.Sites) == 0 || tt.DurationMS < 0 {
+			t.Errorf("test row %+v", tt)
+		}
+	}
+	if len(reached) != 8 {
+		t.Errorf("tests = %d rows, want 8", len(reached))
+	}
 	for _, r := range report.Results {
 		switch r.Status {
-		case runner.Lived:
-			// The fixture has five top-level tests; a surviving mutant sees them all.
-			if r.TestsRun != 5 || len(r.KilledBy) != 0 {
-				t.Errorf("%s LIVED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
-			}
 		case runner.Killed:
-			// failfast stops at the first failing test, so exactly one is recorded.
-			if r.TestsRun == 0 || r.TestsRun > 5 || len(r.KilledBy) != 1 {
+			// Only the tests reaching the site run, and every one that fails is recorded.
+			if r.TestsRun == 0 || len(r.KilledBy) == 0 || len(r.KilledBy) > r.TestsRun {
 				t.Errorf("%s KILLED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
 			}
-		case runner.NotViable:
-			if r.TestsRun != 0 || r.DurationMS != 0 {
-				t.Errorf("%s NOT_VIABLE was executed: %+v", r.MutantID, r)
+			for _, name := range r.KilledBy {
+				if !reached[name][r.MutantID] {
+					t.Errorf("%s killed by %s, which does not reach it", r.MutantID, name)
+				}
+			}
+		case runner.Lived:
+			t.Errorf("%s LIVED: every reached mutant of the fixture is killed", r.MutantID)
+		case runner.NoCoverage, runner.NotViable:
+			if r.TestsRun != 0 || r.DurationMS != 0 || len(r.KilledBy) != 0 {
+				t.Errorf("%s %s was executed: %+v", r.MutantID, r.Status, r)
 			}
 		}
 	}
@@ -127,19 +144,28 @@ func TestRunReportGolden(t *testing.T) {
 	}
 
 	tot := report.Totals
-	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NotViable != tot.Mutants {
+	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable != tot.Mutants {
 		t.Errorf("totals do not add up: %+v", tot)
 	}
-	if tot.Timeout != 1 || tot.Lived != 2 || tot.NotViable != 5 {
+	if tot.Timeout != 1 || tot.Lived != 0 || tot.NoCoverage != 2 || tot.NotViable != 5 {
 		t.Errorf("unexpected totals: %+v", tot)
 	}
-	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived); tot.Score != want {
+	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
 		t.Errorf("score = %v, want %v", tot.Score, want)
+	}
+
+	spots := runner.WeakSpots(mutants, report)
+	if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 2 || spots[0].Killed != 0 || spots[0].Line != 104 {
+		t.Errorf("weak spots = %+v, want Untested with two unreached mutants", spots)
+	}
+	if none := runner.WeakSpots(nil, report); none == nil || len(none) != 0 {
+		t.Errorf("weak spots of nothing = %#v, want an empty list (JSON [])", none)
 	}
 }
 
 // Sharding partitions the mutants; incremental runs copy previous results
-// forward instead of executing them; the tests allowlist narrows the run.
+// forward instead of executing them; the tests allowlist narrows the run
+// and leaves the other mutants unreached.
 func TestRunShardsPreviousAndTests(t *testing.T) {
 	bin, mutants := buildFixture(t)
 	first, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second})
@@ -209,8 +235,8 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 			}
 		}
 	}
-	// With only TestStatements running, the comparison mutants live.
-	if second.Totals.Lived <= first.Totals.Lived {
+	// With only TestStatements running, nothing reaches the comparison mutants.
+	if second.Totals.NoCoverage <= first.Totals.NoCoverage || len(second.Tests) != 1 {
 		t.Errorf("tests allowlist did not narrow the run: %+v vs %+v", second.Totals, first.Totals)
 	}
 }
@@ -238,11 +264,11 @@ func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
 		t.Errorf("timeout_ms = %d, want %d (baseline %dms)", report.TimeoutMS, want, report.BaselineMS)
 	}
 	for _, r := range report.Results {
-		if r.Status == runner.Lived && r.TestsRun != 1 {
+		if r.Status == runner.Killed && r.TestsRun != 1 {
 			t.Errorf("%s: -test.run narrowing ran %d tests, want 1", r.MutantID, r.TestsRun)
 		}
-		if r.MutantID == killed && r.Status != runner.Killed {
-			t.Errorf("%s: want KILLED by TestComparisons, got %s", killed, r.Status)
+		if r.MutantID == killed && (r.Status != runner.Killed || !slices.Equal(r.KilledBy, []string{"TestComparisons"})) {
+			t.Errorf("%s: want KILLED by TestComparisons, got %s by %v", killed, r.Status, r.KilledBy)
 		}
 	}
 }
