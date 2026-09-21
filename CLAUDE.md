@@ -70,11 +70,11 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                          | Depends on                              |
-| ---------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output. Bazel-independent  | `go/ast`, `go/types`, `go/packages`     |
-| `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset     | `x/tools/cover`, `bits-and-blooms/bitset` |
-| `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                  | `bitset` only                           |
+| Package    | Responsibility                                                                                         | Depends on                                |
+| ---------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output. Bazel-independent | `go/ast`, `go/types`, `go/packages`       |
+| `criteria` | `Criterion` interface with `BlockCoverage` / `Mutation` implementations. Output: test name → bitset    | `x/tools/cover`, `bits-and-blooms/bitset` |
+| `minimize` | Matrix composition, weighted greedy set cover, subsumption detection, protection rules                 | `bitset` only                             |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `mutation_test` macro) and a thin
 CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev loop and
