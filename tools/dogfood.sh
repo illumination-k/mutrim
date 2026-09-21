@@ -9,13 +9,14 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-out="${MUTRIM_OUT:-.mutrim}"
+# Absolute: the runner resolves the test binary from the package directory.
+mkdir -p "${MUTRIM_OUT:-.mutrim}"
+out="$(cd "${MUTRIM_OUT:-.mutrim}" && pwd)"
 pkgs=("$@")
 if [ ${#pkgs[@]} -eq 0 ]; then
 	pkgs=(criteria minimize mutator runner)
 fi
 
-mkdir -p "$out"
 go build -o "$out/mutrim" ./cmd/mutrim
 for pkg in "${pkgs[@]}"; do
 	dir="$out/$pkg"
