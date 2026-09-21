@@ -17,34 +17,31 @@ decides _what to build in which order_ and what "done" means for each step.
 ## Repository layout
 
 ```
-cmd/mutrim/          CLI: `gen`, `run`, `overlay`, later `minimize` (thin; JSON on stdout)
-mutator/             AST rewriting, type-check pre-filter, mutant IDs, mutants.json
-mutator/operator/    one file per operator family
-mutator/schemata/    schemata lowering + `mut` runtime package used by generated code
-runner/              re-exec test binary per mutant, sharding, report.json, incremental
+cmd/mutrim/          CLI: `gen`, `overlay`, later `run` and `minimize` (thin; JSON on stdout)
+mutator/             AST rewriting, operators (ops_*.go), type-check pre-filter, mutant IDs,
+                     mutants.json, overlay source
+mutator/testdata/    fixture packages + golden files for the mutator tests
+mutator/schemata/    schemata lowering + `mut` runtime package used by generated code (Phase 2)
+runner/              re-exec test binary per mutant, sharding, report.json, incremental (Phase 2)
 criteria/            Criterion interface, BlockCoverage, Mutation (Phase 4)
 minimize/            matrix + greedy set cover (Phase 4)
-internal/testdata/   fixture packages for mutator/runner unit tests
 examples/            Bazel fixtures calling mutation_test on themselves (Phase 3)
 defs.bzl, MODULE.bazel
 ```
 
-The placeholder `mutrim.go` / `mutrim_test.go` at the root are removed in Phase 0.
+Packages are created when their phase starts, not as empty placeholders.
 
-## Phase 0 — Foundation
+## Phase 0 — Foundation (done)
 
 Goal: real module layout, dependencies pinned, fixtures in place.
 
-- Add `golang.org/x/tools` (`go/packages`, `cover`) and `bits-and-blooms/bitset` to `go.mod`.
-- Create the packages above with a doc.go each; delete root placeholders.
-- Add `internal/testdata/` fixtures: one package per operator family with hand-written
-  golden expectations, plus one "excluded files" package (`_test.go`, `.pb.go`, `mock_*.go`,
-  cgo, `//go:generate` output) to drive the exclusion filter.
-- Wire `cmd/mutrim` with cobra-free `flag` subcommands; JSON to stdout, logs to stderr.
+- Add `golang.org/x/tools` (`go/packages`) to `go.mod`; delete root placeholders.
+- `mutator/testdata/` fixtures: one package per operator family with golden expectations,
+  plus an "excluded files" package (`_test.go`, `.pb.go`, `mock_*.go`, generated header) and a
+  `killable` package with a test for the end-to-end overlay check.
+- `cmd/mutrim` uses plain `flag` subcommands; JSON to stdout, logs to stderr.
 
-Done when: `mise run ci` passes with the new layout and an empty CLI that prints usage.
-
-## Phase 1 — Mutator (Bazel-independent)
+## Phase 1 — Mutator (Bazel-independent, done)
 
 Goal: `mutrim gen ./pkg` writes a `mutants.json` listing only type-checked-viable mutants,
 and `mutrim overlay` lets `go test -overlay` run a single mutant.
@@ -55,31 +52,33 @@ and `mutrim overlay` lets `go test -overlay` run a single mutant.
 2. **Operator interface.**
    ```go
    type Operator interface {
-       Name() string                       // stable, used in mutant IDs
-       Match(ast.Node) []Candidate         // sites this operator can mutate
+       Name() string                          // stable, used in mutant IDs
+       Sites(ctx *Context, n ast.Node) []Site // rewrites this operator can perform on n
    }
-   type Candidate interface {
-       Apply() (undo func())               // in-place AST rewrite
-       Describe() string                   // "< -> <=" for mutants.json
+   type Site struct {
+       Node        ast.Node
+       Description string   // "< -> <=" for mutants.json
+       Apply, Undo func()   // in-place AST rewrite and its exact inverse
    }
    ```
-   Families in order of value / simplicity: relational, condition negation, logical,
-   arithmetic, increment, return replacement. Each family has its own file and golden test.
+   Families: relational, arithmetic, logical (one table-driven `BinaryOp`), condition
+   negation, increment, return replacement. Only function bodies are walked.
 3. **Mutant ID.** `sha256(pkgPath, enclosing func name, AST path from func root, operator
    name, description)` truncated to 16 hex chars. Position-independent by construction; a test
-   asserts that inserting a blank line above a site does not change its ID.
-4. **Type-check pre-filter.** For each candidate: `Apply`, run `types.Config.Check` over the
-   package's syntax with the original importer, record `viable=false` on error, `undo`.
-   Measured per package in a benchmark; target is tens of ms.
+   asserts that inserting lines above a site does not change its ID.
+4. **Type-check pre-filter.** For each site: `Apply`, run `types.Config.Check` over the
+   package's syntax with an importer backed by the already-loaded direct dependencies, record
+   `viable=false` on error, `Undo`. "Imported and not used" after a return replacement counts
+   as not viable, since the mutant would not build.
 5. **`mutants.json`.** One entry per candidate:
    `{id, pkg, file, line, col, func, operator, description, viable}`. Non-viable entries are
    kept in the file (so the runner can report NOT_VIABLE counts) but never executed.
-6. **Overlay mode.** `mutrim overlay --id <id>` prints a `go build -overlay` JSON pointing at
+6. **Overlay mode.** `mutrim overlay -id <id>` prints a `go build -overlay` JSON pointing at
    a temp file with that single mutant applied (`go/format`). This is the fast dev loop and
    the non-Bazel user path.
 
-Done when: golden tests cover every operator, the ID stability test passes, and running
-`go test -overlay` with a known-killable mutant on a fixture fails the fixture's test.
+Done: golden tests cover every operator, the ID stability test passes, and a test runs
+`go test -overlay` with a known-killable mutant on a fixture and asserts the test fails.
 
 ## Phase 2 — Schemata and runner
 
@@ -153,8 +152,8 @@ undeclared test output. Tag `v0.1.0`.
   header); document it rather than trying to be clever.
 - **Timeouts** need a per-package baseline run; the runner measures it once before mutating.
 
-## Immediate next steps (first PR after this plan)
+## Immediate next steps
 
-1. Phase 0 in full.
-2. Phase 1 steps 1–3 with the relational operator only, including the ID stability test.
-3. Type-check pre-filter and `mutants.json` output.
+1. Phase 2 step 1: the `mut` runtime and schemata lowering for `BinaryOp`, with the identity
+   test.
+2. Phase 2 step 2: the runner over a plain `go test -c` binary.

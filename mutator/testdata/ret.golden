@@ -1,0 +1,9 @@
+ret.go:9:29 Basic return "return -> zero values" viable=true
+ret.go:10:29 Str return "return -> zero values" viable=true
+ret.go:11:29 Bool return "return -> zero values" viable=true
+ret.go:12:29 Ptr return "return -> zero values" viable=true
+ret.go:13:29 Slice return "return -> zero values" viable=true
+ret.go:16:34 Err return "return -> zero values" viable=false
+ret.go:17:34 Named return "return -> zero values" viable=true
+ret.go:18:34 Multi return "return -> zero values" viable=true
+ret.go:19:34 Fn return "return -> zero values" viable=true

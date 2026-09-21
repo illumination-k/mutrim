@@ -1,0 +1,13 @@
+control.go:5:14 Sum negation "cond -> !(cond)" viable=true
+control.go:5:16 Sum relational "< -> <=" viable=true
+control.go:5:27 Sum incdec "++ -> --" viable=true
+control.go:6:6 Sum negation "cond -> !(cond)" viable=true
+control.go:6:12 Sum relational "> -> >=" viable=true
+control.go:10:6 Sum negation "cond -> !(cond)" viable=true
+control.go:10:12 Sum relational "> -> >=" viable=true
+control.go:11:3 Sum incdec "-- -> ++" viable=true
+control.go:16:2 Sum return "return -> zero values" viable=true
+control.go:22:2 (*Counter).Inc incdec "++ -> --" viable=true
+control.go:26:2 Closure return "return -> zero values" viable=true
+control.go:27:6 Closure negation "cond -> !(cond)" viable=true
+control.go:30:3 Closure return "return -> zero values" viable=true
