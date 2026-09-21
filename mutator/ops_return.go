@@ -11,7 +11,8 @@ import (
 // types without a spellable zero value (structs, arrays, type parameters)
 // are skipped. The rewrite is well-typed by construction; if it leaves an
 // import or variable unused, the build fails and the runner counts the
-// mutant as not viable.
+// mutant as not viable. (Schemata keep the original return, so nothing
+// becomes unused there.)
 type Return struct{}
 
 func (Return) Name() string { return "return" }
@@ -46,6 +47,17 @@ func (Return) Sites(ctx *Context, n ast.Node) []Site {
 		Description: "return -> zero values",
 		Apply:       func() { ret.Results = zeros },
 		Undo:        func() { ret.Results = orig },
+		// `{ if mut.Active(id) { return <zeros> }; return x }`: a block is
+		// valid wherever a return is and stays a terminating statement.
+		Schemata: func(l *Lowering) ast.Node {
+			return &ast.BlockStmt{List: []ast.Stmt{
+				&ast.IfStmt{
+					Cond: l.Active(),
+					Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: zeros}}},
+				},
+				ret,
+			}}
+		},
 	}}
 }
 

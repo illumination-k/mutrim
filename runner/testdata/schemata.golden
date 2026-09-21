@@ -1,0 +1,75 @@
+schemata.go:19 Less "return -> zero values" KILLED by TestComparisons
+schemata.go:19 Less "< -> <=" KILLED by TestComparisons
+schemata.go:20 LessEq "return -> zero values" KILLED by TestComparisons
+schemata.go:20 LessEq "<= -> <" KILLED by TestComparisons
+schemata.go:21 Greater "return -> zero values" KILLED by TestComparisons
+schemata.go:21 Greater "> -> >=" KILLED by TestComparisons
+schemata.go:22 GreaterEq "return -> zero values" KILLED by TestComparisons
+schemata.go:22 GreaterEq ">= -> >" KILLED by TestComparisons
+schemata.go:23 ConstLeft "return -> zero values" KILLED by TestComparisons
+schemata.go:23 ConstLeft "< -> <=" KILLED by TestComparisons
+schemata.go:24 IsNil "return -> zero values" KILLED by TestComparisons
+schemata.go:24 IsNil "== -> !=" KILLED by TestComparisons
+schemata.go:25 NotNil "return -> zero values" KILLED by TestComparisons
+schemata.go:25 NotNil "!= -> ==" KILLED by TestComparisons
+schemata.go:26 IsTarget "return -> zero values" KILLED by TestComparisons
+schemata.go:26 IsTarget "== -> !=" KILLED by TestComparisons
+schemata.go:27 SameInterface "return -> zero values" KILLED by TestComparisons
+schemata.go:27 SameInterface "== -> !=" KILLED by TestComparisons
+schemata.go:31 Add "return -> zero values" KILLED by TestArithmetic
+schemata.go:31 Add "+ -> -" KILLED by TestArithmetic
+schemata.go:32 Sub "return -> zero values" KILLED by TestArithmetic
+schemata.go:32 Sub "- -> +" KILLED by TestArithmetic
+schemata.go:33 Scale "return -> zero values" KILLED by TestArithmetic
+schemata.go:33 Scale "* -> /" KILLED by TestArithmetic
+schemata.go:34 Div "return -> zero values" KILLED by TestArithmetic
+schemata.go:34 Div "/ -> *" KILLED by TestArithmetic
+schemata.go:35 Mod "return -> zero values" KILLED by TestArithmetic
+schemata.go:35 Mod "% -> *" KILLED by TestArithmetic
+schemata.go:36 MulComplex "return -> zero values" KILLED by TestArithmetic
+schemata.go:36 MulComplex "* -> /" KILLED by TestArithmetic
+schemata.go:37 Half "return -> zero values" KILLED by TestArithmetic
+schemata.go:37 Half "* -> /" KILLED by TestArithmetic
+schemata.go:38 Sum "+ -> -" KILLED by TestArithmetic
+schemata.go:39 Shift "return -> zero values" KILLED by TestArithmetic
+schemata.go:39 Shift "+ -> -" KILLED by TestArithmetic
+schemata.go:43 And "return -> zero values" KILLED by TestLogical
+schemata.go:43 And "&& -> ||" KILLED by TestLogical
+schemata.go:44 Or "return -> zero values" KILLED by TestLogical
+schemata.go:44 Or "|| -> &&" KILLED by TestLogical
+schemata.go:45 Between "return -> zero values" KILLED by TestLogical
+schemata.go:45 Between "|| -> &&" KILLED by TestLogical
+schemata.go:45 Between "&& -> ||" KILLED by TestLogical
+schemata.go:45 Between "< -> <=" KILLED by TestLogical
+schemata.go:45 Between "< -> <=" KILLED by TestLogical
+schemata.go:45 Between "== -> !=" KILLED by TestLogical
+schemata.go:49 Sign "cond -> !(cond)" KILLED by TestStatements
+schemata.go:49 Sign "> -> >=" KILLED by TestStatements
+schemata.go:50 Sign "return -> zero values" KILLED by TestStatements
+schemata.go:52 Sign "return -> zero values" KILLED by TestStatements
+schemata.go:57 CountTo "cond -> !(cond)" KILLED by TestStatements
+schemata.go:57 CountTo "< -> <=" KILLED by TestStatements
+schemata.go:57 CountTo "++ -> --" TIMEOUT
+schemata.go:58 CountTo "++ -> --" KILLED by TestStatements
+schemata.go:60 CountTo "return -> zero values" KILLED by TestStatements
+schemata.go:63 Tally "++ -> --" KILLED by TestStatements
+schemata.go:65 Decrement "-- -> ++" KILLED by TestStatements
+schemata.go:69 (*Counter).Inc "++ -> --" KILLED by TestStatements
+schemata.go:73 Classify "< -> <=" KILLED by TestStatements
+schemata.go:74 Classify "return -> zero values" KILLED by TestStatements
+schemata.go:76 Classify "return -> zero values" KILLED by TestStatements
+schemata.go:79 Pair "return -> zero values" KILLED by TestStatements
+schemata.go:84 SkipConst "* -> /" NOT_VIABLE
+schemata.go:85 SkipConst "return -> zero values" KILLED by TestSkipped
+schemata.go:88 SkipNamedBool "return -> zero values" KILLED by TestSkipped
+schemata.go:88 SkipNamedBool "< -> <=" NOT_VIABLE
+schemata.go:90 SkipNamedBoolOperands "return -> zero values" KILLED by TestSkipped
+schemata.go:90 SkipNamedBoolOperands "&& -> ||" NOT_VIABLE
+schemata.go:93 SkipRecover "&& -> ||" NOT_VIABLE
+schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
+schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
+schemata.go:99 SkipMapPost "cond -> !(cond)" KILLED by TestSkipped
+schemata.go:99 SkipMapPost "< -> <=" KILLED by TestSkipped
+schemata.go:99 SkipMapPost "++ -> --" NOT_VIABLE
+schemata.go:104 Untested "return -> zero values" LIVED
+schemata.go:104 Untested "+ -> -" LIVED
