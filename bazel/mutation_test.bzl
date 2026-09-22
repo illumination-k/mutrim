@@ -56,6 +56,12 @@ def _mutrim_schemata_impl(ctx):
     args.add_all("-stdlib", go.stdlib.libs, expand_directories = False)
     args.add_joined("-tags", go.mode.tags, join_with = ",")
     args.add_joined("-operators", ctx.attr.operators, join_with = ",", omit_if_empty = True)
+    if ctx.attr.match:
+        args.add("-match", ctx.attr.match)
+    args.add_joined("-files", ctx.attr.files, join_with = ",", omit_if_empty = True)
+    args.add_joined("-exclude-files", ctx.attr.exclude_files, join_with = ",", omit_if_empty = True)
+    if ctx.attr.exclude_re:
+        args.add("-exclude-re", ctx.attr.exclude_re)
     args.add("-schemata", overlay.dirname)
     args.add("-o", ctx.outputs.mutants)
     args.add_all(go_srcs)
@@ -110,6 +116,22 @@ mutrim_schemata = go_rule(
             doc = """Operators to apply, as `mutrim gen -operators` takes them: names,
 "default", and "-name" to remove one. Empty applies every operator.""",
         ),
+        "match": attr.string(
+            doc = """Keeps only the mutants of functions whose name matches this regexp,
+in the `(*T).Name` form of `mutrim gen -match`.""",
+        ),
+        "files": attr.string_list(
+            doc = """Keeps only the mutants in files matching one of these globs
+(`mutrim gen -files`). Empty keeps every file.""",
+        ),
+        "exclude_files": attr.string_list(
+            doc = """Drops the mutants in files matching any of these regexps
+(`mutrim gen -exclude-files`).""",
+        ),
+        "exclude_re": attr.string(
+            doc = """Drops the mutants whose `func operator: description` matches this
+regexp (`mutrim gen -exclude-re`).""",
+        ),
         "_mutrim": attr.label(
             default = Label("//cmd/mutrim"),
             executable = True,
@@ -129,7 +151,19 @@ Provides the same GoInfo as a go_library with the library's import path, so
 it can be embedded into a go_test in place of the original library.""",
 )
 
-def mutation_test(name, srcs, embed, deps = [], operators = [], shard_count = None, env = {}, **kwargs):
+def mutation_test(
+        name,
+        srcs,
+        embed,
+        deps = [],
+        operators = [],
+        match = "",
+        files = [],
+        exclude_files = [],
+        exclude_re = "",
+        shard_count = None,
+        env = {},
+        **kwargs):
     """Runs the tests in srcs against every mutant of the embedded library.
 
     Mirror the go_test of the package: `srcs` are its test files, `embed` the
@@ -146,6 +180,10 @@ def mutation_test(name, srcs, embed, deps = [], operators = [], shard_count = No
       whose mutants survive. Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
 
+    `match`, `files`, `exclude_files` and `exclude_re` narrow the sites that
+    are mutated; a mutant they reject is still listed in `mutants.json` and
+    reported `IGNORED`, so the counts stay comparable across runs.
+
     Args:
         name: name of the runner test.
         srcs: the test sources.
@@ -153,6 +191,14 @@ def mutation_test(name, srcs, embed, deps = [], operators = [], shard_count = No
         deps: dependencies of the test sources.
         operators: operators to apply, as `mutrim gen -operators` takes them
             (e.g. `["default", "-constant"]`); empty applies every operator.
+        match: keeps only the mutants of functions whose name matches this
+            regexp, in the `(*T).Name` form (`mutrim gen -match`).
+        files: keeps only the mutants in files matching one of these globs
+            (`mutrim gen -files`); empty keeps every file.
+        exclude_files: drops the mutants in files matching any of these
+            regexps (`mutrim gen -exclude-files`).
+        exclude_re: drops the mutants whose `func operator: description`
+            matches this regexp (`mutrim gen -exclude-re`).
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -167,6 +213,10 @@ def mutation_test(name, srcs, embed, deps = [], operators = [], shard_count = No
         library = embed[0],
         mutants = mutants,
         operators = operators,
+        match = match,
+        files = files,
+        exclude_files = exclude_files,
+        exclude_re = exclude_re,
         testonly = True,
         visibility = ["//visibility:private"],
     )

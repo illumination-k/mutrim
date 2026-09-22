@@ -19,6 +19,8 @@ mutation_test(
     name = "mutant_stats",
     srcs = ["stats_test.go"],
     embed = [":stats"],
+    exclude_re = "return -> zero values",
+    match = "^(Mean|Spread)$",
     operators = [
         "default",
         "-constant",

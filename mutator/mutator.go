@@ -29,6 +29,10 @@ type Mutant struct {
 	Operator    string `json:"operator"`
 	Description string `json:"description"`
 	Viable      bool   `json:"viable"`
+	// Ignored names the Filter rule that excluded the mutant from the
+	// run, empty when it was kept. An ignored mutant is neither embedded
+	// nor executed, and counts towards no score.
+	Ignored string `json:"ignored,omitempty"`
 
 	site site
 }
@@ -55,6 +59,9 @@ type Options struct {
 	// TypeCheck runs each site's local go/types check after the rewrite and
 	// marks failing mutants as not viable.
 	TypeCheck bool
+	// Filter selects the sites to mutate; the zero Filter keeps all of
+	// them. Rejected sites are still reported, marked Ignored.
+	Filter Filter
 }
 
 // Generate enumerates the mutants of pkg.
@@ -88,7 +95,8 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			Viable:      true,
 			site:        s,
 		}
-		if opts.TypeCheck && s.Check != nil {
+		m.Ignored = opts.Filter.ignore(&m)
+		if m.Ignored == "" && opts.TypeCheck && s.Check != nil {
 			s.Apply()
 			m.Viable = s.Check() == nil
 			s.Undo()
