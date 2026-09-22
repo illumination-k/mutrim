@@ -52,6 +52,9 @@ type site struct {
 	file     *ast.File
 	funcName string
 	astPath  string
+	// inExcludedCall marks a site inside a call the Filter's ExcludeCalls
+	// rule covers; only the walk knows the enclosing call.
+	inExcludedCall bool
 }
 
 func (s site) position() token.Pos {
@@ -95,7 +98,7 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			continue
 		}
 		dis[f] = parseDisables(pkg.Fset, f)
-		sites = append(sites, collectSites(f, ctx, ops)...)
+		sites = append(sites, collectSites(f, ctx, ops, opts.Filter)...)
 	}
 
 	mutants := make([]Mutant, 0, len(sites))
@@ -143,7 +146,7 @@ func mutantID(pkgPath string, s site) string {
 
 // collectSites walks every top-level function body in f and asks each
 // operator for the sites it can mutate.
-func collectSites(f *ast.File, ctx *Context, ops []Operator) []site {
+func collectSites(f *ast.File, ctx *Context, ops []Operator, filter Filter) []site {
 	var out []site
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -153,6 +156,7 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator) []site {
 		w := &walker{
 			ctx:      ctx,
 			ops:      ops,
+			filter:   filter,
 			file:     f,
 			funcName: funcName(fn),
 			sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
@@ -167,9 +171,13 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator) []site {
 type walker struct {
 	ctx      *Context
 	ops      []Operator
+	filter   Filter
 	file     *ast.File
 	funcName string
 
+	// excluded holds the enclosing nodes the exclude-calls rule covers,
+	// so that every site under a matching call is ignored with it.
+	excluded []ast.Node
 	nodes    []ast.Node
 	path     []string
 	counters []int
@@ -192,10 +200,11 @@ func (w *walker) visit(n ast.Node) bool {
 		for _, s := range op.Sites(&ctx, n) {
 			s.Operator = op.Name()
 			w.out = append(w.out, site{
-				Site:     s,
-				file:     w.file,
-				funcName: w.funcName,
-				astPath:  astPath,
+				Site:           s,
+				file:           w.file,
+				funcName:       w.funcName,
+				astPath:        astPath,
+				inExcludedCall: len(w.excluded) > 0,
 			})
 		}
 	}
@@ -209,6 +218,9 @@ func (w *walker) push(n ast.Node) {
 	w.counters = append(w.counters, 0)
 	w.path = append(w.path, fmt.Sprintf("%T[%d]", n, idx))
 	w.nodes = append(w.nodes, n)
+	if w.filter.excludesNode(w.ctx.Info, n) {
+		w.excluded = append(w.excluded, n)
+	}
 	if lit, ok := n.(*ast.FuncLit); ok {
 		sig, _ := w.ctx.Info.TypeOf(lit).(*types.Signature)
 		w.sigs = append(w.sigs, sig)
@@ -220,6 +232,9 @@ func (w *walker) pop() {
 	w.nodes = w.nodes[:len(w.nodes)-1]
 	w.path = w.path[:len(w.path)-1]
 	w.counters = w.counters[:len(w.counters)-1]
+	if len(w.excluded) > 0 && w.excluded[len(w.excluded)-1] == n {
+		w.excluded = w.excluded[:len(w.excluded)-1]
+	}
 	if _, ok := n.(*ast.FuncLit); ok {
 		w.sigs = w.sigs[:len(w.sigs)-1]
 	}

@@ -124,10 +124,15 @@ run on the result.
   equivalent); `gen -operators` (the `operators` attribute of `mutation_test`) selects a
   subset or adds an opt-in one, e.g. `default,-constant` or `default,call`.
 - Site selection is separate from operator selection: `gen -match` (function names),
-  `-files` / `-exclude-files` (globs and regexps over the file path) and `-exclude-re`
-  (over `func operator: description`), each with a `mutation_test` attribute. A filtered
+  `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
+  (over `func operator: description`) and `-exclude-calls` (globs over the callee, which
+  cover the call and its arguments), each with a `mutation_test` attribute. A filtered
   site still yields a mutant, marked `Ignored` in `mutants.json` and reported `IGNORED`,
   so the counts of a filtered run stay comparable with an unfiltered one.
+- `-exclude-calls` defaults to the logging calls (`log.*`, `(*log.Logger).*`, `slog.*`,
+  `(*slog.Logger).*`), which no test asserts on, like PIT's `avoidCallsTo`; the callee is
+  resolved through `types.Info.Uses` and matched with and without the package path.
+  `default` keeps the built-in list in a longer one, `none` turns the rule off.
 - Inline directives are those flags' in-source counterpart, for a single site or function:
   `//mutrim:disable [op,...] [reason]` (until `//mutrim:enable`), `//mutrim:disable-next-line`
   and `//mutrim:disable-func` in a doc comment. They are read from the raw comment lines,

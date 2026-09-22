@@ -303,6 +303,39 @@ func TestGenFilters(t *testing.T) {
 	}
 }
 
+// Calls to a logging function are excluded by default, without the flag
+// being named, and -exclude-calls none turns the rule off.
+func TestGenExcludeCalls(t *testing.T) {
+	const logging = "../../mutator/testdata/logging"
+	gen := func(t *testing.T, args ...string) []mutator.Mutant {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if err := run(t.Context(), append(append([]string{"gen"}, args...), logging), &stdout, &stderr); err != nil {
+			t.Fatalf("gen %v: %v\n%s", args, err, stderr.String())
+		}
+		var mutants []mutator.Mutant
+		if err := json.Unmarshal(stdout.Bytes(), &mutants); err != nil {
+			t.Fatal(err)
+		}
+		return mutants
+	}
+
+	ignored := 0
+	for _, m := range gen(t) {
+		if m.Ignored == "exclude-calls" {
+			ignored++
+		}
+	}
+	if ignored == 0 {
+		t.Error("the default list ignored no mutant of the logging fixture")
+	}
+	for _, m := range gen(t, "-exclude-calls", "none") {
+		if m.Ignored != "" {
+			t.Errorf("%s %q: ignored=%q with -exclude-calls none", m.Func, m.Description, m.Ignored)
+		}
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }
@@ -347,6 +380,7 @@ func TestCommandErrors(t *testing.T) {
 		"gen bad files glob":         {"gen", "-files", "[-]", fixture},
 		"gen bad exclude files":      {"gen", "-exclude-files", "(", fixture},
 		"gen bad exclude re":         {"gen", "-exclude-re", "(", fixture},
+		"gen bad exclude calls":      {"gen", "-exclude-calls", "[-]", fixture},
 		"gen unwritable output":      {"gen", "-o", notADir, fixture},
 		"gen unwritable schemata":    {"gen", "-schemata", notADir, fixture},
 		"overlay bad flag":           {"overlay", "-bogus"},
