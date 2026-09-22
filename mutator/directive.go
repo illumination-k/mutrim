@@ -22,26 +22,37 @@ import (
 // directive namespace is shared with the other packages.
 const directivePrefix = "//mutrim:"
 
+// Rules a directive is reported as in Mutant.Ignored; they name the
+// directive that suppressed the site, like the Filter rules name the flag.
+const (
+	ruleDisable         = "disable"
+	ruleDisableNextLine = "disable-next-line"
+	ruleDisableFunc     = "disable-func"
+)
+
 // disable is one directive's effect: the inclusive line range it covers,
-// the operators it suppresses (nil means every operator) and its reason.
+// the operators it suppresses (nil means every operator), the rule it is
+// reported as (the directive's verb) and its reason.
 type disable struct {
 	from, to int
 	ops      map[string]bool
+	rule     string
 	reason   string
 }
 
 // disables holds every disable directive of one file.
 type disables []disable
 
-// find reports whether a site of operator op on line is suppressed, and by
-// which reason.
-func (d disables) find(line int, op string) (reason string, ignored bool) {
+// find returns the directive suppressing a site of operator op on line, as
+// the rule it is reported as and its reason. An empty rule means no
+// directive covers the site.
+func (d disables) find(line int, op string) (rule, reason string) {
 	for _, r := range d {
 		if line >= r.from && line <= r.to && (r.ops == nil || r.ops[op]) {
-			return r.reason, true
+			return r.rule, r.reason
 		}
 	}
-	return "", false
+	return "", ""
 }
 
 // parseDisables reads the disable directives of f.
@@ -62,8 +73,8 @@ func parseDisables(fset *token.FileSet, f *ast.File) disables {
 			continue
 		}
 		for _, c := range fn.Doc.List {
-			if verb, rest, ok := directive(c.Text); ok && verb == "disable-func" {
-				d := parseDisable(rest, known)
+			if verb, rest, ok := directive(c.Text); ok && verb == ruleDisableFunc {
+				d := parseDisable(verb, rest, known)
 				d.from, d.to = line(fn.Pos()), line(fn.End())
 				out = append(out, d)
 			}
@@ -78,13 +89,13 @@ func parseDisables(fset *token.FileSet, f *ast.File) disables {
 				continue
 			}
 			switch verb {
-			case "disable":
-				d := parseDisable(rest, known)
+			case ruleDisable:
+				d := parseDisable(verb, rest, known)
 				d.from, d.to = line(c.Pos()), lastLine
 				open = append(open, len(out))
 				out = append(out, d)
-			case "disable-next-line":
-				d := parseDisable(rest, known)
+			case ruleDisableNextLine:
+				d := parseDisable(verb, rest, known)
 				d.from = line(c.End()) + 1
 				d.to = d.from
 				out = append(out, d)
@@ -119,13 +130,13 @@ func cutWord(s string) (word, rest string) {
 }
 
 // parseDisable reads the optional operator list and the reason.
-func parseDisable(rest string, known map[string]bool) disable {
+func parseDisable(verb, rest string, known map[string]bool) disable {
 	first, tail := cutWord(rest)
 	ops, ok := operatorSet(first, known)
 	if !ok {
-		return disable{reason: rest}
+		return disable{rule: verb, reason: rest}
 	}
-	return disable{ops: ops, reason: tail}
+	return disable{rule: verb, ops: ops, reason: tail}
 }
 
 // operatorSet parses a comma-separated operator list. An empty word and

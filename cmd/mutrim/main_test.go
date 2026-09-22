@@ -249,6 +249,59 @@ func TestGenOperators(t *testing.T) {
 	}
 }
 
+// The gen filters reject sites without dropping them: a filtered mutant
+// stays in mutants.json, marked with the rule that ignored it.
+func TestGenFilters(t *testing.T) {
+	gen := func(t *testing.T, args ...string) []mutator.Mutant {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if err := run(t.Context(), append(append([]string{"gen"}, args...), fixture), &stdout, &stderr); err != nil {
+			t.Fatalf("gen %v: %v\n%s", args, err, stderr.String())
+		}
+		var mutants []mutator.Mutant
+		if err := json.Unmarshal(stdout.Bytes(), &mutants); err != nil {
+			t.Fatal(err)
+		}
+		if len(mutants) == 0 {
+			t.Fatal("no mutants")
+		}
+		return mutants
+	}
+
+	all := gen(t)
+	cases := map[string]struct {
+		args   []string
+		reason string
+		kept   func(m mutator.Mutant) bool
+	}{
+		"match":         {[]string{"-match", "^Sign$"}, "match", func(m mutator.Mutant) bool { return m.Func == "Sign" }},
+		"files":         {[]string{"-files", "killable.go"}, "files", func(mutator.Mutant) bool { return true }},
+		"files none":    {[]string{"-files", "other/*.go"}, "files", func(mutator.Mutant) bool { return false }},
+		"exclude files": {[]string{"-exclude-files", "killable"}, "exclude-files", func(mutator.Mutant) bool { return false }},
+		"exclude re":    {[]string{"-exclude-re", "relational"}, "exclude-re", func(m mutator.Mutant) bool { return m.Operator != "relational" }},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			mutants := gen(t, tc.args...)
+			if len(mutants) != len(all) {
+				t.Fatalf("filtering changed the mutant count: %d -> %d", len(all), len(mutants))
+			}
+			for i, m := range mutants {
+				want := ""
+				if !tc.kept(m) {
+					want = tc.reason
+				}
+				if m.Ignored != want {
+					t.Errorf("%s %q: ignored=%q, want %q", m.Func, m.Description, m.Ignored, want)
+				}
+				if m.ID != all[i].ID {
+					t.Errorf("%d: id %s -> %s", i, all[i].ID, m.ID)
+				}
+			}
+		})
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }
@@ -285,6 +338,10 @@ func TestCommandErrors(t *testing.T) {
 		"gen bad flag":               {"gen", "-bogus"},
 		"gen importpath no files":    {"gen", "-importpath", "example.com/x"},
 		"gen importpath bad file":    {"gen", "-importpath", "example.com/x", missing},
+		"gen bad match":              {"gen", "-match", "(", fixture},
+		"gen bad files glob":         {"gen", "-files", "[-]", fixture},
+		"gen bad exclude files":      {"gen", "-exclude-files", "(", fixture},
+		"gen bad exclude re":         {"gen", "-exclude-re", "(", fixture},
 		"gen unwritable output":      {"gen", "-o", notADir, fixture},
 		"gen unwritable schemata":    {"gen", "-schemata", notADir, fixture},
 		"overlay bad flag":           {"overlay", "-bogus"},

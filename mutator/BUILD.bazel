@@ -4,6 +4,7 @@ go_library(
     name = "mutator",
     srcs = [
         "directive.go",
+        "filter.go",
         "load.go",
         "loadfiles.go",
         "mutator.go",

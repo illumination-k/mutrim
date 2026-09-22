@@ -36,8 +36,8 @@ func render(t *testing.T, pkg *packages.Package, ms []mutator.Mutant) string {
 	var b strings.Builder
 	for _, m := range ms {
 		ignored := ""
-		if m.Ignored {
-			ignored = fmt.Sprintf(" ignored=%q", m.Reason)
+		if m.Ignored != "" {
+			ignored = fmt.Sprintf(" ignored=%s(%q)", m.Ignored, m.Reason)
 		}
 		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v%s | %s\n",
 			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable, ignored,

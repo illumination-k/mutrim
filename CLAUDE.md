@@ -98,6 +98,17 @@ run on the result.
   operators with a Go counterpart; non-void call replacement is not implemented. All of them
   are on by default; `gen -operators` (the `operators` attribute of `mutation_test`) selects
   a subset, e.g. `default,-constant`.
+- Site selection is separate from operator selection: `gen -match` (function names),
+  `-files` / `-exclude-files` (globs and regexps over the file path) and `-exclude-re`
+  (over `func operator: description`), each with a `mutation_test` attribute. A filtered
+  site still yields a mutant, marked `Ignored` in `mutants.json` and reported `IGNORED`,
+  so the counts of a filtered run stay comparable with an unfiltered one.
+- Inline directives are those flags' in-source counterpart, for a single site or function:
+  `//mutrim:disable [op,...] [reason]` (until `//mutrim:enable`), `//mutrim:disable-next-line`
+  and `//mutrim:disable-func` in a doc comment. They are read from the raw comment lines,
+  like `//mutrim:keep`, and an unknown verb is left alone since the namespace is shared. A
+  site they cover is ignored exactly as a filtered one, with `ignored` naming the directive
+  and `reason` keeping its text (Stryker semantics); a directive is read before the filters.
 - **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
   (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
   locally with `types.CheckExpr` in their original scope, so the cost is microseconds per
@@ -115,12 +126,6 @@ run on the result.
   mutant cannot kill it, reported `NO_COVERAGE`) and build-agnostic; its blind spot is code
   with no mutant site at all.
 - Exclude: `_test.go`, `.pb.go`, `mock_*.go`, `//go:generate` outputs, cgo.
-- Inline directives are the local switch next to `gen -operators`: `//mutrim:disable
-  [op,...] [reason]` (until `//mutrim:enable`), `-next-line`, and `-func` in a function's
-  doc comment. They are read from the raw comment lines, like `//mutrim:keep`, and an
-  unknown verb is left alone since the namespace is shared. A suppressed site keeps its
-  entry in `mutants.json` (`ignored`, `reason`), is not embedded as schemata and is
-  reported `IGNORED`: never built, never executed, never scored (Stryker semantics).
 
 ### Bazel integration: mutant schemata
 

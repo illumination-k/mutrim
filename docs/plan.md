@@ -74,8 +74,8 @@ and `mutrim overlay` lets `go test -overlay` run a single mutant.
 5. **`mutants.json`.** One entry per candidate:
    `{id, pkg, file, line, col, func, operator, description, viable, ignored?, reason?}`.
    Non-viable entries are kept in the file (so the runner can report NOT_VIABLE counts) but
-   never executed; so are the entries an inline `//mutrim:disable` directive suppressed,
-   which the runner reports IGNORED and no score counts.
+   never executed; so are the entries a `gen` filter or an inline `//mutrim:disable`
+   directive suppressed, which the runner reports IGNORED and no score counts.
 6. **Overlay mode.** `mutrim overlay -id <id>` prints a `go build -overlay` JSON pointing at
    a temp file with that single mutant applied (`go/format`). This is the fast dev loop and
    the non-Bazel user path.

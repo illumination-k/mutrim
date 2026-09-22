@@ -1,10 +1,10 @@
 disable.go:6:5 Block negation "cond -> !(cond)" viable=true | if !(a < 0) {
 disable.go:6:5 Block condition "cond -> true" viable=true | if true {
 disable.go:6:5 Block condition "cond -> false" viable=true | if false {
-disable.go:6:7 Block relational "< -> <=" viable=true ignored="the caller already range-checks" | if a <= 0 {
-disable.go:6:9 Block constant "0 -> 1" viable=true ignored="the caller already range-checks" | if a < 1 {
+disable.go:6:7 Block relational "< -> <=" viable=true ignored=disable("the caller already range-checks") | if a <= 0 {
+disable.go:6:9 Block constant "0 -> 1" viable=true ignored=disable("the caller already range-checks") | if a < 1 {
 disable.go:7:3 Block return "return -> zero values" viable=true | return 0
-disable.go:7:10 Block constant "1 -> 2" viable=true ignored="the caller already range-checks" | return 2
+disable.go:7:10 Block constant "1 -> 2" viable=true ignored=disable("the caller already range-checks") | return 2
 disable.go:10:5 Block negation "cond -> !(cond)" viable=true | if !(b < 0) {
 disable.go:10:5 Block condition "cond -> true" viable=true | if true {
 disable.go:10:5 Block condition "cond -> false" viable=true | if false {
@@ -16,21 +16,21 @@ disable.go:13:2 Block return "return -> zero values" viable=true | return 0
 disable.go:13:11 Block arithmetic "+ -> -" viable=true | return a - b
 disable.go:19:2 NextLine return "return -> zero values" viable=true | return false
 disable.go:19:16 NextLine logical "&& -> ||" viable=true | return a <= b || a != 0
-disable.go:19:11 NextLine relational "<= -> <" viable=true ignored="" | return a < b && a != 0
-disable.go:19:21 NextLine relational "!= -> ==" viable=true ignored="" | return a <= b && a == 0
+disable.go:19:11 NextLine relational "<= -> <" viable=true ignored=disable-next-line("") | return a < b && a != 0
+disable.go:19:21 NextLine relational "!= -> ==" viable=true ignored=disable-next-line("") | return a <= b && a == 0
 disable.go:19:24 NextLine constant "0 -> 1" viable=true | return a <= b && a != 1
-disable.go:24:5 Whole negation "cond -> !(cond)" viable=true ignored="equivalent under every input" | if !(a > b) {
-disable.go:24:5 Whole condition "cond -> true" viable=true ignored="equivalent under every input" | if true {
-disable.go:24:5 Whole condition "cond -> false" viable=true ignored="equivalent under every input" | if false {
-disable.go:24:7 Whole relational "> -> >=" viable=true ignored="equivalent under every input" | if a >= b {
-disable.go:25:3 Whole return "return -> zero values" viable=true ignored="equivalent under every input" | return 0
-disable.go:25:12 Whole arithmetic "- -> +" viable=true ignored="equivalent under every input" | return a + b
-disable.go:27:2 Whole return "return -> zero values" viable=true ignored="equivalent under every input" | return 0
-disable.go:27:11 Whole arithmetic "- -> +" viable=true ignored="equivalent under every input" | return b + a
-disable.go:33:2 Reason return "return -> zero values" viable=true ignored="hand-checked" | return 0
-disable.go:33:11 Reason arithmetic "* -> /" viable=true ignored="hand-checked" | return a / 2
-disable.go:33:13 Reason constant "2 -> 3" viable=true ignored="hand-checked" | return a * 3
+disable.go:24:5 Whole negation "cond -> !(cond)" viable=true ignored=disable-func("equivalent under every input") | if !(a > b) {
+disable.go:24:5 Whole condition "cond -> true" viable=true ignored=disable-func("equivalent under every input") | if true {
+disable.go:24:5 Whole condition "cond -> false" viable=true ignored=disable-func("equivalent under every input") | if false {
+disable.go:24:7 Whole relational "> -> >=" viable=true ignored=disable-func("equivalent under every input") | if a >= b {
+disable.go:25:3 Whole return "return -> zero values" viable=true ignored=disable-func("equivalent under every input") | return 0
+disable.go:25:12 Whole arithmetic "- -> +" viable=true ignored=disable-func("equivalent under every input") | return a + b
+disable.go:27:2 Whole return "return -> zero values" viable=true ignored=disable-func("equivalent under every input") | return 0
+disable.go:27:11 Whole arithmetic "- -> +" viable=true ignored=disable-func("equivalent under every input") | return b + a
+disable.go:33:2 Reason return "return -> zero values" viable=true ignored=disable-next-line("hand-checked") | return 0
+disable.go:33:11 Reason arithmetic "* -> /" viable=true ignored=disable-next-line("hand-checked") | return a / 2
+disable.go:33:13 Reason constant "2 -> 3" viable=true ignored=disable-next-line("hand-checked") | return a * 3
 disable.go:40:2 Unknown return "return -> zero values" viable=true | return false
 disable.go:40:11 Unknown relational "== -> !=" viable=true | return a != b
-disable.go:46:2 Tail return "return -> zero values" viable=true ignored="" | return false
-disable.go:46:11 Tail relational ">= -> >" viable=true ignored="" | return a > b
+disable.go:46:2 Tail return "return -> zero values" viable=true ignored=disable("") | return false
+disable.go:46:11 Tail relational ">= -> >" viable=true ignored=disable("") | return a > b

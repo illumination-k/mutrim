@@ -12,6 +12,10 @@ go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 # Select operators: names, "default", and "-name" to remove one.
 go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
 
+# Narrow the sites: by function name, by file, or by the mutant itself.
+go run ./cmd/mutrim gen -match '^\(\*Tree\)\.' -exclude-files '_gen\.go$' \
+  -exclude-re 'constant: 0 -> 1' ./path/to/pkg
+
 # Apply one mutant through go build -overlay and run the package's tests.
 go run ./cmd/mutrim overlay -id <mutant id> -o overlay.json ./path/to/pkg
 go test -overlay overlay.json ./path/to/pkg
@@ -19,11 +23,22 @@ go test -overlay overlay.json ./path/to/pkg
 
 A failing `go test` means the mutant was killed.
 
+`-match <re>` keeps only the functions whose name matches, in the `(*T).Name` form of the
+`func` field; `-files <glob,...>` keeps only the files matching one of the globs and
+`-exclude-files <re,...>` drops the files matching one of the regexps (both are tried
+against the path as reported, its path relative to the working directory, and its base
+name); `-exclude-re <re>` drops the mutants whose `func operator: description` matches, so
+a rewrite can be excluded wherever it occurs. A filtered mutant is still listed, with
+`"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
+building or executing it — the counts of a filtered run stay comparable with an unfiltered
+one, and `IGNORED` mutants count towards no score.
+
 ## Inline directives
 
-`gen -operators` is the global switch; comments are the local one. A suppressed site still
-appears in `mutants.json` (`"ignored": true` with the directive's `reason`) and is reported
-`IGNORED`: it is never built, never executed and never scored, so the count stays visible.
+The `gen` flags above are the run-wide switches; comments are the local one. A site a
+directive suppresses is reported exactly like a filtered one: still listed in
+`mutants.json`, with `"ignored"` naming the directive and `"reason"` keeping its text, and
+`run` reports it `IGNORED` without building or executing it.
 
 ```go
 //mutrim:disable [op,...] [reason]            // until //mutrim:enable
@@ -43,7 +58,8 @@ func Retry(attempts int) error {
 
 The operator list is optional and defaults to every operator, which `all` spells explicitly.
 A first word that does not name operators starts the reason instead, so a reason never needs
-quoting. A `//mutrim:disable` that nothing closes runs to the end of the file.
+quoting. A `//mutrim:disable` that nothing closes runs to the end of the file. A directive
+wins over the `gen` filters, which are only consulted for a site no directive covers.
 
 ## Usage (schemata: one build, all mutants)
 
@@ -100,6 +116,8 @@ mutation_test(
     srcs = ["calc_test.go"],
     embed = [":calc"],
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
+    match = "^Compute",                    # optional; the gen filters, per attribute
+    exclude_files = ["_gen\\.go$"],
     shard_count = 4,
 )
 ```
