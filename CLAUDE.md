@@ -93,36 +93,41 @@ run on the result.
 
 - Operators (`mutator.AllOperators`, one `ops_*.go` per family):
 
-  | Operator     | Mutation                                                                                |
-  | ------------ | --------------------------------------------------------------------------------------- |
-  | `relational` | boundary swap `<` ↔ `<=`, `>` ↔ `>=`, and `==` ↔ `!=`                                   |
-  | `invert`     | negated comparison `<` → `>=` (schemata spell it `!(a < b)`)                            |
-  | `arithmetic` | `+` `-` `*` `/` `%`                                                                     |
-  | `logical`    | `&&` ↔ `\|\|`                                                                           |
-  | `bitwise`    | `&` ↔ `\|`, `^`/`&^` → `&`, `<<` ↔ `>>`                                                 |
-  | `negatives`  | unary removal `-x` → `x`, `!x` → `x`                                                    |
-  | `negation`   | the condition of an `if` or `for` negated                                               |
-  | `condition`  | `if cond` → `if true` / `if false`                                                      |
-  | `incdec`     | `i++` ↔ `i--`                                                                           |
-  | `assignop`   | `+=` ↔ `-=` (arithmetic, bitwise, shift tables), and `op=` → `=`                        |
-  | `voidcall`   | a call statement removed                                                                |
-  | `assign`     | the store of `x = y` dropped, y still evaluated                                         |
-  | `branch`     | the body of an `if`, an `else`, a `case` or a select clause emptied                     |
-  | `loopctrl`   | `break` ↔ `continue`                                                                    |
-  | `loopcond`   | `for cond` → `for false`, `for range` → no iteration                                    |
-  | `constant`   | numeric literal `c` → `c+1`, never where a constant is required                         |
-  | `boolean`    | `true` ↔ `false`                                                                        |
-  | `string`     | `"s"` → `""`, `""` → `"mutrim"`                                                         |
-  | `composite`  | a slice or map literal loses its elements                                               |
-  | `method`     | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`) |
-  | `call`       | a non-void call → the zero value of its result (**opt-in**)                             |
-  | `return`     | each result → its zero value and one other value of its type; all results at once       |
+  | Operator      | Mutation                                                                                                                                                       |
+  | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `relational`  | boundary swap `<` ↔ `<=`, `>` ↔ `>=`, and `==` ↔ `!=`                                                                                                          |
+  | `invert`      | negated comparison `<` → `>=` (schemata spell it `!(a < b)`)                                                                                                   |
+  | `arithmetic`  | `+` `-` `*` `/` `%`                                                                                                                                            |
+  | `logical`     | `&&` ↔ `\|\|`                                                                                                                                                  |
+  | `bitwise`     | `&` ↔ `\|`, `^`/`&^` → `&`, `<<` ↔ `>>`                                                                                                                        |
+  | `negatives`   | unary removal `-x` → `x`, `!x` → `x`                                                                                                                           |
+  | `negation`    | the condition of an `if` or `for` negated                                                                                                                      |
+  | `condition`   | `if cond` → `if true` / `if false`                                                                                                                             |
+  | `incdec`      | `i++` ↔ `i--`                                                                                                                                                  |
+  | `assignop`    | `+=` ↔ `-=` (arithmetic, bitwise, shift tables), and `op=` → `=`                                                                                               |
+  | `voidcall`    | a call statement removed                                                                                                                                       |
+  | `assign`      | the store of `x = y` dropped, y still evaluated                                                                                                                |
+  | `branch`      | the body of an `if`, an `else`, a `case` or a select clause emptied                                                                                            |
+  | `loopctrl`    | `break` ↔ `continue`                                                                                                                                           |
+  | `loopcond`    | `for cond` → `for false`, `for range` → no iteration                                                                                                           |
+  | `constant`    | numeric literal `c` → `c+1`, never where a constant is required                                                                                                |
+  | `boolean`     | `true` ↔ `false`                                                                                                                                               |
+  | `string`      | `"s"` → `""`, `""` → `"mutrim"`; a printf format is ignored as `printf-format`                                                                                 |
+  | `composite`   | a slice or map literal loses its elements                                                                                                                      |
+  | `method`      | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`)                                                                        |
+  | `call`        | a non-void call → the zero value of its result (**opt-in**)                                                                                                    |
+  | `return`      | each result → its zero value and one other value of its type; all results at once                                                                              |
+  | `concurrency` | defer removed / run at once, `go f()` → `f()`, send removed, chan buffer, select case never ready, atomic add/store → plain, `once.Do(f)` → `f()` (**opt-in**) |
 
   These are the PIT operators with a Go counterpart, plus the loop and library-call families
-  of gremlins, go-mutesting and Stryker. Every operator but `call` is in `DefaultOperators`
-  (a non-void call often returns the zero value anyway, so most of its mutants are
-  equivalent); `gen -operators` (the `operators` attribute of `mutation_test`) selects a
-  subset or adds an opt-in one, e.g. `default,-constant` or `default,call`.
+  of gremlins, go-mutesting and Stryker. `concurrency` inverts the fix patterns of real Go
+  concurrency bugs (Tu et al., ASPLOS 2019); dropping a `close`, `Lock`/`Unlock`, WaitGroup
+  call or `cancel()` is already `voidcall`. Every operator but `call` and `concurrency` is in
+  `DefaultOperators` (a non-void call often returns the zero value anyway, so most of its
+  mutants are equivalent; concurrency mutants want a `-race` binary, the `race` attribute of
+  `mutation_test`, and `run -confirm-kills`); `gen -operators` (the `operators` attribute of
+  `mutation_test`) selects a subset or adds an opt-in one, e.g. `default,-constant` or
+  `default,call`.
 - Site selection is separate from operator selection: `gen -match` (function names),
   `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
   (over `func operator: description`) and `-arid` (globs over the callee, which cover the
@@ -195,9 +200,11 @@ loading/analysis.
 
 - `mutation_test(name, srcs, embed, deps, shard_count)` mirrors the package's `go_test`:
   `mutrim_schemata` lowers the embedded library (one `MutrimGen` action) and provides it as a
-  `GoInfo` with the same import path; a `go_test` embeds it (the identity check); an `sh_test`
-  re-execs that binary per mutant with `GOMUTANT_ID=k` and writes `report.json`
-  (KILLED / LIVED / TIMEOUT) to the undeclared outputs. TIMEOUT counts as KILLED. The runner
+  `GoInfo` with the same import path; a `go_test` embeds it (the identity check); a test rule
+  whose executable is `mutrim` itself (`mutrim bazel-test`, no shell) re-execs that binary per
+  mutant with `GOMUTANT_ID=k` and writes `report.json` (KILLED / LIVED / TIMEOUT), then
+  `minimize.json` and the Stryker reports, to the undeclared outputs; its arguments are
+  runfiles paths, resolved with rules_go's `go/runfiles`. TIMEOUT counts as KILLED. The runner
   drops Bazel's test-protocol variables from the child environment, since the rules_go test
   main would otherwise shard, filter and report a second time.
 - Sharding via `shard_count` + `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` (`id % TOTAL == INDEX`).

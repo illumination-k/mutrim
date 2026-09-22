@@ -10,7 +10,8 @@ Pre-alpha; see [docs/plan.md](docs/plan.md) for the roadmap.
 go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 
 # Select operators: names, "default", and "-name" to remove one. Every operator but
-# "call" (a non-void call replaced by its result's zero value) is in the default set.
+# "call" (a non-void call replaced by its result's zero value) and "concurrency" is in
+# the default set.
 go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
 go run ./cmd/mutrim gen -operators default,call ./path/to/pkg
 
@@ -50,6 +51,11 @@ bodies of `init` and of `String`, `Error` and `GoString` methods. `-arid <glob,.
 callees, matched as go/types names them, with and without the package path (`slog.Info`
 and `log/slog.Info`, `(*slog.Logger).Info`); `-no-arid` turns the built-in rules off,
 leaving only the `-arid` callees.
+
+The format argument of a printf-like call (`fmt.Errorf("boom")`, and any function whose
+last parameters are `string, ...any`) is ignored as `"printf-format"` by the `string`
+operator: lowered into the schemata it would no longer be constant, and vet's `printf`
+check, which `go test` and rules_go's `nogo` run, would fail the build.
 
 A filtered mutant is still listed, with
 `"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
@@ -147,6 +153,23 @@ go test -c -overlay out/overlay.json -o app.test ./path/to/app
 go run ./cmd/mutrim run -test-bin pkg.test -dir ./path/to/pkg \
   -extra-test example.com/app=app.test,./path/to/app -mutants mutants.json -out report.json
 ```
+
+## Concurrency mutants
+
+The opt-in `concurrency` operator (`-operators default,concurrency`) mimics real Go
+concurrency bugs by inverting their fixes (Tu et al., "Understanding real-world concurrency
+bugs in Go", ASPLOS 2019): `defer f()` removed or run on the spot, `go f()` run inline, a
+send `ch <- v` removed, `make(chan T)` given a buffer of 1 and `make(chan T, n)` losing its
+buffer (or, for a size computed at run time, growing by one), a select case whose channel
+becomes nil so it never fires, `atomic.AddT(&x, d)` / `atomic.StoreT(&x, v)` made the plain
+`x += d` / `x = v`, and `once.Do(f)` made `f()`. Removing a `close`, a `Lock` / `Unlock`, a
+WaitGroup `Add` / `Done` / `Wait` or a `cancel()` is a call statement removed, which
+`voidcall` already does.
+
+Their kills depend on scheduling. Build the test binary with the race detector
+(`go test -c -race`, the `race` attribute of `mutation_test`), so an introduced data race
+fails the test that hits it, and confirm kills with `run -confirm-kills N`. A mutant that
+deadlocks runs into the per-mutant timeout and counts as killed (`TIMEOUT`).
 
 ## Flaky tests
 
@@ -298,7 +321,7 @@ its dependencies, so no `go` command runs inside the sandbox. `extra_tests` name
 `go_test`s of packages importing the library: each is relinked against the schemata library
 (`mutant_calc_extra0`, ...), recompiling every package between the test and the library as
 `go_test` itself does for external tests, and its tests run against the mutants too; the
-target must be visible to the `mutation_test`'s package. Passing
+target must be visible to the `mutation_test`'s package, and `race` cannot be set with it yet. Passing
 `--test_env=MUTRIM_IN_DIFF=$PWD/pr.diff` scopes the run to a diff, as above.
 
 Not supported yet: cgo packages and `//go:embed` directives in the library under test (the

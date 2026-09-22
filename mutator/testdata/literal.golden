@@ -35,3 +35,14 @@ literal.go:44:36 Defined constant "2 -> 3" viable=true | func Defined() IDs { re
 literal.go:47:2 Structs return "result 1 -> nil" viable=true | return nil
 literal.go:47:9 Structs composite "elements -> none" viable=true | return []struct{ N int }{}
 literal.go:47:31 Structs constant "1 -> 2" viable=true | return []struct{ N int }{{N: 2}}
+printf.go:12:2 Errors return "result 1 -> nil" viable=true | return nil
+printf.go:12:9 Errors composite "elements -> none" viable=true | return []error{}
+printf.go:13:14 Errors string "\"boom\" -> \"\"" viable=true ignored=printf-format("") | fmt.Errorf(""),
+printf.go:14:20 Errors arithmetic "+ -> -" viable=false | fmt.Errorf(("n=" - "%d"), n),
+printf.go:14:15 Errors string "\"n=\" -> \"\"" viable=true ignored=printf-format("") | fmt.Errorf(("" + "%d"), n),
+printf.go:14:22 Errors string "\"%d\" -> \"\"" viable=true ignored=printf-format("") | fmt.Errorf(("n=" + ""), n),
+printf.go:15:14 Errors string "\"%s\" -> \"\"" viable=true ignored=printf-format("") | fmt.Errorf("", "arg"),
+printf.go:15:20 Errors string "\"arg\" -> \"\"" viable=true | fmt.Errorf("%s", ""),
+printf.go:16:14 Errors string "\"plain\" -> \"\"" viable=true | errors.New(""),
+printf.go:17:8 Errors string "\"wrapped\" -> \"\"" viable=true ignored=printf-format("") | logf(""),
+printf.go:21:47 logf return "result 1 -> nil" viable=true | func logf(format string, args ...any) error { return nil }

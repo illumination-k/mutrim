@@ -3,13 +3,13 @@
 mutrim_schemata lowers a go_library into schemata sources, with every mutant
 embedded and selected at runtime through GOMUTANT_ID, and exposes them as a Go
 library with the library's import path. mutation_test embeds that library into
-a go_test, the identity check, and re-executes the resulting binary once per
-mutant from a sharded sh_test. mutrim_relink relinks the go_test of another
-package against the schemata library, so its tests can kill the mutants too.
+a go_test, the identity check, and _mutrim_test re-executes the resulting
+binary once per mutant, with mutrim itself as the sharded test executable.
+mutrim_relink relinks the go_test of another package against the schemata
+library, so its tests can kill the mutants too.
 """
 
 load("@rules_go//go:def.bzl", "GoArchive", "GoInfo", "go_context", "go_rule", "go_test", "new_go_info")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 def _mutrim_schemata_impl(ctx):
     library = ctx.attr.library
@@ -170,6 +170,12 @@ it can be embedded into a go_test in place of the original library.""",
 def _fields(info):
     return {name: getattr(info, name) for name in dir(info)}
 
+def _rlocationpath(ctx, f):
+    """The runfiles path of f, as $(rlocationpath) spells it."""
+    if f.short_path.startswith("../"):
+        return f.short_path[3:]
+    return ctx.workspace_name + "/" + f.short_path
+
 def _mutrim_relink_impl(ctx):
     go = go_context(
         ctx,
@@ -263,18 +269,21 @@ def _mutrim_relink_impl(ctx):
         ],
     )
 
-    pkg = ctx.actions.declare_file(ctx.label.name + ".importpath")
-    ctx.actions.write(pkg, importpath or root.data.importpath)
-    return [
-        DefaultInfo(
-            files = depset([executable]),
-            runfiles = runfiles.merge(test[DefaultInfo].default_runfiles),
+    # `mutrim bazel-test -extra-test` reads the manifest: the package the
+    # binary tests, the binary, and its test files, scanned for the
+    # mutrim:keep tag, all as runfiles paths.
+    manifest = ctx.actions.declare_file(ctx.label.name + ".json")
+    ctx.actions.write(manifest, json.encode({
+        "pkg": importpath or root.data.importpath,
+        "bin": _rlocationpath(ctx, executable),
+        "srcs": [_rlocationpath(ctx, f) for f in test_srcs],
+    }))
+    return [DefaultInfo(
+        files = depset([manifest]),
+        runfiles = runfiles.merge(test[DefaultInfo].default_runfiles).merge(
+            ctx.runfiles(files = [executable] + test_srcs),
         ),
-        OutputGroupInfo(
-            importpath = depset([pkg]),
-            test_srcs = depset(test_srcs),
-        ),
-    ]
+    )]
 
 mutrim_relink = go_rule(
     _mutrim_relink_impl,
@@ -299,8 +308,44 @@ mutrim_relink = go_rule(
     },
     doc = """Relinks a go_test against the schemata of the library it imports.
 
-The output is the test binary. Its importpath output group holds the import
-path of the package it tests, its test_srcs group that package's test files.""",
+The output is a JSON manifest naming the package the test binary tests, the
+binary and the package's test files, as runfiles paths; the runfiles hold
+them.""",
+)
+
+def _mutrim_test_impl(ctx):
+    mutrim = ctx.executable._mutrim
+    executable = ctx.actions.declare_file(ctx.label.name + ("." + mutrim.extension if mutrim.extension else ""))
+    ctx.actions.symlink(output = executable, target_file = mutrim, is_executable = True)
+    runfiles = ctx.runfiles(files = ctx.files.data)
+    for target in [ctx.attr._mutrim] + ctx.attr.data:
+        runfiles = runfiles.merge(target[DefaultInfo].default_runfiles)
+    return [
+        DefaultInfo(executable = executable, runfiles = runfiles),
+        RunEnvironmentInfo(environment = {
+            k: ctx.expand_location(v, ctx.attr.data)
+            for k, v in ctx.attr.env.items()
+        }),
+    ]
+
+_mutrim_test = rule(
+    _mutrim_test_impl,
+    test = True,
+    attrs = {
+        "data": attr.label_list(
+            allow_files = True,
+            doc = "Files the test reads, named in args by their runfiles paths.",
+        ),
+        "env": attr.string_dict(
+            doc = "Environment of the test, subject to $(location) expansion.",
+        ),
+        "_mutrim": attr.label(
+            default = Label("//cmd/mutrim"),
+            executable = True,
+            cfg = "target",
+        ),
+    },
+    doc = "Runs `mutrim` as the test executable, with the rule's args.",
 )
 
 def mutation_test(
@@ -319,6 +364,7 @@ def mutation_test(
         confirm_kills = 1,
         confirm_baseline = 1,
         extra_tests = [],
+        race = False,
         shard_count = None,
         env = {},
         **kwargs):
@@ -355,7 +401,11 @@ def mutation_test(
     library. Each is relinked against the mutants (`<name>_extra<i>`), and
     its tests run against them too, named `<importpath>.TestX` in the
     report, so a mutant only a downstream package's tests catch is KILLED
-    instead of LIVED or NO_COVERAGE.
+    instead of LIVED or NO_COVERAGE. It cannot be combined with `race` yet.
+
+    `race` builds the test binary with the race detector, which the
+    opt-in `concurrency` operator needs: a data race it introduces fails
+    the test that hits it, and a deadlock ends as a TIMEOUT, a kill.
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
@@ -402,6 +452,8 @@ def mutation_test(
             matrix or the cover. 1 trusts the first run.
         extra_tests: go_tests of packages importing the library, whose tests
             also run against its mutants (`mutrim run -extra-test`).
+        race: builds the test binary with the race detector (`race = "on"`
+            of go_test), for the `concurrency` operator.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -409,6 +461,10 @@ def mutation_test(
     """
     if len(embed) != 1:
         fail("mutation_test: embed must name exactly one go_library, got {}".format(embed))
+    if race and extra_tests:
+        # The race transition of go_test does not reach the relinked tests,
+        # whose archives would then mix modes.
+        fail("mutation_test: race and extra_tests cannot be combined yet")
     schemata = name + "_schemata"
     mutants = name + ".mutants.json"
     mutrim_schemata(
@@ -431,6 +487,7 @@ def mutation_test(
         embed = [":" + schemata],
         deps = deps,
         env = env,
+        race = "on" if race else "auto",
         **kwargs
     )
     lib_srcs = schemata + "_srcs"
@@ -442,7 +499,6 @@ def mutation_test(
         visibility = ["//visibility:private"],
     )
     extra = []
-    extra_srcs = []
     for i, test in enumerate(extra_tests):
         relinked = "{}_extra{}".format(name, i)
         mutrim_relink(
@@ -453,41 +509,20 @@ def mutation_test(
             testonly = True,
             visibility = ["//visibility:private"],
         )
-        native.filegroup(
-            name = relinked + "_importpath",
-            srcs = [":" + relinked],
-            output_group = "importpath",
-            testonly = True,
-            visibility = ["//visibility:private"],
-        )
-        native.filegroup(
-            name = relinked + "_srcs",
-            srcs = [":" + relinked],
-            output_group = "test_srcs",
-            testonly = True,
-            visibility = ["//visibility:private"],
-        )
-        extra += [":" + relinked + "_importpath", ":" + relinked]
-        extra_srcs.append(":" + relinked + "_srcs")
-    mutrim = str(Label("//cmd/mutrim"))
-    inputs = [mutrim, ":" + schemata + "_test", ":" + mutants] + srcs
-    sh_test(
+        extra.append(":" + relinked)
+    _mutrim_test(
         name = name,
-        srcs = [Label("//bazel:run.sh")],
-        # Flags of `mutrim run` come first; "--" separates the test sources
-        # (the extra tests' too), scanned for the mutrim:keep tag, from the
-        # library sources, which
-        # the Stryker report quotes, and those from the extra tests' import
-        # path files and binaries, in pairs.
-        args = (["-subtests"] if subtests else []) +
+        # Flags of `mutrim bazel-test`; the arguments are the library
+        # sources, which the Stryker report quotes, and flags after "--" go
+        # to `mutrim run`.
+        args = ["bazel-test", "-test-bin", "$(rlocationpath :{}_test)".format(schemata), "-mutants", "$(rlocationpath :{})".format(mutants)] +
+               ["-test-src=$(rlocationpath {})".format(src) for src in srcs] +
+               ["-extra-test=$(rlocationpath {})".format(t) for t in extra] +
+               ["$(rlocationpaths :{})".format(lib_srcs), "--"] +
+               (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
-               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
-               ["$(rlocationpath {})".format(t) for t in inputs] +
-               ["$(rlocationpaths {})".format(t) for t in extra_srcs] +
-               ["--", "$(rlocationpaths :{})".format(lib_srcs), "--"] +
-               ["$(rlocationpath {})".format(t) for t in extra],
-        data = inputs + [":" + lib_srcs] + extra + extra_srcs,
-        deps = ["@bazel_tools//tools/bash/runfiles"],
+               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []),
+        data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.
         env = {"GO_TEST_RUN_FROM_BAZEL": "1"} | env,

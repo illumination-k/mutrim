@@ -14,6 +14,7 @@ go_library(
         "ops_binary.go",
         "ops_block.go",
         "ops_call.go",
+        "ops_concurrency.go",
         "ops_const.go",
         "ops_literal.go",
         "ops_loop.go",

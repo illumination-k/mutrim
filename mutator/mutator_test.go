@@ -39,9 +39,11 @@ func render(t *testing.T, pkg *packages.Package, ops []mutator.Operator, ms []mu
 		if m.Ignored != "" {
 			ignored = fmt.Sprintf(" ignored=%s(%q)", m.Ignored, m.Reason)
 		}
-		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v%s | %s\n",
+		// A removed statement leaves an empty line; no trailing blank.
+		line := fmt.Sprintf("%s:%d:%d %s %s %q viable=%v%s | %s",
 			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable, ignored,
 			mutatedLine(t, pkg, ops, m))
+		b.WriteString(strings.TrimRight(line, " ") + "\n")
 	}
 	return b.String()
 }
@@ -76,6 +78,7 @@ var goldenFixtures = []struct{ name, operators string }{
 	{name: "branch"},
 	{name: "literal"},
 	{name: "calls", operators: "default,call"},
+	{name: "concurrency", operators: "concurrency"},
 	{name: "excluded"},
 	{name: "disable"},
 }
@@ -321,9 +324,10 @@ func TestOperators(t *testing.T) {
 		"default,-constant,-voidcall":   strings.ReplaceAll(strings.ReplaceAll(defaults, "constant,", ""), "voidcall,", ""),
 		"return, relational":            "relational,return",
 		"constant,-constant,arithmetic": "arithmetic",
-		// call is not a default, so only its name selects it.
-		"default,call": names(mutator.AllOperators),
-		"call":         "call",
+		// call and concurrency are not defaults, so only their names select them.
+		"default,call,concurrency": names(mutator.AllOperators),
+		"call":                     "call",
+		"concurrency":              "concurrency",
 	}
 	for spec, want := range cases {
 		ops, err := mutator.Operators(spec)

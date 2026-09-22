@@ -1,4 +1,1 @@
-exports_files(
-    ["run.sh"],
-    visibility = ["//visibility:public"],
-)
+# Holds mutation_test.bzl, loaded through //:defs.bzl.

@@ -155,6 +155,47 @@ func TestSchemataOptInIdentity(t *testing.T) {
 	}
 }
 
+// TestSchemataConcurrency lowers the opt-in concurrency operator and runs
+// the fixture's tests under the race detector: the identity must pass, and
+// an atomic add made plain must be reported as a data race.
+func TestSchemataConcurrency(t *testing.T) {
+	pkg := load(t, "concurrency")
+	ops, err := mutator.Operators("concurrency")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
+	sch, err := mutator.Lower(pkg, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected string
+	for _, m := range mutants {
+		if !sch.Embedded[m.ID] {
+			t.Errorf("%s %s: not embedded", m.Func, m.Description)
+		}
+		if m.Func == "Sum" && m.Description == "atomic.AddInt64 -> +=" {
+			selected = m.ID
+		}
+	}
+	if selected == "" {
+		t.Fatal("no atomic mutant of Sum")
+	}
+
+	overlayPath := overlayFor(t, sch)
+	race := func(id string) ([]byte, error) {
+		cmd := exec.CommandContext(t.Context(), "go", "test", "-race", "-count=1", "-run", "^TestSum$", "-overlay", overlayPath, "./testdata/concurrency") //nolint:gosec // test-controlled args
+		cmd.Env = append(os.Environ(), "GOMUTANT_ID="+id)
+		return cmd.CombinedOutput()
+	}
+	if out, err := race(""); err != nil {
+		t.Fatalf("schemata source must pass the fixture tests: %v\n%s", err, out)
+	}
+	if out, err := race(selected); err == nil || !strings.Contains(string(out), "DATA RACE") {
+		t.Errorf("mutant %s should have been killed by the race detector: %v\n%s", selected, err, out)
+	}
+}
+
 // TestSchemataCompiles lowers the fixture of every operator family and
 // compiles it: the schemata source of a package must always build, since one
 // broken file costs every mutant of the package. The fixtures without tests
@@ -264,5 +305,20 @@ func TestLowerSkipsAndReimports(t *testing.T) {
 		if s := string(src); strings.Count(s, `"`+mutator.RuntimePath+`"`) != 2 || !strings.Contains(s, "mut1.Cmp(") {
 			t.Errorf("want the runtime imported a second time as mut1:\n%s", s)
 		}
+	}
+}
+
+// TestSchemataVetPrintf lowers the literal fixture, whose printf formats
+// are string sites, and runs vet's printf check on the result: a lowered
+// format is no longer constant, which go test and nogo reject (#67).
+func TestSchemataVetPrintf(t *testing.T) {
+	pkg := load(t, "literal")
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "vet", "-printf", "-overlay", overlayFor(t, sch), "./testdata/literal") //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go vet -printf on the schemata source: %v\n%s", err, out)
 	}
 }
