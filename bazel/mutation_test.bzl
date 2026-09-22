@@ -186,6 +186,11 @@ def mutation_test(
       single-file viewer). Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
 
+    Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
+    (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
+    to the lines that diff adds; every other mutant is reported `SKIPPED` and
+    counts towards no score.
+
     `match`, `files`, `exclude_files` and `exclude_re` narrow the sites that
     are mutated; a mutant they reject is still listed in `mutants.json` and
     reported `IGNORED`, so the counts stay comparable across runs. A single
