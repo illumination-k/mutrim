@@ -73,6 +73,9 @@ type Totals struct {
 
 // Report is the JSON written by Run.
 type Report struct {
+	// Pkg is the import path of the mutated package, taken from its
+	// mutants; empty when there were none.
+	Pkg        string   `json:"pkg"`
 	BaselineMS int64    `json:"baseline_ms"`
 	TimeoutMS  int64    `json:"timeout_ms"`
 	Tests      []Test   `json:"tests"`

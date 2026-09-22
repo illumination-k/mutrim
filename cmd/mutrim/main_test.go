@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,8 +125,12 @@ func TestGenSchemataThenRun(t *testing.T) {
 	if err := writeJSON(first, nil, report); err != nil {
 		t.Fatal(err)
 	}
+	names := make([]string, len(report.Tests))
+	for i, tt := range report.Tests {
+		names[i] = tt.Name
+	}
 	stdout.Reset()
-	args = append(args[:len(args)-2], "-previous", first)
+	args = append(args[:len(args)-2], "-previous", first, "-tests", strings.Join(names, ","))
 	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
 		t.Fatalf("run -previous: %v\n%s", err, stderr.String())
 	}
@@ -138,6 +143,9 @@ func TestGenSchemataThenRun(t *testing.T) {
 	}
 	if len(second.Results) != len(report.Results) {
 		t.Fatalf("second run has %d results, first %d", len(second.Results), len(report.Results))
+	}
+	if len(second.Tests) != len(names) {
+		t.Errorf("-tests named %d tests, %d ran", len(names), len(second.Tests))
 	}
 	for i, r := range second.Results {
 		if prev := report.Results[i]; r.MutantID != prev.MutantID || r.Status != prev.Status || r.DurationMS != prev.DurationMS {
@@ -154,7 +162,7 @@ func TestGenFromFiles(t *testing.T) {
 	mutantsPath := filepath.Join(dir, "mutants.json")
 	const importPath = "github.com/illumination-k/mutrim/mutator/testdata/killable"
 	var stdout, stderr bytes.Buffer
-	args := []string{"gen", "-importpath", importPath, "-schemata", dir, "-o", mutantsPath, filepath.Join(fixture, "killable.go")}
+	args := []string{"gen", "-importpath", importPath, "-tags", "mutrimtag,other", "-schemata", dir, "-o", mutantsPath, filepath.Join(fixture, "killable.go")}
 	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
 		t.Fatalf("gen -importpath: %v\n%s", err, stderr.String())
 	}
@@ -202,6 +210,29 @@ func TestGenFromFiles(t *testing.T) {
 	}
 }
 
+// Without a package argument gen mutates the current directory, and a
+// stdout that cannot be written is an error.
+func TestGenDefaultsToCurrentDirectory(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-no-check"}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen: %v\n%s", err, stderr.String())
+	}
+	var mutants []mutator.Mutant
+	if err := json.Unmarshal(stdout.Bytes(), &mutants); err != nil {
+		t.Fatalf("gen output is not JSON: %v", err)
+	}
+	if len(mutants) == 0 || mutants[0].Pkg != "github.com/illumination-k/mutrim/cmd/mutrim" {
+		t.Errorf("expected mutants of this package, got %+v", mutants)
+	}
+	if err := run(t.Context(), []string{"gen", "-no-check"}, failingWriter{}, &stderr); err == nil {
+		t.Error("unwritable stdout: expected an error")
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }
+
 func TestUnknownCommand(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run(t.Context(), []string{"bogus"}, &bytes.Buffer{}, &stderr)
@@ -213,21 +244,47 @@ func TestUnknownCommand(t *testing.T) {
 // Every command reports bad input as an error instead of writing partial
 // JSON.
 func TestCommandErrors(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "missing.json")
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.json")
+	malformed := filepath.Join(dir, "malformed.json")
+	if err := os.WriteFile(malformed, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := filepath.Join(dir, "report.json")
+	if err := writeJSON(report, nil, runner.Report{Pkg: "example.com/a"}); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other.json")
+	if err := writeJSON(other, nil, runner.Report{Pkg: "example.com/b"}); err != nil {
+		t.Fatal(err)
+	}
+	const notADir = "/dev/null/x"
 	cases := map[string][]string{
-		"no command":               {},
-		"gen bad package":          {"gen", "./does/not/exist"},
-		"gen bad flag":             {"gen", "-bogus"},
-		"gen importpath no files":  {"gen", "-importpath", "example.com/x"},
-		"gen importpath bad file":  {"gen", "-importpath", "example.com/x", missing},
-		"overlay without id":       {"overlay", fixture},
-		"overlay unknown id":       {"overlay", "-id", "0000000000000000", fixture},
-		"run without flags":        {"run"},
-		"run missing mutants file": {"run", "-test-bin", "x.test", "-mutants", missing},
-		"run missing previous":     {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
-		"minimize no report":       {"minimize"},
-		"minimize missing report":  {"minimize", missing},
-		"minimize bad keep":        {"minimize", "-keep", "(", missing},
+		"no command":                 {},
+		"gen bad package":            {"gen", "./does/not/exist"},
+		"gen bad flag":               {"gen", "-bogus"},
+		"gen importpath no files":    {"gen", "-importpath", "example.com/x"},
+		"gen importpath bad file":    {"gen", "-importpath", "example.com/x", missing},
+		"gen unwritable output":      {"gen", "-o", notADir, fixture},
+		"gen unwritable schemata":    {"gen", "-schemata", notADir, fixture},
+		"overlay bad flag":           {"overlay", "-bogus"},
+		"overlay without id":         {"overlay", fixture},
+		"overlay bad package":        {"overlay", "-id", "0000000000000000", "./does/not/exist"},
+		"overlay unknown id":         {"overlay", "-id", "0000000000000000", fixture},
+		"run bad flag":               {"run", "-bogus"},
+		"run without flags":          {"run"},
+		"run missing mutants file":   {"run", "-test-bin", "x.test", "-mutants", missing},
+		"run malformed mutants":      {"run", "-test-bin", "x.test", "-mutants", malformed},
+		"run missing previous":       {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
+		"minimize bad flag":          {"minimize", "-bogus"},
+		"minimize no report":         {"minimize"},
+		"minimize missing report":    {"minimize", missing},
+		"minimize bad keep":          {"minimize", "-keep", "(", missing},
+		"minimize missing srcs":      {"minimize", "-srcs", missing, report},
+		"minimize several packages":  {"minimize", report, other},
+		"minimize missing mutants":   {"minimize", "-mutants", missing, report},
+		"minimize unwritable":        {"minimize", "-o", notADir, report},
+		"minimize unwritable matrix": {"minimize", "-matrix", notADir, report},
 	}
 	for name, args := range cases {
 		var stdout bytes.Buffer
@@ -253,6 +310,10 @@ func TestShardEnvRejectsBadValues(t *testing.T) {
 	t.Setenv("TEST_SHARD_INDEX", "1")
 	if index, total, err := shardEnv(); err != nil || index != 1 || total != 2 {
 		t.Errorf("shardEnv() = %d, %d, %v", index, total, err)
+	}
+	t.Setenv("TEST_SHARD_STATUS_FILE", "/dev/null/x")
+	if _, _, err := shardEnv(); err == nil {
+		t.Error("unwritable TEST_SHARD_STATUS_FILE: expected an error")
 	}
 }
 
@@ -326,7 +387,8 @@ func TestMinimize(t *testing.T) {
 		t.Errorf("matrix has %d kills and %d sites", kills, sites)
 	}
 
-	// Without -srcs the tag is unknown, and shard reports can be passed together.
+	// Without -srcs the tag is unknown, and the shards of a package can be
+	// passed together.
 	stdout.Reset()
 	if err := run(t.Context(), []string{"minimize", "-keep", "^$", reportPath, reportPath}, &stdout, &stderr); err != nil {
 		t.Fatalf("minimize without sources: %v\n%s", err, stderr.String())

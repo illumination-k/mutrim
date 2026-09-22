@@ -36,8 +36,10 @@ func (b BinaryOp) Sites(ctx *Context, n ast.Node) []Site {
 
 // binarySchemata picks the runtime helper for a binary-operator swap.
 // Constant expressions are left alone (a call is not a constant), as are
-// operands whose type the helper could not infer and boolean results of a
-// defined type.
+// boolean results of a defined type, which the helpers' plain bool is not
+// assignable to. Operands need no check: go/types records an untyped
+// constant operand with the type it converted to, so the generic helper
+// infers the expression's type from either operand.
 //
 //   - == <-> !=: mut.Not(id, a == b)
 //   - < <= > >=: mut.Cmp(id, a, b, "<", "<=")
@@ -54,14 +56,11 @@ func binarySchemata(ctx *Context, e *ast.BinaryExpr, to token.Token) func(*Lower
 		}
 		return func(l *Lowering) ast.Node { return l.Call("Not", e) }
 	case classOrdered:
-		if !ctx.isBool(e) || !ctx.isTypedOperand(e.X) || !ctx.isTypedOperand(e.Y) {
+		if !ctx.isBool(e) {
 			return nil
 		}
 		return func(l *Lowering) ast.Node { return l.Call("Cmp", e.X, e.Y, opLit(e.Op), opLit(to)) }
 	case classArith:
-		if !ctx.isTypedOperand(e.X) || !ctx.isTypedOperand(e.Y) {
-			return nil
-		}
 		fn := "Arith"
 		if e.Op == token.REM || to == token.REM {
 			fn = "ArithInt"

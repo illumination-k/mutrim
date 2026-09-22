@@ -86,7 +86,8 @@ func TestSchemataIdentity(t *testing.T) {
 	}
 }
 
-// The runtime import name must not collide with identifiers of the file.
+// The runtime import name must not collide with identifiers of the file,
+// whether bound in the package scope or inside a function.
 func TestSchemataRuntimeNameAvoidsCollision(t *testing.T) {
 	pkg := load(t, "mutname")
 	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
@@ -95,8 +96,78 @@ func TestSchemataRuntimeNameAvoidsCollision(t *testing.T) {
 	}
 	for _, src := range sch.Files {
 		s := string(src)
-		if !strings.Contains(s, `mut1 "`+mutator.RuntimePath+`"`) || !strings.Contains(s, "mut1.Cmp(") {
-			t.Errorf("expected the runtime to be imported as mut1:\n%s", s)
+		if !strings.Contains(s, `mut2 "`+mutator.RuntimePath+`"`) || !strings.Contains(s, "mut2.Cmp(") {
+			t.Errorf("expected the runtime to be imported as mut2:\n%s", s)
+		}
+	}
+}
+
+// Comment groups are dropped from schemata sources unless they hold a
+// //go: directive, which keeps its meaning because declarations stay
+// where they were.
+func TestSchemataKeepsDirectives(t *testing.T) {
+	pkg := load(t, "mutname")
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range sch.Files {
+		s := string(src)
+		if !strings.Contains(s, "//go:noinline\nfunc Above(") {
+			t.Errorf("the //go:noinline directive must stay on Above:\n%s", s)
+		}
+		if strings.Contains(s, "default runtime import name") {
+			t.Errorf("comment groups without a directive must be dropped:\n%s", s)
+		}
+	}
+}
+
+// Files without an embedded mutant are not rewritten; the runtime itself
+// has nothing to embed; a package that already imports the runtime gets
+// it a second time under a fresh name.
+func TestLowerSkipsAndReimports(t *testing.T) {
+	pkg := load(t, "excluded")
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sch.Files) != 1 {
+		t.Fatalf("want only normal.go rewritten, got %d files", len(sch.Files))
+	}
+	for name := range sch.Files {
+		if filepath.Base(name) != "normal.go" {
+			t.Errorf("rewrote %s", name)
+		}
+	}
+
+	pkgs, err := mutator.Load(".", "../mut")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := pkgs[0]
+	if runtime.PkgPath != mutator.RuntimePath {
+		t.Fatalf("loaded %s, want %s", runtime.PkgPath, mutator.RuntimePath)
+	}
+	mutants := mutator.Generate(runtime, mutator.Options{TypeCheck: true})
+	sch, err = mutator.Lower(runtime, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mutants) == 0 || len(sch.Files) != 0 || len(sch.Embedded) != 0 {
+		t.Errorf("the runtime must generate mutants but embed none: %d mutants, %+v", len(mutants), sch)
+	}
+
+	pkg = load(t, "importsmut")
+	sch, err = mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, src := range sch.Files {
+		if _, perr := parser.ParseFile(token.NewFileSet(), file, src, 0); perr != nil {
+			t.Errorf("schemata source does not parse: %v\n%s", perr, src)
+		}
+		if s := string(src); strings.Count(s, `"`+mutator.RuntimePath+`"`) != 2 || !strings.Contains(s, "mut1.Cmp(") {
+			t.Errorf("want the runtime imported a second time as mut1:\n%s", s)
 		}
 	}
 }

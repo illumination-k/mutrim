@@ -38,20 +38,21 @@ func TestGreedy(t *testing.T) {
 	)
 
 	res := minimize.Greedy(m, minimize.Options{})
-	// TestA (6/1) beats TestFast (2/1) and TestAll (8/100); TestB is then
-	// the only test with a kill left; TestAll's site c is still unique but
-	// slow, so TestD comes before it.
-	if got, want := names(res.Selected), []string{"TestA", "TestB", "TestD", "TestAll"}; !slices.Equal(got, want) {
+	// The greedy order is TestA (6/1), TestB (the only kill left), TestD,
+	// then TestAll for its site c (8/100). TestAll then satisfies
+	// everything TestA did, so TestA is pruned and the rest replayed.
+	if got, want := names(res.Selected), []string{"TestB", "TestD", "TestAll"}; !slices.Equal(got, want) {
 		t.Errorf("selected = %v, want %v", got, want)
 	}
 	if s := res.Selected[0]; s.New != 2 || s.Gain != 6 || s.Protected {
 		t.Errorf("first selection = %+v", s)
 	}
-	if s := res.Selected[3]; s.New != 1 || s.Gain != 0.01 {
+	if s := res.Selected[2]; s.New != 3 || s.Gain != 0.07 {
 		t.Errorf("TestAll selection = %+v", s)
 	}
 	want := []minimize.Redundancy{
-		{Name: "TestEmpty", SubsumedBy: []string{"TestA", "TestAll", "TestB", "TestD"}},
+		{Name: "TestA", SubsumedBy: []string{"TestAll"}},
+		{Name: "TestEmpty", SubsumedBy: []string{"TestAll", "TestB", "TestD"}},
 		{Name: "TestFast", SubsumedBy: []string{"TestAll"}},
 	}
 	if len(res.Redundant) != len(want) {
@@ -102,6 +103,29 @@ func TestGreedyUnknownDuration(t *testing.T) {
 	}
 }
 
+// Of two tests with the same requirements the first selected stays; a
+// protected test is never pruned even when another selected test
+// satisfies all of its requirements.
+func TestGreedyPrunesSubsumedSelections(t *testing.T) {
+	sites := criteria.SiteCoverage{"TestFast": {"a"}, "TestBroad": {"a", "b"}, "TestTwin": {"a", "b"}, "TestRegression_A": {"a"}}
+	m := criteria.Compose(map[string]int64{"TestFast": 1, "TestBroad": 10, "TestTwin": 10}, criteria.Weighted{Criterion: sites, Weight: 1})
+	keep := regexp.MustCompile(`^TestRegression_`)
+	res := minimize.Greedy(m, minimize.Options{Protected: keep.MatchString})
+	// TestFast (1/1) is picked before TestBroad (1/10 for b), then pruned.
+	if got, want := names(res.Selected), []string{"TestRegression_A", "TestBroad"}; !slices.Equal(got, want) {
+		t.Errorf("selected = %v, want %v", got, want)
+	}
+	if s := res.Selected[1]; s.New != 1 || s.Gain != 0.1 {
+		t.Errorf("replayed selection = %+v", s)
+	}
+	if len(res.Redundant) != 2 || res.Redundant[0].Name != "TestFast" || res.Redundant[1].Name != "TestTwin" {
+		t.Errorf("redundant = %+v", res.Redundant)
+	}
+	if !slices.Equal(res.Redundant[0].SubsumedBy, []string{"TestBroad", "TestRegression_A"}) || !slices.Equal(res.Redundant[1].SubsumedBy, []string{"TestBroad"}) {
+		t.Errorf("subsumed_by = %+v", res.Redundant)
+	}
+}
+
 func TestTagged(t *testing.T) {
 	dir := t.TempDir()
 	src := `package p
@@ -114,6 +138,9 @@ import "testing"
 func TestKept(t *testing.T) {}
 
 func TestPlain(t *testing.T) {}
+
+// TestDocumented has a doc comment, but not the tag.
+func TestDocumented(t *testing.T) {}
 
 // mutrim:keep on a helper, not a test.
 func helper() {}

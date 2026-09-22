@@ -23,3 +23,7 @@ run = "go test ./..."
 [tasks."ci:golang"]
 description = "Run Go lint and test tasks"
 depends = ["lint:golang", "test:golang"]
+
+[tasks.dogfood]
+description = "Run mutrim on its own packages and write .mutrim/<pkg>/{report,minimize}.json"
+run = "tools/dogfood.sh"

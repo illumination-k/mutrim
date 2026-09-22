@@ -106,6 +106,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 
 	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: timeout.Milliseconds(), Tests: tests, Results: []Result{}}
+	if len(o.Mutants) > 0 {
+		report.Pkg = o.Mutants[0].Pkg
+	}
 	for _, m := range o.Mutants {
 		if !inShard(m.ID, o.Shard, o.Shards) {
 			continue

@@ -29,3 +29,6 @@ go.work.sum
 # Bazel
 /bazel-*
 /user.bazelrc
+
+# mutrim on itself (tools/dogfood.sh)
+/.mutrim/

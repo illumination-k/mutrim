@@ -140,3 +140,51 @@ func TestLoadFilesConstraintsAndErrors(t *testing.T) {
 		}
 	}
 }
+
+// The importcfg is read like go build reads it: blank lines and comments
+// are skipped, packagefile lines name export data, importmap lines alias
+// an import path. unsafe needs no export data, and a package imported by
+// two files is read once.
+func TestLoadFilesImportcfg(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	out, lerr := exec.CommandContext(t.Context(), "go", "list", "-export", "-f", "{{.Export}}", "strings").Output()
+	if lerr != nil {
+		t.Fatalf("go list -export: %v", lerr)
+	}
+	export := strings.TrimSpace(string(out))
+
+	a := write("a.go", "package lib\n\nimport (\n\t\"strings\"\n\t\"unsafe\"\n)\n\nfunc A(s string, p unsafe.Pointer) bool { return strings.HasPrefix(s, \"a\") && p != nil }\n")
+	b := write("b.go", "package lib\n\nimport str \"example.com/vendored/strings\"\n\nfunc B(s string) string { return str.ToUpper(s) + s }\n")
+	importcfg := write("importcfg", "# comment\n\npackagefile strings="+export+"\nimportmap example.com/vendored/strings=strings\n")
+
+	pkg, err := mutator.LoadFiles(mutator.FilesConfig{ImportPath: "example.com/lib", Files: []string{a, b}, Importcfg: importcfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ms := mutator.Generate(pkg, mutator.Options{TypeCheck: true}); len(ms) != 5 {
+		t.Errorf("got %d mutants, want 5 (&&, !=, + and the two returns of A and B)", len(ms))
+	}
+
+	for name, cfg := range map[string]string{
+		"missing export data file": "packagefile strings=" + filepath.Join(dir, "missing.a") + "\n",
+		"garbage export data":      "packagefile strings=" + a + "\n",
+	} {
+		if _, err := mutator.LoadFiles(mutator.FilesConfig{ImportPath: "example.com/lib", Files: []string{a}, Importcfg: write("cfg", cfg)}); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+	if _, err := mutator.LoadFiles(mutator.FilesConfig{ImportPath: "example.com/lib", Files: []string{a}, Stdlib: "["}); err == nil {
+		t.Error("malformed stdlib glob: expected an error")
+	}
+	if _, err := mutator.LoadFiles(mutator.FilesConfig{ImportPath: "example.com/lib", Files: []string{filepath.Join(dir, "missing.go")}}); err == nil {
+		t.Error("missing source file: expected an error")
+	}
+}

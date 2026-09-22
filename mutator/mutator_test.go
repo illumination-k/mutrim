@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,4 +200,49 @@ func goTest(t *testing.T, args ...string) ([]byte, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "go", append(append([]string{"test"}, args...), "./testdata/killable")...) //nolint:gosec // test-controlled args
 	return cmd.CombinedOutput()
+}
+
+// Load reports a bad working directory and a pattern that matches nothing
+// rather than returning an empty package list.
+func TestLoadNoPackages(t *testing.T) {
+	if _, err := mutator.Load(filepath.Join(t.TempDir(), "missing"), "."); err == nil {
+		t.Error("missing directory: expected an error")
+	}
+	if _, err := mutator.Load(".", "./testdata/does-not-exist/..."); err == nil {
+		t.Error("pattern matching no package: expected an error")
+	}
+}
+
+// A custom operator whose table crosses operator classes, or names an
+// operator the runtime has no helper for, still yields mutants through
+// Apply (the type check decides their viability), but never schemata.
+func TestCustomOperatorWithoutSchemata(t *testing.T) {
+	src := "package shift\n\nfunc F(a, b int) int { return a << b }\n\nfunc G(a, b complex128) complex128 { return a + b }\n"
+	file := filepath.Join(t.TempDir(), "shift.go")
+	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := mutator.LoadFiles(mutator.FilesConfig{ImportPath: "example.com/shift", Files: []string{file}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := mutator.BinaryOp{OpName: "custom", Table: map[token.Token]token.Token{token.SHL: token.SHR, token.ADD: token.LSS}}
+	mutants := mutator.Generate(pkg, mutator.Options{Operators: []mutator.Operator{op}, TypeCheck: true})
+	viable := map[string]bool{}
+	for _, m := range mutants {
+		if m.Operator != "custom" {
+			t.Errorf("operator = %q, want custom", m.Operator)
+		}
+		viable[m.Description] = m.Viable
+	}
+	if want := map[string]bool{"<< -> >>": true, "+ -> <": false}; !maps.Equal(viable, want) {
+		t.Errorf("mutants = %v, want %v", viable, want)
+	}
+	sch, err := mutator.Lower(pkg, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sch.Embedded) != 0 || len(sch.Files) != 0 {
+		t.Errorf("custom operators must not be embedded: %+v", sch)
+	}
 }

@@ -76,4 +76,7 @@ func TestMatrixJSON(t *testing.T) {
 	if !back.Tests[1].Covers.None() {
 		t.Error("round trip set bits for an empty row")
 	}
+	if err := json.Unmarshal([]byte(`{"tests":[{"name":1}]}`), &back); err == nil {
+		t.Error("malformed test row: expected an error")
+	}
 }

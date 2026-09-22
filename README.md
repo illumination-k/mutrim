@@ -44,13 +44,15 @@ duration, reached sites) and, per mutant, every test that killed it. A mutant no
 is `NO_COVERAGE` and never executed.
 
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
-of test time; `-w-site` / `-w-kill`) and runs a greedy set cover. `selected` lists the tests
-kept in order with their gain, `redundant` the rest with the selected tests that subsume each
-of them, and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
+of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
+test whose requirements the other selected tests satisfy between them. `selected` lists the
+tests kept in order with their gain, `redundant` the rest with the selected tests that subsume
+each of them, and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
 matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their doc comment
 (`-srcs` names the `_test.go` files or directories to scan) are always kept. `-matrix` exports
-the composed test × requirement matrix as JSON for an exact solver. Several reports (shards,
-packages) can be passed together.
+the composed test × requirement matrix as JSON for an exact solver. The shards of one package
+can be passed together; reports of different packages are refused, since their test names would
+collide and no test of one package covers a requirement of another.
 
 ## Usage (Bazel)
 
@@ -104,3 +106,8 @@ go test ./mutator -run '^$' -bench . -benchpkg go/types    # one extra package
 ```
 
 `BenchmarkGenerate` reports `ms/mutant` for the full pipeline.
+
+`mise run dogfood` (`tools/dogfood.sh`) runs the schemata pipeline on mutrim's own packages and
+writes `report.json` and `minimize.json` per package under `.mutrim/`. It takes a while:
+the `runner` tests build and execute test binaries, and every mutant reruns them. Pass package
+directories to limit it, for example `tools/dogfood.sh criteria minimize`.
