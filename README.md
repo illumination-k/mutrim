@@ -18,9 +18,10 @@ go run ./cmd/mutrim gen -operators default,call ./path/to/pkg
 go run ./cmd/mutrim gen -match '^\(\*Tree\)\.' -exclude-files '_gen\.go$' \
   -exclude-re 'constant: 0 -> 1' ./path/to/pkg
 
-# Calls to log and slog are excluded by default; name others, or turn the rule off.
-go run ./cmd/mutrim gen -exclude-calls 'default,(*Metrics).Observe' ./path/to/pkg
-go run ./cmd/mutrim gen -exclude-calls none ./path/to/pkg
+# Arid code (logging, sleeps, stdout writes, ...) is ignored by default; name more
+# callees, or turn the built-in rules off.
+go run ./cmd/mutrim gen -arid '(*Metrics).Observe' ./path/to/pkg
+go run ./cmd/mutrim gen -no-arid ./path/to/pkg
 
 # Apply one mutant through go build -overlay and run the package's tests.
 go run ./cmd/mutrim overlay -id <mutant id> -o overlay.json ./path/to/pkg
@@ -36,13 +37,19 @@ against the path as reported, its path relative to the working directory, and it
 name); `-exclude-re <re>` drops the mutants whose `func operator: description` matches, so
 a rewrite can be excluded wherever it occurs.
 
-`-exclude-calls <glob,...>` drops the mutants of a call whose callee matches — the call
-itself and everything in its arguments — because no test asserts on what a logging call
-does: removing `log.Printf("n=%d", n+1)`, or mutating the `n+1` it logs, produces a mutant
-nothing can kill. The callee is matched as go/types names it, with and without the package
-path (`slog.Info` and `log/slog.Info`, `(*slog.Logger).Info`). The default list is
-`log.*`, `(*log.Logger).*`, `slog.*`, `(*slog.Logger).*`; an explicit list replaces it, the
-entry `default` keeps it (`default,(*Metrics).Observe`), and `none` excludes no call.
+Mutants inside _arid_ nodes are ignored as `"arid"` (Petrović et al., "State of mutation
+testing at Google", ICSE-SEIP 2018): a node is arid when a rule says no test observes it,
+and a compound node is arid when all of its children are — so emptying
+`if err != nil { log.Print(err) }` is ignored while the condition keeps its mutants. The
+built-in rules cover calls to `log`, `slog`, `zap`, `zerolog`, `fmt.Print*`, `testing`
+helpers, `prometheus` / `metrics` `Inc` / `Add` / `Observe` and `time.Sleep` (the call and
+everything in its arguments); `fmt.Fprint*` to `os.Stdout` / `os.Stderr`; the duration or
+deadline passed to `context.WithTimeout`, `time.After` and the like; `_ = x` sinks; the
+map-cache lookup `if v, ok := m[k]; ok { return v }`; `panic("unreachable")`; and the
+bodies of `init` and of `String`, `Error` and `GoString` methods. `-arid <glob,...>` adds
+callees, matched as go/types names them, with and without the package path (`slog.Info`
+and `log/slog.Info`, `(*slog.Logger).Info`); `-no-arid` turns the built-in rules off,
+leaving only the `-arid` callees.
 
 A filtered mutant is still listed, with
 `"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
@@ -210,8 +217,9 @@ mutrim report -mutants mutants.json -srcs ./pkg report.json > mutation-report.js
 # The same JSON inside the single-file mutation-test-report-app viewer.
 mutrim report -format html -mutants mutants.json -srcs ./pkg -o mutation-report.html report.json
 
-# One ::warning per surviving mutant, which GitHub Actions shows on the diff.
-mutrim report -format github -mutants mutants.json report.json
+# One ::warning per surviving mutant, which GitHub Actions shows on the diff;
+# -max-per-line 1 surfaces one mutant per line, as Google's code review does.
+mutrim report -format github -max-per-line 1 -mutants mutants.json report.json
 ```
 
 `KILLED`, `LIVED`, `TIMEOUT` and `NO_COVERAGE` map onto the schema's `Killed`, `Survived`,
@@ -245,7 +253,7 @@ mutation_test(
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
     match = "^Compute",                    # optional; the gen filters, per attribute
     exclude_files = ["_gen\\.go$"],
-    exclude_calls = ["default", "(*Metrics).Observe"],  # logging calls are excluded anyway
+    arid = ["(*Metrics).Observe"],         # optional; extends the built-in arid rules
     subtests = True,                       # optional; `mutrim run -subtests`
     confirm_kills = 3,                     # optional; `mutrim run -confirm-kills`
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`

@@ -109,7 +109,7 @@ func TestToStrykerSkipped(t *testing.T) {
 		t.Errorf("skipped mutant = %+v, want Ignored, never run, with its reason", got)
 	}
 	var buf bytes.Buffer
-	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}); err != nil {
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() != 0 {
@@ -129,7 +129,7 @@ func TestToStrykerRunError(t *testing.T) {
 		t.Errorf("run error mutant = %+v, want RuntimeError, never run", got)
 	}
 	var buf bytes.Buffer
-	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}); err != nil {
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() != 0 {
@@ -242,11 +242,26 @@ func TestWriteAnnotations(t *testing.T) {
 	ms := mutants()
 	ms[2].Description = "a, b -> a: b" // the characters a property may not hold
 	var buf bytes.Buffer
-	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{report1()}); err != nil {
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{report1()}, 0); err != nil {
 		t.Fatal(err)
 	}
 	want := "::warning file=p/a.go,line=7,col=2,endLine=7,endColumn=14::LIVED: F return: return -> zero values\n" +
 		"::warning file=p/b.go,line=9,col=5,endLine=9,endColumn=6::NO_COVERAGE: G arith: a, b -> a: b\n"
+	if got := buf.String(); got != want {
+		t.Errorf("annotations =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A cap per line keeps the first survivors of a line, in source order,
+// and drops the rest.
+func TestWriteAnnotationsMaxPerLine(t *testing.T) {
+	ms := mutants()
+	ms[2].File, ms[2].Line, ms[2].Col = "p/a.go", 7, 9 // shares the line of mutant 2
+	var buf bytes.Buffer
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{report1()}, 1); err != nil {
+		t.Fatal(err)
+	}
+	want := "::warning file=p/a.go,line=7,col=2,endLine=7,endColumn=14::LIVED: F return: return -> zero values\n"
 	if got := buf.String(); got != want {
 		t.Errorf("annotations =\n%s\nwant\n%s", got, want)
 	}

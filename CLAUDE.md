@@ -125,14 +125,18 @@ run on the result.
   subset or adds an opt-in one, e.g. `default,-constant` or `default,call`.
 - Site selection is separate from operator selection: `gen -match` (function names),
   `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
-  (over `func operator: description`) and `-exclude-calls` (globs over the callee, which
-  cover the call and its arguments), each with a `mutation_test` attribute. A filtered
+  (over `func operator: description`) and `-arid` (globs over the callee, which cover the
+  call and its arguments), each with a `mutation_test` attribute. A filtered
   site still yields a mutant, marked `Ignored` in `mutants.json` and reported `IGNORED`,
   so the counts of a filtered run stay comparable with an unfiltered one.
-- `-exclude-calls` defaults to the logging calls (`log.*`, `(*log.Logger).*`, `slog.*`,
-  `(*slog.Logger).*`), which no test asserts on, like PIT's `avoidCallsTo`; the callee is
-  resolved through `types.Info.Uses` and matched with and without the package path.
-  `default` keeps the built-in list in a longer one, `none` turns the rule off.
+- Arid nodes (Petrović et al., ICSE-SEIP 2018 / TSE 2021): `arid(n) = rule(n) ||
+  (compound(n) && all(arid(child)))`, computed per function before site collection
+  (`mutator/arid.go`); a site on or under an arid node is ignored as `arid`. The built-in
+  rules (`DefaultAridCalls`: logging, `fmt.Print*`, `testing`, metrics counters,
+  `time.Sleep`; plus stdout/stderr `Fprint*`, timeout durations, `_ =` sinks, the map-cache
+  lookup, `panic("unreachable")`, `init` and `String`/`Error`/`GoString` bodies) are on
+  unless `-no-arid`; `-arid` adds callee globs. Callees resolve through `types.Info.Uses`
+  and match with and without the package path. `report -max-per-line` caps annotations.
 - Inline directives are those flags' in-source counterpart, for a single site or function:
   `//mutrim:disable [op,...] [reason]` (until `//mutrim:enable`), `//mutrim:disable-next-line`
   and `//mutrim:disable-func` in a doc comment. They are read from the raw comment lines,

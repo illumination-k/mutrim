@@ -19,26 +19,7 @@ const (
 	reasonFiles        = "files"
 	reasonExcludeFiles = "exclude-files"
 	reasonExcludeRE    = "exclude-re"
-	reasonExcludeCalls = "exclude-calls"
-)
-
-// DefaultExcludeCalls is the ExcludeCalls list a FilterSpec compiles when
-// it names none, and what the "default" entry expands to. Logging is the
-// one family of calls whose mutants no test asserts on, so they would all
-// live: PIT excludes the same by default (avoidCallsTo, FLOGCALL) and so
-// do gomutants and Stryker.NET. Keep the list short; anything else is a
-// per-project decision, spelled by naming patterns of its own.
-var DefaultExcludeCalls = []string{
-	"log.*",
-	"(*log.Logger).*",
-	"slog.*",
-	"(*slog.Logger).*",
-}
-
-// Entries of an ExcludeCalls spec that name a list rather than a callee.
-const (
-	excludeCallsDefault = "default"
-	excludeCallsNone    = "none"
+	reasonArid         = "arid"
 )
 
 // Filter narrows which sites are mutated. A site the filter rejects still
@@ -57,13 +38,19 @@ type Filter struct {
 	// matches, so a mutant can be selected by its rewrite and not only by
 	// its location.
 	ExcludeRE *regexp.Regexp
-	// ExcludeCalls drops every mutant of a call whose callee matches one
-	// of these path.Match globs, and every mutant inside its arguments:
-	// removing a logging call, or mutating what it logs, produces a
-	// mutant no test can kill (PIT's avoidCallsTo semantics). A callee is
-	// spelled as go/types names it, with and without the package path:
-	// "log.Printf" and "(*slog.Logger).Info", or "(*log/slog.Logger).Info".
-	ExcludeCalls []string
+	// Arid applies the built-in arid rules: a node is arid when a rule
+	// says no test can observe it (a call of DefaultAridCalls, fmt.Fprint*
+	// to os.Stdout or os.Stderr, the duration of a timeout, a `_ = x`
+	// sink, a map-cache lookup, panic("unreachable"), the body of init or
+	// of a String, Error or GoString method), and a compound node when
+	// all of its children are. Every mutant inside an arid node is
+	// ignored (Petrović et al., ICSE-SEIP 2018).
+	Arid bool
+	// AridCalls extends the rules with callees, as path.Match globs: a
+	// matching call and its arguments are arid. A callee is spelled as
+	// go/types names it, with and without the package path: "log.Printf"
+	// and "(*slog.Logger).Info", or "(*log/slog.Logger).Info".
+	AridCalls []string
 }
 
 // FilterSpec is a Filter as the command line spells it: regexps, and
@@ -73,15 +60,15 @@ type FilterSpec struct {
 	Files        string
 	ExcludeFiles string
 	ExcludeRE    string
-	// ExcludeCalls is a list of callee globs, where the entry "default"
-	// expands to DefaultExcludeCalls. An empty list is "default"; "none",
-	// which must then be the only entry, excludes no call.
-	ExcludeCalls string
+	// Arid lists callee globs that extend the built-in arid rules.
+	Arid string
+	// NoArid turns the built-in arid rules off; Arid still applies.
+	NoArid bool
 }
 
-// Compile parses the spec. An empty field imposes no rule, except
-// ExcludeCalls, whose empty spec is DefaultExcludeCalls: the zero
-// FilterSpec is the command line's defaults, not the zero Filter.
+// Compile parses the spec. An empty field imposes no rule, and the
+// built-in arid rules apply unless NoArid: the zero FilterSpec is the
+// command line's defaults, not the zero Filter.
 func (s FilterSpec) Compile() (Filter, error) {
 	var f Filter
 	var err error
@@ -91,9 +78,10 @@ func (s FilterSpec) Compile() (Filter, error) {
 	if f.ExcludeRE, err = compileRE(reasonExcludeRE, s.ExcludeRE); err != nil {
 		return Filter{}, err
 	}
-	if f.ExcludeCalls, err = compileExcludeCalls(s.ExcludeCalls); err != nil {
+	if f.AridCalls, err = compileAridCalls(s.Arid); err != nil {
 		return Filter{}, err
 	}
+	f.Arid = !s.NoArid
 	for _, glob := range patternList(s.Files) {
 		if _, err := path.Match(glob, ""); err != nil {
 			return Filter{}, fmt.Errorf("mutator: %s: bad glob %q: %w", reasonFiles, glob, err)
@@ -108,33 +96,6 @@ func (s FilterSpec) Compile() (Filter, error) {
 		f.ExcludeFiles = append(f.ExcludeFiles, re)
 	}
 	return f, nil
-}
-
-// compileExcludeCalls expands the "default" and "none" entries and
-// validates the globs.
-func compileExcludeCalls(spec string) ([]string, error) {
-	entries := patternList(spec)
-	if len(entries) == 0 {
-		entries = []string{excludeCallsDefault}
-	}
-	var out []string
-	for _, entry := range entries {
-		switch entry {
-		case excludeCallsNone:
-			if len(entries) > 1 {
-				return nil, fmt.Errorf("mutator: %s: %q must be the only entry", reasonExcludeCalls, excludeCallsNone)
-			}
-			return nil, nil
-		case excludeCallsDefault:
-			out = append(out, DefaultExcludeCalls...)
-		default:
-			if _, err := path.Match(entry, ""); err != nil {
-				return nil, fmt.Errorf("mutator: %s: bad glob %q: %w", reasonExcludeCalls, entry, err)
-			}
-			out = append(out, entry)
-		}
-	}
-	return out, nil
 }
 
 func compileRE(rule, pattern string) (*regexp.Regexp, error) {
@@ -161,10 +122,10 @@ func patternList(spec string) []string {
 
 // ignore returns the rule rejecting m, or "" when the filter keeps it.
 func (f Filter) ignore(m *Mutant) string {
-	// The exclude-calls rule was decided while walking, where the
-	// enclosing call is known; ignore only reports it.
-	if m.site.inExcludedCall {
-		return reasonExcludeCalls
+	// Aridity was decided while walking, where the enclosing nodes are
+	// known; ignore only reports it.
+	if m.site.arid {
+		return reasonArid
 	}
 	if f.Match != nil && !f.Match.MatchString(m.Func) {
 		return reasonMatch
@@ -193,35 +154,13 @@ func (m Mutant) text() string {
 	return m.Func + " " + m.Operator + ": " + m.Description
 }
 
-// excludesNode reports whether the ExcludeCalls rule covers n and
-// everything under it: a matching call, or the statement that is only
-// that call, which is where the voidcall site of a logging call sits.
-func (f Filter) excludesNode(info *types.Info, n ast.Node) bool {
-	if len(f.ExcludeCalls) == 0 {
-		return false
-	}
-	switch n := n.(type) {
-	case *ast.CallExpr:
-		return f.excludesCall(info, n)
-	case *ast.ExprStmt:
-		call, ok := ast.Unparen(n.X).(*ast.CallExpr)
-		return ok && f.excludesCall(info, call)
-	}
-	return false
-}
-
-// excludesCall reports whether the callee of call matches ExcludeCalls.
-func (f Filter) excludesCall(info *types.Info, call *ast.CallExpr) bool {
-	return matchesGlob(f.ExcludeCalls, calleeNames(info, call))
-}
-
 // calleeNames lists the spellings of the function call invokes that an
-// ExcludeCalls glob is matched against: the name go/types gives it
+// arid call glob is matched against: the name go/types gives it
 // ("log/slog.Info", "(*log/slog.Logger).Info") and the same with the
 // package path shortened to the package name ("slog.Info"), so a pattern
 // written the way the source reads works too. A callee that is not a
 // declared function (a builtin, a conversion, a function value) has no
-// name and is never excluded.
+// name and is never matched.
 func calleeNames(info *types.Info, call *ast.CallExpr) []string {
 	var id *ast.Ident
 	switch fun := ast.Unparen(call.Fun).(type) {

@@ -52,9 +52,9 @@ type site struct {
 	file     *ast.File
 	funcName string
 	astPath  string
-	// inExcludedCall marks a site inside a call the Filter's ExcludeCalls
-	// rule covers; only the walk knows the enclosing call.
-	inExcludedCall bool
+	// arid marks a site on or inside a node the Filter's arid rules
+	// cover; only the walk knows the enclosing nodes.
+	arid bool
 }
 
 func (s site) position() token.Pos {
@@ -156,9 +156,9 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator, filter Filter) []si
 		w := &walker{
 			ctx:      ctx,
 			ops:      ops,
-			filter:   filter,
 			file:     f,
 			funcName: funcName(fn),
+			arid:     filter.aridNodes(ctx.Info, fn),
 			sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
 			counters: []int{0},
 		}
@@ -171,13 +171,13 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator, filter Filter) []si
 type walker struct {
 	ctx      *Context
 	ops      []Operator
-	filter   Filter
 	file     *ast.File
 	funcName string
+	// arid holds the arid nodes of the function; aridDepth counts the
+	// enclosing ones, so that every site under an arid node is ignored.
+	arid      map[ast.Node]bool
+	aridDepth int
 
-	// excluded holds the enclosing nodes the exclude-calls rule covers,
-	// so that every site under a matching call is ignored with it.
-	excluded []ast.Node
 	nodes    []ast.Node
 	path     []string
 	counters []int
@@ -200,11 +200,13 @@ func (w *walker) visit(n ast.Node) bool {
 		for _, s := range op.Sites(&ctx, n) {
 			s.Operator = op.Name()
 			w.out = append(w.out, site{
-				Site:           s,
-				file:           w.file,
-				funcName:       w.funcName,
-				astPath:        astPath,
-				inExcludedCall: len(w.excluded) > 0,
+				Site:     s,
+				file:     w.file,
+				funcName: w.funcName,
+				astPath:  astPath,
+				// A site may sit on a child of n, like the body a branch
+				// site empties, so its own node is looked up too.
+				arid: w.aridDepth > 0 || w.arid[s.Node],
 			})
 		}
 	}
@@ -218,8 +220,8 @@ func (w *walker) push(n ast.Node) {
 	w.counters = append(w.counters, 0)
 	w.path = append(w.path, fmt.Sprintf("%T[%d]", n, idx))
 	w.nodes = append(w.nodes, n)
-	if w.filter.excludesNode(w.ctx.Info, n) {
-		w.excluded = append(w.excluded, n)
+	if w.arid[n] {
+		w.aridDepth++
 	}
 	if lit, ok := n.(*ast.FuncLit); ok {
 		sig, _ := w.ctx.Info.TypeOf(lit).(*types.Signature)
@@ -232,8 +234,8 @@ func (w *walker) pop() {
 	w.nodes = w.nodes[:len(w.nodes)-1]
 	w.path = w.path[:len(w.path)-1]
 	w.counters = w.counters[:len(w.counters)-1]
-	if len(w.excluded) > 0 && w.excluded[len(w.excluded)-1] == n {
-		w.excluded = w.excluded[:len(w.excluded)-1]
+	if w.arid[n] {
+		w.aridDepth--
 	}
 	if _, ok := n.(*ast.FuncLit); ok {
 		w.sigs = w.sigs[:len(w.sigs)-1]
