@@ -117,7 +117,8 @@ mutrim_schemata = go_rule(
         ),
         "operators": attr.string_list(
             doc = """Operators to apply, as `mutrim gen -operators` takes them: names,
-"default", and "-name" to remove one. Empty applies every operator.""",
+"default", and "-name" to remove one. Empty applies the default set, which leaves out
+the opt-in operators.""",
         ),
         "match": attr.string(
             doc = """Keeps only the mutants of functions whose name matches this regexp,
@@ -197,7 +198,8 @@ def mutation_test(
         embed: exactly one go_library.
         deps: dependencies of the test sources.
         operators: operators to apply, as `mutrim gen -operators` takes them
-            (e.g. `["default", "-constant"]`); empty applies every operator.
+            (e.g. `["default", "-constant"]`); empty applies the default set,
+            which leaves out the opt-in operators.
         match: keeps only the mutants of functions whose name matches this
             regexp, in the `(*T).Name` form (`mutrim gen -match`).
         files: keeps only the mutants in files matching one of these globs

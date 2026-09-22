@@ -72,6 +72,17 @@ func (c *Context) isMapIndex(e ast.Expr) bool {
 	return isMap
 }
 
+// inConstDecl reports whether the node being visited sits inside a
+// constant declaration, where a rewrite into a call would not be constant.
+func (c *Context) inConstDecl() bool {
+	for _, n := range c.Path {
+		if d, ok := n.(*ast.GenDecl); ok && d.Tok == token.CONST {
+			return true
+		}
+	}
+	return false
+}
+
 // isBuiltin reports whether call invokes the named builtin function.
 func (c *Context) isBuiltin(call *ast.CallExpr, name string) bool {
 	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
@@ -117,19 +128,26 @@ type Site struct {
 	// the children of Node have been lowered and may return nil to decline.
 	// A nil Schemata means the site can only be applied through Apply.
 	Schemata func(l *Lowering) ast.Node
+	// Wraps says that Schemata embeds the node's current lowering
+	// (Lowering.Current) instead of rebuilding the replacement from the
+	// original node's parts. Every site of one node but the first must
+	// wrap, or the lowerings would replace each other; Lower orders the
+	// rebuilding one first.
+	Wraps bool
 }
 
 // Operators selects operators by name from a comma-separated spec: a name
 // adds that operator, "default" adds DefaultOperators, and a name with a
 // leading "-" removes one, so "default,-constant" is every default but
-// constant. An empty spec is DefaultOperators. The result keeps the order
-// of DefaultOperators, so mutant listings do not depend on the spelling.
+// constant. Operators outside DefaultOperators are opt-in and only a name
+// selects them. An empty spec is DefaultOperators. The result keeps the
+// order of AllOperators, so mutant listings do not depend on the spelling.
 func Operators(spec string) ([]Operator, error) {
 	if spec == "" {
 		return DefaultOperators, nil
 	}
 	byName := map[string]Operator{}
-	for _, op := range DefaultOperators {
+	for _, op := range AllOperators {
 		byName[op.Name()] = op
 	}
 	selected := map[string]bool{}
@@ -137,8 +155,8 @@ func Operators(spec string) ([]Operator, error) {
 		name, remove := strings.CutPrefix(strings.TrimSpace(entry), "-")
 		switch {
 		case name == "default" && !remove:
-			for n := range byName {
-				selected[n] = true
+			for _, op := range DefaultOperators {
+				selected[op.Name()] = true
 			}
 		case byName[name] != nil:
 			selected[name] = !remove
@@ -147,7 +165,7 @@ func Operators(spec string) ([]Operator, error) {
 		}
 	}
 	var ops []Operator
-	for _, op := range DefaultOperators {
+	for _, op := range AllOperators {
 		if selected[op.Name()] {
 			ops = append(ops, op)
 		}
@@ -158,9 +176,12 @@ func Operators(spec string) ([]Operator, error) {
 	return ops, nil
 }
 
-// DefaultOperators is the operator set used when Options.Operators is nil.
-var DefaultOperators = []Operator{
+// AllOperators is every operator mutrim implements, in the order mutants
+// are listed in. DefaultOperators is the subset applied when none is
+// named; the rest are opt-in through Operators.
+var AllOperators = []Operator{
 	Relational,
+	Invert,
 	Arithmetic,
 	Logical,
 	Bitwise,
@@ -168,7 +189,36 @@ var DefaultOperators = []Operator{
 	Negation{},
 	Condition{},
 	IncDec{},
+	AssignOp{},
 	VoidCall{},
+	Assign{},
+	Branch{},
+	LoopCtrl{},
+	LoopCond{},
 	Constant{},
+	Boolean{},
+	String{},
+	Composite{},
+	Method{},
+	Call{},
 	Return{},
+}
+
+// DefaultOperators is the operator set used when Options.Operators is nil.
+// Call is left out: replacing a call with a zero value produces many
+// mutants equivalent to the original, so PIT keeps it opt-in too.
+var DefaultOperators = defaultsExcept(Call{})
+
+func defaultsExcept(opt ...Operator) []Operator {
+	optional := map[string]bool{}
+	for _, op := range opt {
+		optional[op.Name()] = true
+	}
+	var ops []Operator
+	for _, op := range AllOperators {
+		if !optional[op.Name()] {
+			ops = append(ops, op)
+		}
+	}
+	return ops
 }

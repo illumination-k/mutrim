@@ -50,7 +50,7 @@ func TestArithmetic(t *testing.T) {
 	if Div(7, 2) != 3 {
 		t.Error("Div")
 	}
-	if Mod(7, 2) != 1 {
+	if Mod(7, 2) != 1 || Mod(8, 3) != 2 {
 		t.Error("Mod")
 	}
 	if MulComplex(1i, 1i) != -1 {
@@ -106,7 +106,7 @@ func TestCalls(t *testing.T) {
 		t.Errorf("Twice: %v", log)
 	}
 	log = nil
-	if SkipInitCall(&log) != 2 || len(log) != 2 {
+	if SkipInitCall(&log) != 2 || len(log) != 3 || log[0] != "init" || log[1] != "post" {
 		t.Errorf("SkipInitCall: %v", log)
 	}
 	if SkipNamedBoolCond(true) != 1 || SkipNamedBoolCond(false) != 0 {
@@ -154,6 +154,55 @@ func TestStatements(t *testing.T) {
 	}
 	if v, err := Pair(4); v != 4 || err != nil {
 		t.Error("Pair")
+	}
+	if v, err := Halve(4); v != 2 || err != nil {
+		t.Error("Halve")
+	}
+	if v, err := Halve(3); v != 0 || err == nil {
+		t.Error("Halve of an odd number")
+	}
+	if !IsEmpty(nil) || IsEmpty([]int{1}) {
+		t.Error("IsEmpty")
+	}
+	if !NotEmpty([]int{1}) || NotEmpty(nil) {
+		t.Error("NotEmpty")
+	}
+}
+
+func TestLoops(t *testing.T) {
+	if FirstEven([]int{1, 2}) != 2 || FirstEven([]int{1}) != -1 {
+		t.Error("FirstEven")
+	}
+	if CountUntil([]int{1, 2, 3}, 2) != 1 || CountUntil([]int{1, 2, 3}, 9) != 3 {
+		t.Error("CountUntil")
+	}
+}
+
+func TestBranches(t *testing.T) {
+	if Bound(0, 5) != 5 || Bound(7, 5) != 8 || Bound(5, 5) != 6 {
+		t.Error("Bound")
+	}
+	if Describe(-1) != "negative" || Describe(1) != "positive" || Describe(0) != "zero!" {
+		t.Error("Describe")
+	}
+	ch := make(chan int, 2)
+	ch <- 1
+	ch <- 2
+	if Drain(ch) != 2 {
+		t.Error("Drain")
+	}
+}
+
+func TestLibrary(t *testing.T) {
+	if !Prefixed("gopher") || Prefixed("cargo") {
+		t.Error("Prefixed")
+	}
+	if Smallest([]int{3, 1, 2}) != 1 || Smallest([]int{5, 4}) != 4 {
+		t.Error("Smallest")
+	}
+	c := NewConfig([]string{"b"})
+	if len(c.Names) != 2 || c.Names[0] != "a" || c.Names[1] != "b" || !c.Verbose || c.Retries != 6 {
+		t.Errorf("NewConfig: %+v", c)
 	}
 }
 

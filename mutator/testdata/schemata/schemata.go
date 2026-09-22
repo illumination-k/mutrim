@@ -5,6 +5,8 @@ package schemata
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -78,6 +80,19 @@ func Classify(x int) string {
 
 func Pair(x int) (int, error) { return x, nil }
 
+// One result of several is replaced on its own, which is how an untested
+// error path shows up; dropping a unary ! is a mutant of its own.
+func Halve(x int) (int, error) {
+	if x%2 != 0 {
+		return 0, ErrTarget
+	}
+	return x / 2, nil
+}
+
+func IsEmpty(s []int) bool { return len(s) == 0 }
+
+func NotEmpty(s []int) bool { return !IsEmpty(s) }
+
 // Sites the lowering declines, so their mutants are reported NOT_VIABLE
 // under schemata while the rest of the function is still embedded.
 func SkipConst() int {
@@ -90,7 +105,7 @@ func SkipNamedBool(a, b int) Flag { return a < b }
 func SkipNamedBoolOperands(a, b Flag) Flag { return a && b }
 
 func SkipRecover(f func()) (caught bool) {
-	defer func() { caught = f != nil && recover() != nil }()
+	defer func() { caught = caught || recover() != nil }()
 	f()
 	return false
 }
@@ -118,7 +133,7 @@ func Twice(log *[]string) {
 func SkipInitCall(log *[]string) int {
 	n := 0
 	for Record(log, "init"); n < 2; Record(log, "post") {
-		n += 2 // not n++: its mutant would loop until the timeout
+		n += 1
 	}
 	return n
 }
@@ -141,6 +156,87 @@ func Boxed() any                                   { return 7 }
 func SkipShiftConst(x float64) float64             { return 1<<2 + x }
 func NoSiteArrayLen() int                          { var a [2]int; return len(a) }
 func NoSiteArrayKey() int                          { return []int{3: 9}[3] }
+
+// break and continue are each other's mutant; a range loop runs no
+// iteration, and a for condition is forced to false.
+func FirstEven(xs []int) int {
+	for _, x := range xs {
+		if x%2 != 0 {
+			continue
+		}
+		return x
+	}
+	return -1
+}
+
+func CountUntil(xs []int, stop int) int {
+	n := 0
+	for _, x := range xs {
+		if x == stop {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// Emptying the body of an if, an else, a case or a select clause. A body
+// whose last statement makes the enclosing statement terminating (Classify's
+// case, Drain's default) keeps no schemata form.
+func Bound(x, lo int) int {
+	if x < lo {
+		x = lo
+	} else {
+		x = x + 1
+	}
+	return x
+}
+
+func Describe(n int) string {
+	out := "zero"
+	switch {
+	case n < 0:
+		out = "negative"
+	case n > 0:
+		out = "positive"
+	default:
+		out += "!"
+	}
+	return out
+}
+
+func Drain(ch <-chan int) int {
+	n := 0
+	for {
+		select {
+		case <-ch:
+			n++
+		default:
+			return n
+		}
+	}
+}
+
+// Library-call swaps: a package function goes through the runtime as a
+// function value, a generic one has no function value to select.
+func Prefixed(s string) bool { return strings.HasPrefix(s, "go") }
+
+func Smallest(xs []int) int { return slices.Min(xs) }
+
+// Composite literals lose their elements, boolean literals flip, and a
+// compound assignment is swapped or loses its accumulation.
+type Config struct {
+	Names   []string
+	Verbose bool
+	Retries int
+}
+
+func NewConfig(extra []string) Config {
+	c := Config{Names: []string{"a"}, Verbose: true, Retries: 2}
+	c.Names = append(c.Names, extra...)
+	c.Retries *= 3
+	return c
+}
 
 // Untested has no test, so its mutants live.
 func Untested(x int) int { return x + 1 }

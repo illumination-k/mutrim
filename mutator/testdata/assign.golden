@@ -1,0 +1,51 @@
+assign.go:7:4 Accumulate assignop "+= -> -=" viable=true | a -= b
+assign.go:7:4 Accumulate assignop "+= -> =" viable=true | a = b
+assign.go:8:4 Accumulate assignop "-= -> +=" viable=true | a += b
+assign.go:8:4 Accumulate assignop "-= -> =" viable=true | a = b
+assign.go:9:4 Accumulate assignop "*= -> /=" viable=true | a /= b
+assign.go:9:4 Accumulate assignop "*= -> =" viable=true | a = b
+assign.go:10:4 Accumulate assignop "/= -> *=" viable=true | a *= b
+assign.go:10:4 Accumulate assignop "/= -> =" viable=true | a = b
+assign.go:11:4 Accumulate assignop "%= -> *=" viable=true | a *= b
+assign.go:11:4 Accumulate assignop "%= -> =" viable=true | a = b
+assign.go:12:2 Accumulate return "result 1 -> 0" viable=true | return 0
+assign.go:12:2 Accumulate return "result 1 -> 1" viable=true | return 1
+assign.go:16:4 Bits assignop "&= -> |=" viable=true | a |= b
+assign.go:16:4 Bits assignop "&= -> =" viable=true | a = b
+assign.go:17:4 Bits assignop "|= -> &=" viable=true | a &= b
+assign.go:17:4 Bits assignop "|= -> =" viable=true | a = b
+assign.go:18:4 Bits assignop "^= -> &=" viable=true | a &= b
+assign.go:18:4 Bits assignop "^= -> =" viable=true | a = b
+assign.go:19:4 Bits assignop "&^= -> &=" viable=true | a &= b
+assign.go:19:4 Bits assignop "&^= -> =" viable=true | a = b
+assign.go:20:2 Bits return "result 1 -> 0" viable=true | return 0
+assign.go:20:2 Bits return "result 1 -> 1" viable=true | return 1
+assign.go:26:4 ShiftBy assignop "<<= -> >>=" viable=true | a >>= n
+assign.go:26:4 ShiftBy assignop "<<= -> =" viable=false | a = n
+assign.go:27:4 ShiftBy assignop ">>= -> <<=" viable=true | a <<= n
+assign.go:27:4 ShiftBy assignop ">>= -> =" viable=false | a = n
+assign.go:28:2 ShiftBy return "result 1 -> 0" viable=true | return 0
+assign.go:28:2 ShiftBy return "result 1 -> 1" viable=true | return 1
+assign.go:33:4 Join assignop "+= -> -=" viable=false | s -= t
+assign.go:33:4 Join assignop "+= -> =" viable=true | s = t
+assign.go:34:2 Join return "result 1 -> \"\"" viable=true | return ""
+assign.go:34:2 Join return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+assign.go:41:2 Store assign "store -> dropped" viable=true | _ = n
+assign.go:46:2 Store return "result 1 -> 0" viable=true | return 0
+assign.go:46:2 Store return "result 1 -> 1" viable=true | return 1
+assign.go:52:11 Sum constant "0 -> 1" viable=true | total := 1
+assign.go:53:14 Sum negation "cond -> !(cond)" viable=true | for i := 0; !(i < len(xs)); i += 2 {
+assign.go:53:14 Sum loopcond "cond -> false" viable=true | for i := 0; false; i += 2 {
+assign.go:53:11 Sum constant "0 -> 1" viable=true | for i := 1; i < len(xs); i += 2 {
+assign.go:53:16 Sum relational "< -> <=" viable=true | for i := 0; i <= len(xs); i += 2 {
+assign.go:53:16 Sum invert "< -> >=" viable=true | for i := 0; i >= len(xs); i += 2 {
+assign.go:53:29 Sum assignop "+= -> -=" viable=true | for i := 0; i < len(xs); i -= 2 {
+assign.go:53:29 Sum assignop "+= -> =" viable=true | for i := 0; i < len(xs); i = 2 {
+assign.go:53:32 Sum constant "2 -> 3" viable=true | for i := 0; i < len(xs); i += 3 {
+assign.go:54:9 Sum assignop "+= -> -=" viable=true | total -= xs[i]
+assign.go:54:9 Sum assignop "+= -> =" viable=true | total = xs[i]
+assign.go:56:2 Sum return "result 1 -> 0" viable=true | return 0
+assign.go:56:2 Sum return "result 1 -> 1" viable=true | return 1
+assign.go:62:11 AtCall assignop "+= -> -=" viable=true | xs[at()] -= 1
+assign.go:62:11 AtCall assignop "+= -> =" viable=true | xs[at()] = 1
+assign.go:62:14 AtCall constant "1 -> 2" viable=true | xs[at()] += 2

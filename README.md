@@ -9,8 +9,10 @@ Pre-alpha; see [docs/plan.md](docs/plan.md) for the roadmap.
 # List type-checked-viable mutants of a package as JSON.
 go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 
-# Select operators: names, "default", and "-name" to remove one.
+# Select operators: names, "default", and "-name" to remove one. Every operator but
+# "call" (a non-void call replaced by its result's zero value) is in the default set.
 go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
+go run ./cmd/mutrim gen -operators default,call ./path/to/pkg
 
 # Narrow the sites: by function name, by file, or by the mutant itself.
 go run ./cmd/mutrim gen -match '^\(\*Tree\)\.' -exclude-files '_gen\.go$' \
