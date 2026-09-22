@@ -354,7 +354,7 @@ func TestGenArid(t *testing.T) {
 		t.Error("the built-in rules ignored no mutant of the arid fixture")
 	}
 	for _, m := range gen(t, "-no-arid") {
-		if m.Ignored != "" {
+		if m.Ignored != "" && m.Ignored != "printf-format" {
 			t.Errorf("%s %q: ignored=%q with -no-arid", m.Func, m.Description, m.Ignored)
 		}
 	}

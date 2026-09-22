@@ -112,7 +112,7 @@ run on the result.
   | `loopcond`   | `for cond` → `for false`, `for range` → no iteration                                    |
   | `constant`   | numeric literal `c` → `c+1`, never where a constant is required                         |
   | `boolean`    | `true` ↔ `false`                                                                        |
-  | `string`     | `"s"` → `""`, `""` → `"mutrim"`                                                         |
+  | `string`     | `"s"` → `""`, `""` → `"mutrim"`; a printf format is ignored as `printf-format`          |
   | `composite`  | a slice or map literal loses its elements                                               |
   | `method`     | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`) |
   | `call`       | a non-void call → the zero value of its result (**opt-in**)                             |
