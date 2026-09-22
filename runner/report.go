@@ -123,7 +123,11 @@ type Result struct {
 // timeout + lived + no_coverage), or zero when nothing is viable; with
 // Report.CountSuspect, suspect_equivalent joins the denominator.
 // CoveredScore is the same without no_coverage (PIT's test strength): how
-// well the tests check the code they reach.
+// well the tests check the code they reach. Coverage is the fraction of
+// viable mutants a test reaches: covered / (covered + no_coverage), or
+// zero when nothing is viable. It answers how much the tests reach at
+// all; Score and CoveredScore answer how well the reached ones are
+// checked (issue #34).
 type Totals struct {
 	Mutants int `json:"mutants"`
 	Killed  int `json:"killed"`
@@ -147,6 +151,9 @@ type Totals struct {
 	Suspicious   int     `json:"suspicious"`
 	Score        float64 `json:"score"`
 	CoveredScore float64 `json:"covered_score"`
+	// Coverage is the fraction of viable mutants a test reaches: covered /
+	// (covered + no_coverage), or zero when nothing is viable.
+	Coverage float64 `json:"coverage"`
 	// Classes breaks the score down by mutant class (mutator.ClassErrPath,
 	// ClassConcurrency, ClassDefault), so the score of error-handling code
 	// can be read next to the overall one.
@@ -239,6 +246,7 @@ func (r *Report) total() {
 	killed, covered := r.scored(t)
 	if viable := covered + t.NoCoverage; viable > 0 {
 		t.Score = float64(killed) / float64(viable)
+		t.Coverage = float64(covered) / float64(viable)
 	}
 	if covered > 0 {
 		t.CoveredScore = float64(killed) / float64(covered)

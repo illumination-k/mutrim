@@ -145,9 +145,10 @@ func TestStatusExecuted(t *testing.T) {
 }
 
 // Totals count every status; the score counts timeouts as kills and
-// unreached mutants as survivors, and is zero when nothing is viable. A
-// RUN_ERROR counts towards no score, so it is not in the denominator
-// either.
+// unreached mutants as survivors, the covered score is the same without
+// no_coverage, and the coverage the fraction of viable mutants a test
+// reaches. All are zero when nothing is viable. A RUN_ERROR counts towards
+// no score, so it is not in any denominator either.
 func TestTotals(t *testing.T) {
 	r := &Report{Results: []Result{
 		{Status: Killed},
@@ -161,7 +162,7 @@ func TestTotals(t *testing.T) {
 	}}
 	r.total()
 	want := Totals{
-		Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6, CoveredScore: 0.75,
+		Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6, CoveredScore: 0.75, Coverage: 0.8,
 		Classes: map[string]ClassTotals{"default": {Mutants: 8, Killed: 3, Survived: 2, Score: 0.6}},
 	}
 	if !reflect.DeepEqual(r.Totals, want) {
@@ -169,8 +170,15 @@ func TestTotals(t *testing.T) {
 	}
 	r = &Report{Results: []Result{{Status: NotViable}}}
 	r.total()
-	if r.Totals.Score != 0 || r.Totals.Mutants != 1 {
+	if r.Totals.CoveredScore != 0 || r.Totals.Coverage != 0 || r.Totals.Score != 0 || r.Totals.Mutants != 1 {
 		t.Errorf("totals of nothing viable = %+v", r.Totals)
+	}
+	// Nothing covered but something viable: no 0/0, a real zero covered
+	// score next to a coverage that only counts the unreached mutants.
+	r = &Report{Results: []Result{{Status: NoCoverage}, {Status: NoCoverage}}}
+	r.total()
+	if r.Totals.CoveredScore != 0 || r.Totals.Coverage != 0 || r.Totals.Score != 0 {
+		t.Errorf("totals of nothing covered = %+v", r.Totals)
 	}
 }
 

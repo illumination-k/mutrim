@@ -137,7 +137,8 @@ run on the result.
   its operator's (`errpath`, `concurrency`, else `default`) unless the site sets
   `Site.Class`, as a `return` result → `nil` and a forced nil check (`condition`) do for
   `errpath` (Lima et al. 2021: error-handling code is the least tested). `Totals.Classes`
-  scores each class on its own.
+  scores each class on its own. `Totals` also reports `coverage`, the fraction of viable
+  mutants a test reaches, next to `score` and `covered_score` (issue #34).
 - Site selection is separate from operator selection: `gen -match` (function names),
   `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
   (over `func operator: description`) and `-arid` (globs over the callee, which cover the

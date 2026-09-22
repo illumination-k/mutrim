@@ -175,7 +175,8 @@ func TestGenSchemataThenRun(t *testing.T) {
 	if err := readJSON(scoped, &third); err != nil {
 		t.Fatal(err)
 	}
-	if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) || third.Totals.Score != 0 {
+	if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) ||
+		third.Totals.Score != 0 || third.Totals.Coverage != 0 {
 		t.Errorf("an unrelated diff must skip every mutant: %+v", third.Totals)
 	}
 

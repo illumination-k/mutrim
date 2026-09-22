@@ -126,6 +126,12 @@ the tests reaching it, and `report.json` holds the per-test kill matrix: `tests`
 duration, reached sites) and, per mutant, every test that killed it. A mutant no test reaches
 is `NO_COVERAGE` and never executed.
 
+`totals` reports the run's scores next to its counts. `score` is the mutation score, (killed +
+timeout) / (killed + timeout + lived + no_coverage): how much is untested. `covered_score` is
+the score over the covered mutants only, (killed + timeout) / (killed + timeout + lived): how
+good the tests that exist are. `coverage` is the fraction of viable mutants a test reaches,
+(killed + timeout + lived) / (… + no_coverage). All three are zero when nothing is viable.
+
 A run that dies from outside the tests — the test binary exits without any `--- FAIL:` line
 after the runtime hit a `fatal error:`, the process was killed by a signal, or the binary
 exited with a code the testing package never uses — is a `RUN_ERROR`, never a kill: no test
@@ -290,8 +296,9 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -in-diff pr.dif
 ```
 
 Every other mutant is reported `SKIPPED`: it is not executed and counts towards no score,
-so `score` is the mutation score of the diff. The filter is applied before everything
-else, `-previous` included, so a scoped run executes nothing outside the diff.
+so `score` is the mutation score of the diff and `coverage` the fraction of its viable
+mutants a test reaches. The filter is applied before everything else, `-previous` included,
+so a scoped run executes nothing outside the diff.
 
 Only the new side of the diff is read. A removed line holds no mutant, and a context line
 is code the diff did not change, so a mutant is kept when its span overlaps an added line;
