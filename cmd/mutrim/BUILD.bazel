@@ -9,6 +9,7 @@ go_library(
         "//criteria",
         "//minimize",
         "//mutator",
+        "//report",
         "//runner",
         "@org_golang_x_tools//go/packages",
     ],

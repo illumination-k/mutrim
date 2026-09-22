@@ -56,8 +56,8 @@ func TestParseOutput(t *testing.T) {
 // previous report.
 func TestStatusExecuted(t *testing.T) {
 	for s, want := range map[Status]bool{Killed: true, Lived: true, Timeout: true, NoCoverage: false, NotViable: false, "": false} {
-		if got := s.executed(); got != want {
-			t.Errorf("%q.executed() = %v, want %v", s, got, want)
+		if got := s.Executed(); got != want {
+			t.Errorf("%q.Executed() = %v, want %v", s, got, want)
 		}
 	}
 }

@@ -80,6 +80,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental                                        | `mutator` (for `Mutant`)            |
 | `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                        | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                  | `criteria`, `bitset`, `go/parser`   |
+| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                      | `mutator`, `runner`                 |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -177,7 +178,8 @@ exported JSON matrix (`-matrix`) + an external MIP solver.
 
 ### Conventions
 
-- Generated artifacts (`mutants.json`, `report.json`, coverage matrices) are never committed.
+- Generated artifacts (`mutants.json`, `report.json`, `mutation-report.json`, coverage
+  matrices) are never committed.
 - Output on stdout is JSON only; logs go to stderr.
 - Reference implementations: gremlins `internal/engine` / `internal/mutator`, cargo-mutants
   `--shard`, PIT (schemata + incremental analysis).

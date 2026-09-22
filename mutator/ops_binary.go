@@ -26,6 +26,7 @@ func (b BinaryOp) Sites(ctx *Context, n ast.Node) []Site {
 	return []Site{{
 		Node:        e,
 		Pos:         e.OpPos,
+		End:         e.OpPos + token.Pos(len(from.String())),
 		Description: from.String() + " -> " + to.String(),
 		Apply:       func() { e.Op = to },
 		Undo:        func() { e.Op = from },

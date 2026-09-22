@@ -75,6 +75,9 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -dir ./path/to/
 
 # Report redundant tests and functions whose mutants survive. Never deletes anything.
 go run ./cmd/mutrim minimize -mutants mutants.json -srcs ./path/to/pkg report.json
+
+# Render the run for another tool: Stryker JSON, its HTML viewer, CI annotations.
+go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
 ```
 
 The schemata sources import `github.com/illumination-k/mutrim/mut`, so the target module
@@ -98,6 +101,34 @@ matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their
 the composed test × requirement matrix as JSON for an exact solver. The shards of one package
 can be passed together; reports of different packages are refused, since their test names would
 collide and no test of one package covers a requirement of another.
+
+## Reporting
+
+`report` renders `report.json` in the formats other tools already read. `-mutants` is
+required (it carries the source locations), the shards of a run are passed together, and
+`-srcs` names the files or directories holding the mutated sources.
+
+```bash
+# Stryker mutation-testing-report-schema v2, which the Stryker dashboard accepts.
+mutrim report -mutants mutants.json -srcs ./pkg report.json > mutation-report.json
+
+# The same JSON inside the single-file mutation-test-report-app viewer.
+mutrim report -format html -mutants mutants.json -srcs ./pkg -o mutation-report.html report.json
+
+# One ::warning per surviving mutant, which GitHub Actions shows on the diff.
+mutrim report -format github -mutants mutants.json report.json
+```
+
+`KILLED`, `LIVED`, `TIMEOUT` and `NO_COVERAGE` map onto the schema's `Killed`, `Survived`,
+`Timeout` and `NoCoverage`; `NOT_VIABLE` is a `CompileError`, since the mutant never built,
+and `IGNORED` is `Ignored`, with the directive or filter that suppressed it as its
+`statusReason`. Each mutant carries the tests that reach it (`coveredBy`) and the ones that
+killed it (`killedBy`), so the viewer shows the kill matrix per mutant. A mutant no report
+mentions is left out, so one shard's report renders that shard.
+
+`-format html` and `-format github` write their own text rather than JSON: GitHub reads its
+annotations from the step's stdout, and the HTML view loads the viewer from unpkg, so it
+needs a network at display time but is a single file to publish.
 
 ## Usage (Bazel)
 
@@ -125,9 +156,10 @@ mutation_test(
 `bazel test //pkg:mutant_calc` builds the package once with every mutant embedded, runs the
 tests against it (`mutant_calc_schemata_test`, which must pass like the original tests), then
 re-executes that binary once per mutant against the tests reaching it and writes
-`report.json` and `minimize.json` to the test's undeclared outputs
-(`bazel-testlogs/pkg/mutant_calc/test.outputs/`, one directory per shard; pass the shards'
-reports together to `mutrim minimize` for a whole-package verdict). Mutants are generated
+`report.json`, `minimize.json` and the Stryker `mutation-report.json` / `mutation-report.html`
+to the test's undeclared outputs (`bazel-testlogs/pkg/mutant_calc/test.outputs/`, one
+directory per shard; pass the shards' reports together to `mutrim minimize` or
+`mutrim report` for a whole-package verdict). Mutants are generated
 hermetically: the rule type-checks the library against the export data rules_go compiled for
 its dependencies, so no `go` command runs inside the sandbox.
 
