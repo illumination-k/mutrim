@@ -57,6 +57,11 @@ type Test struct {
 	// Sites lists the IDs of the mutants whose site the test reaches; only
 	// these can be killed by it.
 	Sites []string `json:"sites"`
+	// Flaky says the test failed in some of the Options.ConfirmBaseline
+	// runs against the unmutated package and passed in others. Its
+	// failures are no kills (they land in Result.SuspiciousBy), and
+	// minimize leaves it out of the cover entirely.
+	Flaky bool `json:"flaky,omitempty"`
 }
 
 // Result is one entry of report.json.
@@ -67,22 +72,31 @@ type Result struct {
 	// mutant's site, fewer when a panic stopped the run early.
 	TestsRun int `json:"tests_run"`
 	// KilledBy lists the rows that failed, or on a timeout the ones that
-	// never finished.
-	KilledBy   []string `json:"killed_by,omitempty"`
-	DurationMS int64    `json:"duration_ms"`
+	// never finished, and whose failure Options.ConfirmKills reproduced.
+	KilledBy []string `json:"killed_by,omitempty"`
+	// SuspiciousBy lists the rows whose failure is not trusted: a kill a
+	// rerun did not reproduce (mutmut's SUSPICIOUS), or any failure of a
+	// row Test.Flaky marks. They are no kills, so a mutant only these
+	// rows failed against is LIVED.
+	SuspiciousBy []string `json:"suspicious_by,omitempty"`
+	DurationMS   int64    `json:"duration_ms"`
 }
 
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
 // timeout + lived + no_coverage), or zero when nothing is viable.
 type Totals struct {
-	Mutants    int     `json:"mutants"`
-	Killed     int     `json:"killed"`
-	Lived      int     `json:"lived"`
-	Timeout    int     `json:"timeout"`
-	NoCoverage int     `json:"no_coverage"`
-	NotViable  int     `json:"not_viable"`
-	Ignored    int     `json:"ignored"`
-	Skipped    int     `json:"skipped"`
+	Mutants    int `json:"mutants"`
+	Killed     int `json:"killed"`
+	Lived      int `json:"lived"`
+	Timeout    int `json:"timeout"`
+	NoCoverage int `json:"no_coverage"`
+	NotViable  int `json:"not_viable"`
+	Ignored    int `json:"ignored"`
+	Skipped    int `json:"skipped"`
+	// Suspicious counts the mutants with at least one unconfirmed kill
+	// (Result.SuspiciousBy). It overlaps the statuses above rather than
+	// partitioning them, and says how much of the run is flaky.
+	Suspicious int     `json:"suspicious"`
 	Score      float64 `json:"score"`
 }
 
@@ -115,6 +129,9 @@ func (r *Report) total() {
 	var t Totals
 	for _, res := range r.Results {
 		t.Mutants++
+		if len(res.SuspiciousBy) > 0 {
+			t.Suspicious++
+		}
 		switch res.Status {
 		case Killed:
 			t.Killed++

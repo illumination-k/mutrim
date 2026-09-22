@@ -53,10 +53,11 @@ commands:
   run       execute a schemata test binary once per mutant, against the
             tests that reach it, and report the per-test kill matrix;
             -subtests makes each subtest a row of it; -in-diff scopes the
-            run to the lines a unified diff adds
+            run to the lines a unified diff adds; -confirm-kills and
+            -confirm-baseline rerun to keep flaky tests out of the matrix
   minimize  from the report.json of one package (all of its shards),
-            list the tests a greedy set cover finds redundant and the
-            functions whose mutants survive
+            list the tests a greedy set cover finds redundant, the
+            functions whose mutants survive, and the tests found flaky
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations`
@@ -259,6 +260,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout (default: 3× the baseline run)")
 	tests := fs.String("tests", "", "comma-separated top-level tests to run (default: all)")
 	subtests := fs.Bool("subtests", false, "make each subtest (TestX/case) a row of the kill matrix: traced on its own and named in killed_by; subtest names must be stable across runs")
+	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
+	confirmBaseline := fs.Int("confirm-baseline", 1, "run each test this many times while tracing; one that fails in some runs and passes in others is marked flaky, and its failures are never kills")
 	dir := fs.String("dir", "", "working directory for the test binary")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -267,7 +270,11 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return errors.New("run: -test-bin and -mutants are required")
 	}
 
-	opts := runner.Options{TestBin: *testBin, Dir: *dir, Args: fs.Args(), Subtests: *subtests, Timeout: *timeout, Log: stderr}
+	opts := runner.Options{
+		TestBin: *testBin, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
+		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline,
+		Timeout: *timeout, Log: stderr,
+	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {
 		return err
 	}
@@ -307,6 +314,10 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 type minimizeOutput struct {
 	minimize.Result
 	WeakSpots []runner.Spot `json:"weak_spots"`
+	// Flaky lists the tests `run -confirm-baseline` found unreliable.
+	// They take no part in the cover, so they are neither selected nor
+	// called redundant; deciding about them needs the flakiness fixed first.
+	Flaky []string `json:"flaky_tests"`
 }
 
 // runMinimize is `mutrim minimize`: it composes the site-coverage and
@@ -352,16 +363,34 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	if len(pkgs) > 1 {
 		return fmt.Errorf("minimize: the reports span several packages (%s); pass one package's shards at a time", strings.Join(slices.Sorted(maps.Keys(pkgs)), ", "))
 	}
+	// A flaky test's observations are not trustworthy, so it is left out
+	// of the matrix entirely: it covers nothing, is never selected and is
+	// never called redundant, and is reported on its own instead. Its
+	// suspicious pairs are out already, since the runner keeps them out of
+	// killed_by.
+	flaky := map[string]bool{}
+	for _, r := range reports {
+		for _, t := range r.Tests {
+			if t.Flaky {
+				flaky[t.Name] = true
+			}
+		}
+	}
 	durations := map[string]int64{}
 	sites, kills := criteria.SiteCoverage{}, criteria.Mutation{}
 	for _, r := range reports {
 		for _, t := range r.Tests {
+			if flaky[t.Name] {
+				continue
+			}
 			durations[t.Name] = t.DurationMS
 			sites[t.Name] = t.Sites // identical across the shards of one package
 		}
 		for _, res := range r.Results {
 			for _, t := range res.KilledBy {
-				kills[t] = append(kills[t], res.MutantID)
+				if !flaky[t] {
+					kills[t] = append(kills[t], res.MutantID)
+				}
 			}
 		}
 	}
@@ -394,6 +423,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	result := minimizeOutput{
 		Result:    minimize.Greedy(matrix, minimize.Options{Protected: protected}),
 		WeakSpots: []runner.Spot{},
+		Flaky:     slices.Sorted(maps.Keys(flaky)),
 	}
 	if *mutantsPath != "" {
 		var mutants []mutator.Mutant

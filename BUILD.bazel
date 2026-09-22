@@ -2,6 +2,7 @@ load("@gazelle//:def.bzl", "gazelle")
 
 # gazelle:prefix github.com/illumination-k/mutrim
 # gazelle:exclude mutator/testdata
+# gazelle:exclude runner/testdata
 #
 # These tests run the go command and read mutator/testdata through relative
 # paths, which a sandboxed Bazel test cannot; `go test ./...` covers them.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -23,12 +24,23 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-const fixtureDir = "../mutator/testdata/schemata"
+const (
+	fixtureDir = "../mutator/testdata/schemata"
+	// flakyDir holds a fixture whose tests fail on the first process of a
+	// phase and pass afterwards; see its package comment.
+	flakyDir = "./testdata/flaky"
+)
 
 // buildFixture lowers the schemata fixture and compiles its test binary.
 func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 	t.Helper()
-	pkgs, err := mutator.Load(".", fixtureDir)
+	return buildPkg(t, fixtureDir)
+}
+
+// buildPkg lowers the package in dir and compiles its test binary.
+func buildPkg(t *testing.T, dir string) (bin string, mutants []mutator.Mutant) {
+	t.Helper()
+	pkgs, err := mutator.Load(".", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +56,10 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 		}
 	}
 
-	dir := t.TempDir()
+	out := t.TempDir()
 	overlay := mutator.Overlay{Replace: map[string]string{}}
 	for orig, src := range sch.Files {
-		mutated := filepath.Join(dir, filepath.Base(orig))
+		mutated := filepath.Join(out, filepath.Base(orig))
 		if werr := os.WriteFile(mutated, src, 0o600); werr != nil {
 			t.Fatal(werr)
 		}
@@ -57,12 +69,12 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overlayPath := filepath.Join(dir, "overlay.json")
+	overlayPath := filepath.Join(out, "overlay.json")
 	if err := os.WriteFile(overlayPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	bin = filepath.Join(dir, "schemata.test")
-	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", overlayPath, "-o", bin, fixtureDir) //nolint:gosec // test-controlled args
+	bin = filepath.Join(out, "schemata.test")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", overlayPath, "-o", bin, dir) //nolint:gosec // test-controlled args
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test -c: %v\n%s", err, out)
 	}
@@ -573,4 +585,103 @@ func TestRunInDiff(t *testing.T) {
 	if none.Totals.Skipped != none.Totals.Mutants || none.Totals.Score != 0 {
 		t.Errorf("an unrelated diff must skip everything: %+v", none.Totals)
 	}
+}
+
+// Confirmation reruns keep a flaky observation out of the kill matrix: a
+// kill -confirm-kills cannot reproduce becomes suspicious, and a test
+// -confirm-baseline finds unreliable is marked flaky and never credited
+// with a kill at all. Without the reruns the flaky fixture looks like a
+// broken suite in one run and a killed mutant in the next.
+func TestRunConfirmsKillsAndBaseline(t *testing.T) {
+	bin, mutants := buildPkg(t, flakyDir)
+	var target, stable mutator.Mutant
+	for _, m := range mutants {
+		switch {
+		case m.Viable && m.Func == "Unasserted" && m.Operator == "arithmetic" && target.ID == "":
+			target = m
+		case m.Viable && m.Func == "Compared" && stable.ID == "":
+			stable = m
+		}
+	}
+	if target.ID == "" || stable.ID == "" {
+		t.Fatalf("fixture has no arithmetic mutant of Unasserted (%q) or mutant of Compared (%q)", target.ID, stable.ID)
+	}
+	t.Setenv("MUTRIM_FLAKY_MUTANT", target.ID)
+
+	// Each Run needs its own state directory, since the fixture flakes
+	// only on the first process that claims a step.
+	run := func(t *testing.T, o runner.Options) (*runner.Report, error) {
+		t.Helper()
+		t.Setenv("MUTRIM_FLAKY_STATE", t.TempDir())
+		o.TestBin, o.Mutants, o.Dir, o.Timeout = bin, mutants, flakyDir, 5*time.Second
+		return runner.Run(t.Context(), o)
+	}
+
+	// One trace run per test cannot tell a flaky test from a broken one,
+	// so the run stops, as it does for any test failing on its own.
+	t.Run("unconfirmed baseline", func(t *testing.T) {
+		if _, err := run(t, runner.Options{}); err == nil || !strings.Contains(err.Error(), "TestFlakyBaseline fails when run on its own") {
+			t.Errorf("err = %v, want TestFlakyBaseline failing on its own", err)
+		}
+	})
+
+	// Two trace runs disagree, so the test is flaky rather than broken;
+	// its failure under the mutant is suspicious, while the kill of the
+	// test that is not flaky is still recorded without -confirm-kills.
+	t.Run("confirmed baseline only", func(t *testing.T) {
+		rep, err := run(t, runner.Options{ConfirmBaseline: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		flaky := map[string]bool{}
+		for _, tt := range rep.Tests {
+			flaky[tt.Name] = tt.Flaky
+		}
+		want := map[string]bool{"TestStable": false, "TestFlakyKill": false, "TestFlakyBaseline": true}
+		if !maps.Equal(flaky, want) {
+			t.Errorf("flaky rows = %v, want %v", flaky, want)
+		}
+		res := result(t, rep, target.ID)
+		if res.Status != runner.Killed || !slices.Equal(res.KilledBy, []string{"TestFlakyKill"}) || !slices.Equal(res.SuspiciousBy, []string{"TestFlakyBaseline"}) {
+			t.Errorf("the flaky mutant = %+v, want KILLED by TestFlakyKill with TestFlakyBaseline suspicious", res)
+		}
+		if got := result(t, rep, stable.ID); got.Status != runner.Killed || !slices.Equal(got.KilledBy, []string{"TestStable"}) {
+			t.Errorf("the mutant of Compared = %+v, want KILLED by TestStable", got)
+		}
+		if rep.Totals.Suspicious != 1 {
+			t.Errorf("totals.suspicious = %d, want 1", rep.Totals.Suspicious)
+		}
+	})
+
+	// The rerun does not reproduce the remaining kill either, so nothing
+	// is left to tell the mutant from the original and it LIVED.
+	t.Run("confirmed kills", func(t *testing.T) {
+		rep, err := run(t, runner.Options{ConfirmBaseline: 2, ConfirmKills: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := result(t, rep, target.ID)
+		if res.Status != runner.Lived || len(res.KilledBy) != 0 {
+			t.Errorf("the flaky mutant = %+v, want LIVED with no killer", res)
+		}
+		if want := []string{"TestFlakyBaseline", "TestFlakyKill"}; !slices.Equal(slices.Sorted(slices.Values(res.SuspiciousBy)), want) {
+			t.Errorf("suspicious_by = %v, want %v", res.SuspiciousBy, want)
+		}
+		// A real kill survives the rerun untouched.
+		if got := result(t, rep, stable.ID); got.Status != runner.Killed || !slices.Equal(got.KilledBy, []string{"TestStable"}) || len(got.SuspiciousBy) != 0 {
+			t.Errorf("the mutant of Compared = %+v, want KILLED by TestStable with nothing suspicious", got)
+		}
+	})
+}
+
+// result is the report entry of one mutant.
+func result(t *testing.T, rep *runner.Report, id string) runner.Result {
+	t.Helper()
+	for _, r := range rep.Results {
+		if r.MutantID == id {
+			return r
+		}
+	}
+	t.Fatalf("no result for mutant %s", id)
+	return runner.Result{}
 }
