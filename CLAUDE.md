@@ -91,7 +91,11 @@ run on the result.
 ### Mutation engine
 
 - Operators: relational (`<` ↔ `<=`, `==` ↔ `!=`), arithmetic, logical (`&&` ↔ `||`),
-  condition negation, increment (`i++` ↔ `i--`), return replacement (`return x` → zero value).
+  bitwise (`&` ↔ `|`, `^`/`&^` → `&`, `<<` ↔ `>>`), unary minus removal (`-x` → `x`),
+  condition negation, forced conditions (`if cond` → `if true` / `if false`), increment
+  (`i++` ↔ `i--`), void call removal, return replacement (`return x` → zero value). These
+  are the PIT operators with a Go counterpart; constant replacement and non-void call
+  replacement are not implemented.
 - **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
   (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
   locally with `types.CheckExpr` in their original scope, so the cost is microseconds per

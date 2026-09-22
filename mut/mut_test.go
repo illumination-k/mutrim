@@ -44,6 +44,21 @@ func TestIdentityWhenInactive(t *testing.T) {
 	if !Cmp("x", "a", "b", "<", "<=") {
 		t.Error("Cmp on strings wrong")
 	}
+	if got := Bit("x", 6, 3, "&", "|"); got != 2 {
+		t.Errorf("Bit & = %d", got)
+	}
+	if got := Bit("x", 6, 3, "&^", "&"); got != 4 {
+		t.Errorf("Bit &^ = %d", got)
+	}
+	if got := Shift("x", int64(1), uint(3), "<<", ">>"); got != 8 {
+		t.Errorf("Shift << = %d", got)
+	}
+	if got := Neg("x", 2.5); got != -2.5 {
+		t.Errorf("Neg = %v", got)
+	}
+	if !Cond("x", true, false) || Cond("x", false, true) {
+		t.Error("Cond is not the identity")
+	}
 	if Not("x", false) || !Not("x", true) {
 		t.Error("Not is not the identity")
 	}
@@ -90,6 +105,21 @@ func TestMutantWhenActive(t *testing.T) {
 	if !Not("m", false) {
 		t.Error("Not mutant wrong")
 	}
+	if got := Bit("m", 6, 3, "&", "|"); got != 7 {
+		t.Errorf("Bit mutant = %d", got)
+	}
+	if got := Bit("m", 6, 3, "|", "^"); got != 5 {
+		t.Errorf("Bit mutant ^ = %d", got)
+	}
+	if got := Shift("m", uint8(8), 1, "<<", ">>"); got != 4 {
+		t.Errorf("Shift mutant = %d", got)
+	}
+	if got := Neg("m", 2); got != 2 {
+		t.Errorf("Neg mutant = %d", got)
+	}
+	if Cond("m", true, false) || !Cond("m", false, true) {
+		t.Error("Cond mutant must return the forced value")
+	}
 	calls := 0
 	rhs := func() bool { calls++; return false }
 	if !And("m", true, rhs) || calls != 0 {
@@ -111,6 +141,8 @@ func TestUnknownOperatorPanics(t *testing.T) {
 	for name, call := range map[string]func(){
 		"arith": func() { Arith("x", 1, 2, "&", "|") },
 		"cmp":   func() { Cmp("x", 1, 2, "==", "!=") },
+		"bit":   func() { Bit("x", 1, 2, "+", "-") },
+		"shift": func() { Shift("x", 1, 2, "&", "|") },
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {

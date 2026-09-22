@@ -56,7 +56,7 @@ func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
 }
 
 func TestGenerateGolden(t *testing.T) {
-	for _, name := range []string{"relational", "arith", "logical", "control", "ret", "excluded"} {
+	for _, name := range []string{"relational", "arith", "logical", "bitwise", "control", "stmt", "ret", "excluded"} {
 		t.Run(name, func(t *testing.T) {
 			pkg := load(t, name)
 			mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})
@@ -213,10 +213,11 @@ func TestLoadNoPackages(t *testing.T) {
 	}
 }
 
-// A custom operator whose table crosses operator classes, or names an
-// operator the runtime has no helper for, still yields mutants through
-// Apply (the type check decides their viability), but never schemata.
-func TestCustomOperatorWithoutSchemata(t *testing.T) {
+// A custom operator table is lowered like the built-in ones as long as a
+// swap stays within its class; a swap across classes still yields a
+// mutant through Apply (the type check decides its viability), but no
+// schemata.
+func TestCustomOperatorSchemata(t *testing.T) {
 	src := "package shift\n\nfunc F(a, b int) int { return a << b }\n\nfunc G(a, b complex128) complex128 { return a + b }\n"
 	file := filepath.Join(t.TempDir(), "shift.go")
 	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
@@ -242,7 +243,9 @@ func TestCustomOperatorWithoutSchemata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sch.Embedded) != 0 || len(sch.Files) != 0 {
-		t.Errorf("custom operators must not be embedded: %+v", sch)
+	for _, m := range mutants {
+		if want := m.Description == "<< -> >>"; sch.Embedded[m.ID] != want {
+			t.Errorf("%s: embedded=%v, want %v", m.Description, sch.Embedded[m.ID], want)
+		}
 	}
 }

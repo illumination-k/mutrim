@@ -75,6 +75,15 @@ func binarySchemata(ctx *Context, e *ast.BinaryExpr, to token.Token) func(*Lower
 			fn = "Or"
 		}
 		return func(l *Lowering) ast.Node { return l.Call(fn, e.X, boolClosure(e.Y)) }
+	case classBitwise:
+		return func(l *Lowering) ast.Node { return l.Call("Bit", e.X, e.Y, opLit(e.Op), opLit(to)) }
+	case classShift:
+		// A constant left operand would give the helper its default type
+		// (`1 << n` in an int64 context becomes an int), so it is declined.
+		if ctx.isConst(e.X) {
+			return nil
+		}
+		return func(l *Lowering) ast.Node { return l.Call("Shift", e.X, e.Y, opLit(e.Op), opLit(to)) }
 	}
 	return nil
 }
@@ -87,6 +96,8 @@ const (
 	classOrdered
 	classArith
 	classLogical
+	classBitwise
+	classShift
 )
 
 func opClass(t token.Token) opClassKind {
@@ -99,6 +110,10 @@ func opClass(t token.Token) opClassKind {
 		return classArith
 	case token.LAND, token.LOR:
 		return classLogical
+	case token.AND, token.OR, token.XOR, token.AND_NOT:
+		return classBitwise
+	case token.SHL, token.SHR:
+		return classShift
 	}
 	return classNone
 }
@@ -121,6 +136,16 @@ var Arithmetic = BinaryOp{OpName: "arithmetic", Table: map[token.Token]token.Tok
 	token.MUL: token.QUO,
 	token.QUO: token.MUL,
 	token.REM: token.MUL,
+}}
+
+// Bitwise swaps & and |, turns ^ and &^ into &, and swaps << and >>.
+var Bitwise = BinaryOp{OpName: "bitwise", Table: map[token.Token]token.Token{
+	token.AND:     token.OR,
+	token.OR:      token.AND,
+	token.XOR:     token.AND,
+	token.AND_NOT: token.AND,
+	token.SHL:     token.SHR,
+	token.SHR:     token.SHL,
 }}
 
 // Logical swaps && and ||.

@@ -187,7 +187,7 @@ func Between(a, b, c int) bool {
 }
 
 func Sign(x int) int {
-	if mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, 0, ">", ">=")) {
+	if mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, 0, ">", ">=")), true), false) {
 		{
 			if mut.Active("66dde5f45f2543a6") {
 				return 0
@@ -289,13 +289,84 @@ func SkipRecover(f func()) (caught bool) {
 	defer func() {
 		caught = mut.Not("a894464127e5d217", f != nil) && mut.Not("03e96412b880e329", recover() != nil)
 	}()
-	f()
+	if !mut.Active("3a8a0d011d82b906") {
+		f()
+	}
 	return false
 }
 
 func SkipMapPost(m map[int]int) {
 	for ; mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[0], 3, "<", "<=")); m[0]++ {
 	}
+}
+
+func Mask(a, b uint8) uint8 {
+	{
+		if mut.Active("fd9668639a4413f1") {
+			return 0
+		}
+		return mut.Bit("3f2d702e71f3daf2", a, b, "&", "|")
+	}
+}
+func Either(a, b int) int {
+	{
+		if mut.Active("ea2513b3d7c12d6f") {
+			return 0
+		}
+		return mut.Bit("1707c72ac28d24e2", a, b, "|", "&")
+	}
+}
+func Shl(a int64, n uint) int64 {
+	{
+		if mut.Active("170a938f7dea30ed") {
+			return 0
+		}
+		return mut.Shift("e12c22e5f799f6bc", a, n, "<<", ">>")
+	}
+}
+func Negate(x int) int {
+	{
+		if mut.Active("29af8a43ae7d4d0b") {
+			return 0
+		}
+		return mut.Neg("e420420160e75dde", x)
+	}
+}
+
+func Record(log *[]string, s string) { *log = append(*log, s) }
+
+func Twice(log *[]string) {
+	if !mut.Active("fb308af6f5d4d8eb") {
+		Record(log, "a")
+	}
+	if !mut.Active("518117ff9584d1f1") {
+		Record(log, "b")
+	}
+}
+
+func SkipInitCall(log *[]string) int {
+	n := 0
+	for Record(log, "init"); mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, 2, "<", "<=")); Record(log, "post") {
+		n += 2
+	}
+	{
+		if mut.Active("d98e8d1af4404ff4") {
+			return 0
+		}
+		return n
+	}
+}
+
+func SkipNamedBoolCond(f Flag) int {
+	if f {
+		{
+			if mut.Active("7a0108058a77e4ef") {
+				return 0
+			}
+			return 1
+		}
+	}
+	return 0
 }
 
 func Untested(x int) int {

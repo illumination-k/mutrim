@@ -79,10 +79,9 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		byFile[m.site.file] = append(byFile[m.site.file], m)
 	}
 	for _, ms := range byNode {
-		// Expression rewrites first, then the negation that wraps the result.
-		negation := Negation{}.Name()
+		// Expression rewrites first, then the operators that wrap the result.
 		sort.SliceStable(ms, func(i, j int) bool {
-			return ms[i].Operator != negation && ms[j].Operator == negation
+			return !wraps(ms[i].Operator) && wraps(ms[j].Operator)
 		})
 	}
 
@@ -116,6 +115,13 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		out.Files[name] = buf.Bytes()
 	}
 	return out, nil
+}
+
+// wraps reports whether the operator's schemata wrap the node's current
+// lowering (read at lowering time) instead of rebuilding it from the
+// original node's parts.
+func wraps(operator string) bool {
+	return operator == Negation{}.Name() || operator == Condition{}.Name()
 }
 
 // runtimeName picks an import name for the runtime that no identifier in f

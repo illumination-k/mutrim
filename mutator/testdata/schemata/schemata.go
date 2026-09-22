@@ -100,5 +100,35 @@ func SkipMapPost(m map[int]int) {
 	}
 }
 
+// Bitwise operators, shifts and unary minus.
+func Mask(a, b uint8) uint8     { return a & b }
+func Either(a, b int) int       { return a | b }
+func Shl(a int64, n uint) int64 { return a << n }
+func Negate(x int) int          { return -x }
+
+// Call statements the lowering removes; those in a for init or post
+// statement are declined, like a condition of a defined bool type.
+func Record(log *[]string, s string) { *log = append(*log, s) }
+
+func Twice(log *[]string) {
+	Record(log, "a")
+	Record(log, "b")
+}
+
+func SkipInitCall(log *[]string) int {
+	n := 0
+	for Record(log, "init"); n < 2; Record(log, "post") {
+		n += 2 // not n++: its mutant would loop until the timeout
+	}
+	return n
+}
+
+func SkipNamedBoolCond(f Flag) int {
+	if f {
+		return 1
+	}
+	return 0
+}
+
 // Untested has no test, so its mutants live.
 func Untested(x int) int { return x + 1 }

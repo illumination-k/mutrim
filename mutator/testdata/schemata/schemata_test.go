@@ -87,6 +87,33 @@ func TestLogical(t *testing.T) {
 	}
 }
 
+func TestBitwise(t *testing.T) {
+	if Mask(6, 3) != 2 || Either(6, 3) != 7 {
+		t.Error("Mask/Either")
+	}
+	if Shl(1, 3) != 8 {
+		t.Error("Shl")
+	}
+	if Negate(2) != -2 {
+		t.Error("Negate")
+	}
+}
+
+func TestCalls(t *testing.T) {
+	var log []string
+	Twice(&log)
+	if len(log) != 2 || log[0] != "a" || log[1] != "b" {
+		t.Errorf("Twice: %v", log)
+	}
+	log = nil
+	if SkipInitCall(&log) != 2 || len(log) != 2 {
+		t.Errorf("SkipInitCall: %v", log)
+	}
+	if SkipNamedBoolCond(true) != 1 || SkipNamedBoolCond(false) != 0 {
+		t.Error("SkipNamedBoolCond")
+	}
+}
+
 func TestStatements(t *testing.T) {
 	if Sign(1) != 1 || Sign(0) != -1 || Sign(-1) != -1 {
 		t.Error("Sign")
