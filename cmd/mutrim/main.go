@@ -367,7 +367,9 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	// of the matrix entirely: it covers nothing, is never selected and is
 	// never called redundant, and is reported on its own instead. Its
 	// suspicious pairs are out already, since the runner keeps them out of
-	// killed_by.
+	// killed_by. A RUN_ERROR mutant is no requirement either: no test
+	// failed, so it keeps no test alive, and its function is a weak spot
+	// only through its other mutants.
 	flaky := map[string]bool{}
 	for _, r := range reports {
 		for _, t := range r.Tests {

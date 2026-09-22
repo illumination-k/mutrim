@@ -117,6 +117,26 @@ func TestToStrykerSkipped(t *testing.T) {
 	}
 }
 
+// A RUN_ERROR is a RuntimeError in the schema, which keeps it out of the
+// score. It is no survivor — the run died from infrastructure — so it
+// is not annotated either.
+func TestToStrykerRunError(t *testing.T) {
+	ms := mutants()
+	r := &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.RunError, DurationMS: 4}}}
+	s := report.ToStryker(ms, []*runner.Report{r}, nil)
+	got := s.Files["p/a.go"].Mutants[0]
+	if got.Status != report.RuntimeError || got.TestsCompleted != nil || got.Duration != 4 {
+		t.Errorf("run error mutant = %+v, want RuntimeError, never run", got)
+	}
+	var buf bytes.Buffer
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a run error mutant must not be annotated: %s", buf.String())
+	}
+}
+
 // Shard reports of one package are merged: their results add up and the
 // test list, which every shard repeats, is not duplicated.
 func TestToStrykerMergesShards(t *testing.T) {
