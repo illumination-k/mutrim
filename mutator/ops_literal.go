@@ -45,8 +45,13 @@ func (Boolean) Sites(ctx *Context, n ast.Node) []Site {
 // messages, map keys and switch subjects are mutated. Literals Go requires
 // to stay literal (struct tags, constant declarations, array lengths) are
 // skipped; the schemata form is a call, so it is declined where the
-// literal's type is not the predeclared string.
+// literal's type is not the predeclared string. The format of a printf-like
+// call is reported but ignored as printf-format: lowered, it would no longer
+// be constant, which vet's printf check (run by go test and nogo) rejects.
 type String struct{}
+
+// reasonPrintfFormat is the Ignored rule of a printf format literal.
+const reasonPrintfFormat = "printf-format"
 
 func (String) Name() string { return "string" }
 
@@ -73,12 +78,49 @@ func (String) Sites(ctx *Context, n ast.Node) []Site {
 		Apply:       func() { lit.Value = mutated },
 		Undo:        func() { lit.Value = orig },
 	}
+	if ctx.isPrintfFormat(lit) {
+		s.Ignored = reasonPrintfFormat
+	}
 	if name, ok := ctx.universeName(ctx.Info.TypeOf(lit), lit.Pos()); ok && name == "string" {
 		conv := &ast.CallExpr{Fun: ast.NewIdent(name), Args: []ast.Expr{lit}}
 		replacement := &ast.BasicLit{Kind: token.STRING, Value: mutated}
 		s.Schemata = func(l *Lowering) ast.Node { return l.Call("Const", conv, replacement) }
 	}
 	return []Site{s}
+}
+
+// isPrintfFormat reports whether lit is, or is part of a constant
+// expression that is, the format argument of a printf-like call. A callee
+// is printf-like as vet's printf check defines it without facts: its last
+// parameter is ...any and the one before it a string, which covers the
+// fmt, log and testing ...f families.
+func (c *Context) isPrintfFormat(lit *ast.BasicLit) bool {
+	child := ast.Expr(lit)
+	for i := 1; i <= len(c.Path); i++ {
+		switch p := c.parent(i).(type) {
+		case *ast.ParenExpr:
+		case *ast.BinaryExpr:
+			if !c.isConst(p) {
+				return false
+			}
+		case *ast.CallExpr:
+			sig, ok := c.Info.TypeOf(p.Fun).(*types.Signature)
+			if !ok || !sig.Variadic() || sig.Params().Len() < 2 {
+				return false
+			}
+			params := sig.Params()
+			format := params.Len() - 2
+			last, _ := params.At(params.Len() - 1).Type().(*types.Slice)
+			iface, _ := types.Unalias(last.Elem()).(*types.Interface)
+			return iface != nil && iface.Empty() &&
+				types.Identical(params.At(format).Type(), types.Typ[types.String]) &&
+				len(p.Args) > format && p.Args[format] == child
+		default:
+			return false
+		}
+		child = c.parent(i).(ast.Expr)
+	}
+	return false
 }
 
 // Composite drops the elements of a slice or map literal. The rewrite

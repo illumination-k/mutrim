@@ -119,9 +119,13 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			site:        s,
 		}
 		// A directive states the author's intent at the site, so it is
-		// read before the run-wide filter.
+		// read before the run-wide filter; the operator's own rule is the
+		// fallback.
 		if m.Ignored, m.Reason = dis[s.file].find(pos.Line, s.Operator); m.Ignored == "" {
 			m.Ignored = opts.Filter.ignore(&m)
+		}
+		if m.Ignored == "" {
+			m.Ignored = s.Ignored
 		}
 		if m.Ignored == "" && opts.TypeCheck && s.Check != nil {
 			s.Apply()

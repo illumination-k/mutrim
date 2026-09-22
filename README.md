@@ -51,6 +51,11 @@ callees, matched as go/types names them, with and without the package path (`slo
 and `log/slog.Info`, `(*slog.Logger).Info`); `-no-arid` turns the built-in rules off,
 leaving only the `-arid` callees.
 
+The format argument of a printf-like call (`fmt.Errorf("boom")`, and any function whose
+last parameters are `string, ...any`) is ignored as `"printf-format"` by the `string`
+operator: lowered into the schemata it would no longer be constant, and vet's `printf`
+check, which `go test` and rules_go's `nogo` run, would fail the build.
+
 A filtered mutant is still listed, with
 `"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
 building or executing it — the counts of a filtered run stay comparable with an unfiltered

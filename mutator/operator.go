@@ -134,6 +134,9 @@ type Site struct {
 	// wrap, or the lowerings would replace each other; Lower orders the
 	// rebuilding one first.
 	Wraps bool
+	// Ignored names the rule under which the operator reports the site
+	// but keeps it out of the run, as a Filter would; empty keeps it.
+	Ignored string
 }
 
 // Operators selects operators by name from a comma-separated spec: a name

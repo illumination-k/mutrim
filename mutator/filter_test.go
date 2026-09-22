@@ -174,6 +174,9 @@ func TestFilterAridDefault(t *testing.T) {
 	marked := aridLines(t)
 	ignored, kept := 0, 0
 	for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
+		if m.Ignored == "printf-format" {
+			continue // the string operator's own rule, not the filter's
+		}
 		want := ""
 		if text, ok := marked[m.Line]; ok && strings.Contains(m.Description, text) {
 			want = "arid"
@@ -241,8 +244,8 @@ func TestFilterAridSpec(t *testing.T) {
 			for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
 				if m.Ignored == "arid" {
 					ignored[m.Func]++
-				} else if m.Ignored != "" {
-					t.Errorf("%s %q: ignored=%q, want arid or kept", m.Func, m.Description, m.Ignored)
+				} else if m.Ignored != "" && m.Ignored != "printf-format" {
+					t.Errorf("%s %q: ignored=%q, want arid, printf-format or kept", m.Func, m.Description, m.Ignored)
 				}
 			}
 			for _, fn := range tc.ignored {
