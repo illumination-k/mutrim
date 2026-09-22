@@ -229,6 +229,26 @@ func TestGenDefaultsToCurrentDirectory(t *testing.T) {
 	}
 }
 
+// -operators restricts the mutants to the named operators.
+func TestGenOperators(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-operators", "relational,return", fixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -operators: %v\n%s", err, stderr.String())
+	}
+	var mutants []mutator.Mutant
+	if err := json.Unmarshal(stdout.Bytes(), &mutants); err != nil {
+		t.Fatal(err)
+	}
+	if len(mutants) == 0 {
+		t.Fatal("no mutants")
+	}
+	for _, m := range mutants {
+		if m.Operator != "relational" && m.Operator != "return" {
+			t.Errorf("unexpected operator %s", m.Operator)
+		}
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }

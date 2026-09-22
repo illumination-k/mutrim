@@ -9,6 +9,9 @@ Pre-alpha; see [docs/plan.md](docs/plan.md) for the roadmap.
 # List type-checked-viable mutants of a package as JSON.
 go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 
+# Select operators: names, "default", and "-name" to remove one.
+go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
+
 # Apply one mutant through go build -overlay and run the package's tests.
 go run ./cmd/mutrim overlay -id <mutant id> -o overlay.json ./path/to/pkg
 go test -overlay overlay.json ./path/to/pkg
@@ -70,6 +73,7 @@ mutation_test(
     name = "mutant_calc",
     srcs = ["calc_test.go"],
     embed = [":calc"],
+    operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
     shard_count = 4,
 )
 ```
