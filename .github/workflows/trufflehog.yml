@@ -11,7 +11,9 @@ concurrency:
 
 jobs:
   secret-scan:
-    runs-on: ubuntu-slim
+    # trufflesecurity/trufflehog is a Docker action, and ubuntu-slim ships no
+    # Docker daemon: the step dies on /var/run/docker.sock before it scans.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read

@@ -32,12 +32,19 @@ import (
 const operatorsUsage = `comma-separated operators to apply: names, "default", ` +
 	`and "-name" to remove one (default: the default set, which leaves out the opt-in ones)`
 
+// excludeCallsUsage documents the -exclude-calls flag of gen.
+var excludeCallsUsage = `comma-separated globs over the callee ("log.Printf", ` +
+	`"(*slog.Logger).Info"): a matching call and its arguments are ignored. ` +
+	`"default" is the built-in list (` + strings.Join(mutator.DefaultExcludeCalls, " ") +
+	`), which an empty flag applies and "none" turns off`
+
 const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
   gen       list mutants of the packages as JSON; -operators selects the
-            operators and -match / -files / -exclude-files / -exclude-re
-            narrow the sites (a filtered mutant is reported, and ignored);
+            operators and -match / -files / -exclude-files / -exclude-re /
+            -exclude-calls narrow the sites (a filtered mutant is
+            reported, and ignored);
             -schemata also writes sources with every mutant embedded;
             -importpath type-checks the given files from export data
             (Bazel mode)
@@ -90,6 +97,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	files := fs.String("files", "", "keep only the mutants in files matching one of these comma-separated globs")
 	excludeFiles := fs.String("exclude-files", "", "drop the mutants in files matching one of these comma-separated regexps")
 	excludeRE := fs.String("exclude-re", "", "drop the mutants whose \"func operator: description\" matches this regexp")
+	excludeCalls := fs.String("exclude-calls", "", excludeCallsUsage)
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
@@ -102,7 +110,13 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	filter, err := mutator.FilterSpec{Match: *match, Files: *files, ExcludeFiles: *excludeFiles, ExcludeRE: *excludeRE}.Compile()
+	filter, err := mutator.FilterSpec{
+		Match:        *match,
+		Files:        *files,
+		ExcludeFiles: *excludeFiles,
+		ExcludeRE:    *excludeRE,
+		ExcludeCalls: *excludeCalls,
+	}.Compile()
 	if err != nil {
 		return err
 	}
