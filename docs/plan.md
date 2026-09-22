@@ -213,6 +213,16 @@ Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
    lines. Rows carry `parent`; `-keep` matches the full name and a tag on the parent protects
    every row. Known hazard, as in Stryker's per-test mode: subtests must be order-independent.
 
+7. **Confirmation reruns** (`run -confirm-kills`, `run -confirm-baseline`, the matching
+   `mutation_test` attributes). A kill read from one run is unstable (Shi, Bell, Marinov,
+   ISSTA 2019: 9% of mutant × test pairs), and a per-test matrix turns one flaky kill into
+   an "essential" or a "redundant" test. `-confirm-kills N` reruns only the killing tests
+   until each has failed N runs; an unreproduced failure goes to `suspicious_by`, and a
+   mutant whose every killer turned suspicious is `LIVED`. `-confirm-baseline N` repeats
+   each trace run; a test that fails in some runs and passes in others is `flaky` in
+   `tests[]` instead of an error, its failures are never kills, and `minimize` drops it
+   from the matrix and lists it in `flaky_tests`. `totals.suspicious` sizes the problem.
+
 Done: the schemata fixture has a redundant test, a `TestRegression_*` test and a tagged test;
 the runner golden shows complete `killed_by` lists and `NO_COVERAGE` for the untested
 function, and the CLI test checks the minimize verdict end to end. `criteria` and `minimize`

@@ -50,6 +50,16 @@ type Options struct {
 	// Subtest names must be stable across runs, so a name generated from
 	// random data is not supported.
 	Subtests bool
+	// ConfirmKills reruns the rows that killed a mutant, up to this many
+	// runs in total, and keeps only the failures every rerun reproduced;
+	// the rest are recorded in Result.SuspiciousBy. Zero or one records
+	// the first run's kills as they are.
+	ConfirmKills int
+	// ConfirmBaseline runs each row this many times during tracing
+	// instead of once. A row that fails in some runs and passes in others
+	// is marked Test.Flaky rather than failing the run; one that fails
+	// every time is an error, as a failing baseline always is.
+	ConfirmBaseline int
 	// Timeout per test process (one per mutant, or with Subtests one per
 	// parent of the rows reaching it); zero derives 3× the baseline run, at
 	// least MinTimeout.
@@ -112,9 +122,14 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		return nil, err
 	}
 	reachers := map[string][]string{}
+	flaky := map[string]bool{}
 	for _, t := range tests {
 		for _, id := range t.Sites {
 			reachers[id] = append(reachers[id], t.Name)
+		}
+		if t.Flaky {
+			flaky[t.Name] = true
+			logger.Printf("%s is flaky: it failed some of the %d baseline runs; its failures are no kills", t.Name, o.ConfirmBaseline)
 		}
 	}
 
@@ -148,16 +163,19 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
-			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout); err != nil {
+			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, flaky); err != nil {
 				return nil, err
 			}
-			logger.Printf("%s %s %s:%d %s %q (%dms)", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS)
+			logger.Printf("%s %s %s:%d %s %q (%dms)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, suspicion(r.SuspiciousBy))
 		}
 		report.Results = append(report.Results, r)
 	}
 	report.total()
 	if o.InDiff != nil {
 		logger.Printf("%d of %d mutants skipped: not in the diff", report.Totals.Skipped, report.Totals.Mutants)
+	}
+	if report.Totals.Suspicious > 0 {
+		logger.Printf("%d of %d mutants have an unconfirmed kill; see suspicious_by", report.Totals.Suspicious, report.Totals.Mutants)
 	}
 	return report, nil
 }
@@ -167,7 +185,13 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 // rows run in one process per parent; KILLED wins over TIMEOUT, which wins
 // over LIVED, and every process's killers are recorded, so killed_by is
 // the complete kill matrix.
-func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration) (Result, error) {
+//
+// A failure is a kill only when it is trustworthy: a row flaky marks fails
+// on its own, so its failure says nothing about the mutant, and with
+// Options.ConfirmKills the other failures must reproduce in every rerun.
+// The rest are recorded in suspicious_by, and a group whose every killer
+// turned suspicious counts as LIVED.
+func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration, flaky map[string]bool) (Result, error) {
 	r := Result{MutantID: id, Status: Lived}
 	for _, group := range groupByParent(rows) {
 		res, err := o.exec(ctx, id, "", testPattern(group), timeout)
@@ -176,18 +200,82 @@ func (o Options) runMutant(ctx context.Context, id string, rows []string, timeou
 		}
 		ran, failed := parseOutput(res.output, res.Status == Timeout, group)
 		r.TestsRun += ran
-		r.KilledBy = append(r.KilledBy, failed...)
 		r.DurationMS += res.DurationMS
-		if res.Status == Killed || r.Status == Lived {
-			r.Status = res.Status
+
+		candidates := []string{}
+		for _, name := range failed {
+			if flaky[name] {
+				r.SuspiciousBy = append(r.SuspiciousBy, name)
+			} else {
+				candidates = append(candidates, name)
+			}
+		}
+		killed, suspicious, ms, err := o.confirmKills(ctx, id, candidates, timeout)
+		if err != nil {
+			return Result{}, err
+		}
+		r.KilledBy = append(r.KilledBy, killed...)
+		r.SuspiciousBy = append(r.SuspiciousBy, suspicious...)
+		r.DurationMS += ms
+
+		status := res.Status
+		if len(failed) > 0 && len(killed) == 0 {
+			// Every failure of this group is suspicious, so nothing here
+			// tells the mutant from the original.
+			status = Lived
+		}
+		if status == Killed || r.Status == Lived {
+			r.Status = status
 		}
 	}
 	return r, nil
 }
 
+// confirmKills reruns the rows that failed against mutant id, which share
+// a parent, until each of them has failed Options.ConfirmKills runs in
+// total or has passed once. It returns the rows whose failure reproduced
+// every time, in the order given, the rest as suspicious, and the time the
+// reruns took. Fewer than two runs confirms nothing and reruns nothing.
+func (o Options) confirmKills(ctx context.Context, id string, killers []string, timeout time.Duration) (killed, suspicious []string, ms int64, err error) {
+	if o.ConfirmKills < 2 || len(killers) == 0 {
+		return killers, nil, 0, nil
+	}
+	still := killers
+	for range o.ConfirmKills - 1 {
+		if len(still) == 0 {
+			break
+		}
+		res, err := o.exec(ctx, id, "", testPattern(still), timeout)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		ms += res.DurationMS
+		_, still = parseOutput(res.output, res.Status == Timeout, still)
+	}
+	for _, name := range killers {
+		if slices.Contains(still, name) {
+			killed = append(killed, name)
+		} else {
+			suspicious = append(suspicious, name)
+		}
+	}
+	return killed, suspicious, ms, nil
+}
+
+// suspicion is the log suffix naming a result's unconfirmed kills.
+func suspicion(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return " suspicious: " + strings.Join(names, ",")
+}
+
 // traceTests runs every row on its own with GOMUTANT_TRACE set and
-// returns, per row, its duration and the sites it reached. A test that
-// fails on its own is an error, like a failing baseline.
+// returns, per row, its duration and the sites it reached. Options.
+// ConfirmBaseline repeats each row, and the results are merged: the sites
+// of every run, the longest duration, and Flaky when the row failed in
+// some runs but not all. A row that fails every run is an error, like a
+// failing baseline.
 func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error) {
 	dir, err := os.MkdirTemp("", "mutrim-trace-")
 	if err != nil {
@@ -195,23 +283,38 @@ func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error)
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
 
+	runs := max(o.ConfirmBaseline, 1)
 	tests := make([]Test, 0, len(names))
 	for i, name := range names {
-		trace := filepath.Join(dir, strconv.Itoa(i)+".trace")
-		res, err := o.exec(ctx, "", trace, testPattern([]string{name}), 0)
-		if err != nil {
-			return nil, err
+		t := Test{Name: name, Parent: parent(name)}
+		sites := map[string]bool{}
+		var failures int
+		var failed *execResult
+		for run := range runs {
+			trace := filepath.Join(dir, fmt.Sprintf("%d-%d.trace", i, run))
+			res, err := o.exec(ctx, "", trace, testPattern([]string{name}), 0)
+			if err != nil {
+				return nil, err
+			}
+			if res.Status != Lived {
+				failures++
+				failed = res
+			}
+			data, err := os.ReadFile(trace) //nolint:gosec // our own temp file
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+			for _, id := range strings.Fields(string(data)) {
+				sites[id] = true
+			}
+			t.DurationMS = max(t.DurationMS, res.DurationMS)
 		}
-		if res.Status != Lived {
-			return nil, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, res.Status, res.output)
+		if failures == runs {
+			return nil, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, failed.Status, failed.output)
 		}
-		data, err := os.ReadFile(trace) //nolint:gosec // our own temp file
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		sites := strings.Fields(string(data))
-		slices.Sort(sites)
-		tests = append(tests, Test{Name: name, Parent: parent(name), DurationMS: res.DurationMS, Sites: sites})
+		t.Flaky = failures > 0
+		t.Sites = slices.Sorted(maps.Keys(sites))
+		tests = append(tests, t)
 	}
 	return tests, nil
 }

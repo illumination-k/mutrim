@@ -18,6 +18,8 @@ go_test(
 mutation_test(
     name = "mutant_stats",
     srcs = ["stats_test.go"],
+    confirm_baseline = 2,
+    confirm_kills = 2,
     embed = [":stats"],
     exclude_re = "return -> zero values",
     match = "^(Mean|Spread)$",

@@ -173,6 +173,8 @@ def mutation_test(
         exclude_re = "",
         exclude_calls = [],
         subtests = False,
+        confirm_kills = 1,
+        confirm_baseline = 1,
         shard_count = None,
         env = {},
         **kwargs):
@@ -198,6 +200,12 @@ def mutation_test(
     matrix instead of its parent, so `minimize.json` can call a table row
     redundant; a tag on the parent protects every row. Subtest names must be
     stable across runs.
+
+    A flaky test makes one run call a test essential and the next call it
+    redundant, so `confirm_kills` and `confirm_baseline` buy confidence in
+    the matrix with reruns: an unreproduced kill lands in `suspicious_by`
+    instead of `killed_by`, and a test that does not pass reliably on its
+    own is marked flaky and left out of `minimize.json` entirely.
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
@@ -232,6 +240,14 @@ def mutation_test(
             `"default"` also names, and `["none"]` excludes no call.
         subtests: makes each subtest a row of the kill matrix
             (`mutrim run -subtests`).
+        confirm_kills: reruns a mutant's killing tests until each has failed
+            this many runs (`mutrim run -confirm-kills`); a kill that does not
+            reproduce is recorded in `suspicious_by` and is no kill. 1 trusts
+            the first run.
+        confirm_baseline: runs each test this many times while tracing
+            (`mutrim run -confirm-baseline`); one that fails in some runs and
+            passes in others is marked flaky and takes no part in the kill
+            matrix or the cover. 1 trusts the first run.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -279,6 +295,8 @@ def mutation_test(
         # scanned for the mutrim:keep tag, from the library sources, which
         # the Stryker report quotes.
         args = (["-subtests"] if subtests else []) +
+               (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
+               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
                ["$(rlocationpath {})".format(t) for t in inputs] +
                ["--", "$(rlocationpaths :{})".format(lib_srcs)],
         data = inputs + [":" + lib_srcs],

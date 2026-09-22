@@ -117,6 +117,33 @@ must be stable across runs (a name derived from random data is not), and subtest
 order-independent, as with Stryker's per-test coverage: a case relying on the state a
 sibling left behind can fail on its own, which `run` reports as an error.
 
+## Flaky tests
+
+A kill read from one run is not always a kill. Shi, Bell and Marinov (ISSTA 2019) measured
+mutation scores moving four points between identical reruns, with 9% of mutant × test pairs
+unstable. A per-test kill matrix is more exposed than a score: one flaky kill is enough to
+call a test essential, or another one redundant. Two flags buy confidence with reruns.
+
+`run -confirm-kills N` reruns the tests that killed a mutant until each has failed N runs.
+A failure the reruns do not reproduce is recorded in `suspicious_by` instead of `killed_by`
+(mutmut's `SUSPICIOUS`), so it is no kill and no requirement; when every killer of a mutant
+turns suspicious the mutant is `LIVED`. Only the killing tests are rerun, so the cost is
+proportional to the kills, not to the suite.
+
+`run -confirm-baseline N` runs each test N times while tracing instead of once. A test that
+fails in some of those runs and passes in others is marked `"flaky": true` in `tests[]`
+rather than failing the run; one that fails every time is still an error, as a failing
+baseline always is. A flaky test's failure under a mutant never counts as a kill, and
+`minimize` leaves it out of the matrix entirely — never selected, never called redundant,
+listed in `flaky_tests` instead, since its observations cannot support either verdict.
+`totals.suspicious` counts the mutants with at least one unconfirmed kill, which says how
+much of a run to distrust.
+
+```bash
+go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
+  -confirm-baseline 3 -confirm-kills 3 -out report.json
+```
+
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
 of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
 test whose requirements the other selected tests satisfy between them. `selected` lists the
@@ -211,6 +238,8 @@ mutation_test(
     exclude_files = ["_gen\\.go$"],
     exclude_calls = ["default", "(*Metrics).Observe"],  # logging calls are excluded anyway
     subtests = True,                       # optional; `mutrim run -subtests`
+    confirm_kills = 3,                     # optional; `mutrim run -confirm-kills`
+    confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
     shard_count = 4,
 )
 ```

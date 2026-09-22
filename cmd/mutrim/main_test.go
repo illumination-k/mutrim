@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -416,6 +417,8 @@ func TestCommandErrors(t *testing.T) {
 		"run malformed mutants":      {"run", "-test-bin", "x.test", "-mutants", malformed},
 		"run missing previous":       {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
 		"run missing in-diff":        {"run", "-test-bin", "x.test", "-mutants", mutantsFile, "-in-diff", missing},
+		"run bad confirm-kills":      {"run", "-confirm-kills", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run bad confirm-baseline":   {"run", "-confirm-baseline", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"minimize bad flag":          {"minimize", "-bogus"},
 		"minimize no report":         {"minimize"},
 		"minimize missing report":    {"minimize", missing},
@@ -702,5 +705,60 @@ func TestReport(t *testing.T) {
 		if !strings.HasPrefix(line, "::warning file=") || !strings.Contains(line, "::") {
 			t.Errorf("not a workflow command: %q", line)
 		}
+	}
+}
+
+// minimize leaves a flaky test out of the matrix altogether: it is neither
+// selected nor called redundant, only listed as flaky, and the
+// requirements only it reached disappear with it. A suspicious pair is no
+// kill either, so it never becomes a requirement.
+func TestMinimizeExcludesFlakyTests(t *testing.T) {
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "report.json")
+	if err := writeJSON(reportPath, nil, runner.Report{
+		Pkg: "example.com/a",
+		Tests: []runner.Test{
+			{Name: "TestStable", DurationMS: 1, Sites: []string{"1", "2"}},
+			{Name: "TestFlaky", DurationMS: 1, Sites: []string{"1", "2", "3"}, Flaky: true},
+		},
+		Results: []runner.Result{
+			{MutantID: "1", Status: runner.Killed, KilledBy: []string{"TestStable"}},
+			{MutantID: "2", Status: runner.Lived, SuspiciousBy: []string{"TestStable"}},
+			{MutantID: "3", Status: runner.Killed, KilledBy: []string{"TestFlaky"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	matrixPath := filepath.Join(dir, "matrix.json")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"minimize", "-matrix", matrixPath, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize: %v\n%s", err, stderr.String())
+	}
+	var result minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("minimize output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if !slices.Equal(result.Flaky, []string{"TestFlaky"}) {
+		t.Errorf("flaky_tests = %v, want TestFlaky", result.Flaky)
+	}
+	if len(result.Selected) != 1 || result.Selected[0].Name != "TestStable" || len(result.Redundant) != 0 {
+		t.Errorf("selected = %+v, redundant = %+v; want TestStable alone and the flaky test nowhere", result.Selected, result.Redundant)
+	}
+
+	var matrix criteria.Matrix
+	if err := readJSON(matrixPath, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	labels := make([]string, 0, len(matrix.Requirements))
+	for _, r := range matrix.Requirements {
+		labels = append(labels, r.Label)
+	}
+	// Site 3 is only the flaky test's, and the kill of mutant 3 only its
+	// own; mutant 2 has a suspicious failure, which is no kill.
+	if want := []string{"kill:1", "site:1", "site:2"}; !slices.Equal(labels, want) {
+		t.Errorf("requirements = %v, want %v", labels, want)
+	}
+	if len(matrix.Tests) != 1 || matrix.Tests[0].Name != "TestStable" {
+		t.Errorf("matrix rows = %+v, want TestStable alone", matrix.Tests)
 	}
 }
