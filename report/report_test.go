@@ -97,6 +97,26 @@ func TestToStryker(t *testing.T) {
 	}
 }
 
+// A mutant a diff left out is Ignored in the schema, the status for a
+// mutant deliberately kept out of the score, and says why. It is not a
+// survivor either, so it is not annotated.
+func TestToStrykerSkipped(t *testing.T) {
+	ms := mutants()
+	r := &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.Skipped}}}
+	s := report.ToStryker(ms, []*runner.Report{r}, nil)
+	got := s.Files["p/a.go"].Mutants[0]
+	if got.Status != report.Ignored || got.StatusReason != "not in the diff" || got.TestsCompleted != nil {
+		t.Errorf("skipped mutant = %+v, want Ignored, never run, with its reason", got)
+	}
+	var buf bytes.Buffer
+	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a skipped mutant must not be annotated: %s", buf.String())
+	}
+}
+
 // Shard reports of one package are merged: their results add up and the
 // test list, which every shard repeats, is not duplicated.
 func TestToStrykerMergesShards(t *testing.T) {

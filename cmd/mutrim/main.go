@@ -51,7 +51,8 @@ commands:
   overlay   write one mutant and print a go build -overlay file for it;
             -operators must match the gen run the mutant comes from
   run       execute a schemata test binary once per mutant, against the
-            tests that reach it, and report the per-test kill matrix
+            tests that reach it, and report the per-test kill matrix;
+            -in-diff scopes the run to the lines a unified diff adds
   minimize  from the report.json of one package (all of its shards),
             list the tests a greedy set cover finds redundant and the
             functions whose mutants survive
@@ -253,6 +254,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	mutantsPath := fs.String("mutants", "", "mutants.json from gen -schemata (required)")
 	out := fs.String("out", "", "write report.json here (default: $TEST_UNDECLARED_OUTPUTS_DIR/report.json, else stdout)")
 	previous := fs.String("previous", "", "report.json of an earlier run; its results are copied forward")
+	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines run, the rest are SKIPPED")
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout (default: 3× the baseline run)")
 	tests := fs.String("tests", "", "comma-separated top-level tests to run (default: all)")
 	dir := fs.String("dir", "", "working directory for the test binary")
@@ -273,6 +275,12 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if *previous != "" {
 		var err error
 		if opts.Previous, err = runner.ReadReport(*previous); err != nil {
+			return err
+		}
+	}
+	if *inDiff != "" {
+		var err error
+		if opts.InDiff, err = runner.ReadDiff(*inDiff); err != nil {
 			return err
 		}
 	}

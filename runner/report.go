@@ -28,6 +28,10 @@ const (
 	// NotViable means the mutant was never executed: it did not
 	// type-check or could not be embedded as schemata.
 	NotViable Status = "NOT_VIABLE"
+	// Skipped means a diff scoped the run (Options.InDiff) and the
+	// mutant lies outside it, so it was never executed; like Ignored it
+	// counts towards no score.
+	Skipped Status = "SKIPPED"
 	// Ignored means a gen filter or an inline //mutrim:disable directive
 	// excluded the mutant, so it was never built or executed; like
 	// NotViable it counts towards no score, but it says the suppression
@@ -74,6 +78,7 @@ type Totals struct {
 	NoCoverage int     `json:"no_coverage"`
 	NotViable  int     `json:"not_viable"`
 	Ignored    int     `json:"ignored"`
+	Skipped    int     `json:"skipped"`
 	Score      float64 `json:"score"`
 }
 
@@ -119,6 +124,8 @@ func (r *Report) total() {
 			t.NotViable++
 		case Ignored:
 			t.Ignored++
+		case Skipped:
+			t.Skipped++
 		}
 	}
 	if viable := t.Killed + t.Timeout + t.Lived + t.NoCoverage; viable > 0 {

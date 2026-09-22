@@ -3,7 +3,8 @@
 # then `mutrim minimize` and `mutrim report` on its report. Arguments are the
 # rlocationpaths of mutrim, the test binary and mutants.json, then the test
 # sources (scanned for the mutrim:keep tag), "--", and the library sources
-# (quoted by the Stryker report).
+# (quoted by the Stryker report). MUTRIM_IN_DIFF, when set, is the unified diff
+# the run is scoped to.
 
 # --- begin runfiles.bash initialization v3 ---
 # Copy-pasted from the Bazel Bash runfiles library v3.
@@ -40,7 +41,17 @@ for src in "$@"; do
 done
 out="${TEST_UNDECLARED_OUTPUTS_DIR:?}"
 
-"$mutrim" run -test-bin "$test_bin" -mutants "$mutants" -out "$out/report.json"
+# MUTRIM_IN_DIFF scopes the run to the lines a unified diff adds; every other
+# mutant is reported SKIPPED. Pass it as an absolute path
+# (--test_env=MUTRIM_IN_DIFF=$PWD/pr.diff), which the local sandbox reads but a
+# hermetic remote executor does not.
+in_diff=()
+if [[ -n "${MUTRIM_IN_DIFF:-}" ]]; then
+	in_diff=(-in-diff "$MUTRIM_IN_DIFF")
+fi
+
+"$mutrim" run -test-bin "$test_bin" -mutants "$mutants" -out "$out/report.json" \
+	${in_diff[@]+"${in_diff[@]}"}
 "$mutrim" minimize -mutants "$mutants" -srcs "$test_srcs" -o "$out/minimize.json" "$out/report.json"
 "$mutrim" report -format stryker -mutants "$mutants" -srcs "$lib_srcs" \
 	-o "$out/mutation-report.json" "$out/report.json"

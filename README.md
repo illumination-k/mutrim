@@ -118,6 +118,38 @@ the composed test × requirement matrix as JSON for an exact solver. The shards 
 can be passed together; reports of different packages are refused, since their test names would
 collide and no test of one package covers a requirement of another.
 
+## Scoping a run to a diff
+
+`run -in-diff` runs only the mutants on the lines a unified diff adds, which is what a
+pull request needs:
+
+```bash
+git diff --unified=0 --merge-base origin/main > pr.diff
+go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -in-diff pr.diff -out report.json
+```
+
+Every other mutant is reported `SKIPPED`: it is not executed and counts towards no score,
+so `score` is the mutation score of the diff. The filter is applied before everything
+else, `-previous` included, so a scoped run executes nothing outside the diff.
+
+Only the new side of the diff is read. A removed line holds no mutant, and a context line
+is code the diff did not change, so a mutant is kept when its span overlaps an added line;
+`_test.go` files are skipped, since mutants never live there. The diff's paths are matched
+against a mutant's file by path suffix, so a repository-relative diff matches both the
+absolute paths of a `go list` run and the execroot-relative ones of a Bazel run.
+
+`gen` is unchanged: mutant IDs are content hashes, so `mutants.json` is the same either
+way and a scoped run stays comparable with a full one. The diff must be taken against the
+sources the test binary was built from; mutrim does not verify that, and a diff of another
+tree simply selects the wrong lines.
+
+Under Bazel the diff is passed by path, which keeps the runner hermetic:
+
+```bash
+git diff --unified=0 --merge-base origin/main > "$PWD/pr.diff"
+bazel test --test_env=MUTRIM_IN_DIFF="$PWD/pr.diff" //...:all
+```
+
 ## Reporting
 
 `report` renders `report.json` in the formats other tools already read. `-mutants` is
@@ -137,8 +169,8 @@ mutrim report -format github -mutants mutants.json report.json
 
 `KILLED`, `LIVED`, `TIMEOUT` and `NO_COVERAGE` map onto the schema's `Killed`, `Survived`,
 `Timeout` and `NoCoverage`; `NOT_VIABLE` is a `CompileError`, since the mutant never built,
-and `IGNORED` is `Ignored`, with the directive or filter that suppressed it as its
-`statusReason`. Each mutant carries the tests that reach it (`coveredBy`) and the ones that
+and `IGNORED` and `SKIPPED` are `Ignored`, with the directive or filter that suppressed it,
+or `not in the diff`, as its `statusReason`. Each mutant carries the tests that reach it (`coveredBy`) and the ones that
 killed it (`killedBy`), so the viewer shows the kill matrix per mutant. A mutant no report
 mentions is left out, so one shard's report renders that shard.
 
@@ -178,7 +210,8 @@ to the test's undeclared outputs (`bazel-testlogs/pkg/mutant_calc/test.outputs/`
 directory per shard; pass the shards' reports together to `mutrim minimize` or
 `mutrim report` for a whole-package verdict). Mutants are generated
 hermetically: the rule type-checks the library against the export data rules_go compiled for
-its dependencies, so no `go` command runs inside the sandbox.
+its dependencies, so no `go` command runs inside the sandbox. Passing
+`--test_env=MUTRIM_IN_DIFF=$PWD/pr.diff` scopes the run to a diff, as above.
 
 Not supported yet: cgo packages and `//go:embed` directives in the library under test (the
 schemata sources live in a generated directory). `examples/` dogfoods the macro; run
