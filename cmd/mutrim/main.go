@@ -27,6 +27,10 @@ import (
 	"github.com/illumination-k/mutrim/runner"
 )
 
+// operatorsUsage documents the -operators flag of gen and overlay.
+const operatorsUsage = `comma-separated operators to apply: names, "default", ` +
+	`and "-name" to remove one (default: the default set, which leaves out the opt-in ones)`
+
 const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
@@ -34,7 +38,8 @@ commands:
             operators; -schemata also writes sources with every mutant
             embedded; -importpath type-checks the given files from export
             data (Bazel mode)
-  overlay   write one mutant and print a go build -overlay file for it
+  overlay   write one mutant and print a go build -overlay file for it;
+            -operators must match the gen run the mutant comes from
   run       execute a schemata test binary once per mutant, against the
             tests that reach it, and report the per-test kill matrix
   minimize  from the report.json of one package (all of its shards),
@@ -71,7 +76,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	out := fs.String("o", "", "write mutants.json here instead of stdout")
 	noCheck := fs.Bool("no-check", false, "skip the go/types pre-filter")
-	operators := fs.String("operators", "", "comma-separated operators to apply: names, \"default\", and \"-name\" to remove one (default: every operator)")
+	operators := fs.String("operators", "", operatorsUsage)
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
@@ -165,6 +170,7 @@ func runOverlay(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("overlay", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	id := fs.String("id", "", "mutant ID to apply (required)")
+	operators := fs.String("operators", "", operatorsUsage)
 	out := fs.String("o", "", "write the overlay JSON here instead of stdout")
 	dir := fs.String("dir", "", "directory for the mutated source (default: a temp dir)")
 	if err := fs.Parse(args); err != nil {
@@ -172,6 +178,10 @@ func runOverlay(args []string, stdout, stderr io.Writer) error {
 	}
 	if *id == "" {
 		return errors.New("overlay: -id is required")
+	}
+	ops, err := mutator.Operators(*operators)
+	if err != nil {
+		return err
 	}
 
 	pkgs, err := mutator.Load(".", patterns(fs)...)
@@ -186,7 +196,7 @@ func runOverlay(args []string, stdout, stderr io.Writer) error {
 
 	var errs []error
 	for _, pkg := range pkgs {
-		file, src, err := mutator.Source(pkg, *id)
+		file, src, err := mutator.Source(pkg, *id, ops)
 		if err != nil {
 			errs = append(errs, err)
 			continue

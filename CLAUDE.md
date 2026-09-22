@@ -90,19 +90,45 @@ run on the result.
 
 ### Mutation engine
 
-- Operators: relational (`<` ↔ `<=`, `==` ↔ `!=`), arithmetic, logical (`&&` ↔ `||`),
-  bitwise (`&` ↔ `|`, `^`/`&^` → `&`, `<<` ↔ `>>`), unary minus removal (`-x` → `x`),
-  condition negation, forced conditions (`if cond` → `if true` / `if false`), increment
-  (`i++` ↔ `i--`), void call removal, numeric literal replacement (`c` → `c+1`, never where
-  a constant is required), return replacement (`return x` → zero value). These are the PIT
-  operators with a Go counterpart; non-void call replacement is not implemented. All of them
-  are on by default; `gen -operators` (the `operators` attribute of `mutation_test`) selects
-  a subset, e.g. `default,-constant`.
+- Operators (`mutator.AllOperators`, one `ops_*.go` per family):
+
+  | Operator     | Mutation                                                                                |
+  | ------------ | --------------------------------------------------------------------------------------- |
+  | `relational` | boundary swap `<` ↔ `<=`, `>` ↔ `>=`, and `==` ↔ `!=`                                   |
+  | `invert`     | negated comparison `<` → `>=` (schemata spell it `!(a < b)`)                            |
+  | `arithmetic` | `+` `-` `*` `/` `%`                                                                     |
+  | `logical`    | `&&` ↔ `\|\|`                                                                           |
+  | `bitwise`    | `&` ↔ `\|`, `^`/`&^` → `&`, `<<` ↔ `>>`                                                 |
+  | `negatives`  | unary removal `-x` → `x`, `!x` → `x`                                                    |
+  | `negation`   | the condition of an `if` or `for` negated                                               |
+  | `condition`  | `if cond` → `if true` / `if false`                                                      |
+  | `incdec`     | `i++` ↔ `i--`                                                                           |
+  | `assignop`   | `+=` ↔ `-=` (arithmetic, bitwise, shift tables), and `op=` → `=`                        |
+  | `voidcall`   | a call statement removed                                                                |
+  | `assign`     | the store of `x = y` dropped, y still evaluated                                         |
+  | `branch`     | the body of an `if`, an `else`, a `case` or a select clause emptied                     |
+  | `loopctrl`   | `break` ↔ `continue`                                                                    |
+  | `loopcond`   | `for cond` → `for false`, `for range` → no iteration                                    |
+  | `constant`   | numeric literal `c` → `c+1`, never where a constant is required                         |
+  | `boolean`    | `true` ↔ `false`                                                                        |
+  | `string`     | `"s"` → `""`, `""` → `"mutrim"`                                                         |
+  | `composite`  | a slice or map literal loses its elements                                               |
+  | `method`     | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`) |
+  | `call`       | a non-void call → the zero value of its result (**opt-in**)                             |
+  | `return`     | each result → its zero value and one other value of its type; all results at once       |
+
+  These are the PIT operators with a Go counterpart, plus the loop and library-call families
+  of gremlins, go-mutesting and Stryker. Every operator but `call` is in `DefaultOperators`
+  (a non-void call often returns the zero value anyway, so most of its mutants are
+  equivalent); `gen -operators` (the `operators` attribute of `mutation_test`) selects a
+  subset or adds an opt-in one, e.g. `default,-constant` or `default,call`.
 - **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
-  (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
+  (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators, a compound
+  assignment through the binary expression it stands for, a library-call swap) are checked
   locally with `types.CheckExpr` in their original scope, so the cost is microseconds per
   mutant and the package is never re-checked. Statement mutants (condition negation,
-  `++`/`--`, return-to-zero) are well-typed by construction and skip the check.
+  `++`/`--`, return replacement, branch and loop rewrites) are well-typed by construction
+  and skip the check.
 - The local check misses context-dependent failures: constant overflow in the enclosing
   assignment, and an import or variable left unused by a return replacement. Those fail at
   build time; count build failures as NOT VIABLE.
@@ -136,6 +162,11 @@ loading/analysis.
   drift.
 - With `GOMUTANT_ID` unset, schemata source must behave identically to the original; keep a
   test that asserts this.
+- Several mutants can sit on one node (the two `assignop` mutants of `x += y`, every mutant
+  of one `return`). Exactly one of them rebuilds the node from its parts; the others set
+  `Site.Wraps` and build their replacement around `Lowering.Current`, so the lowerings nest
+  instead of discarding each other. `Lower` orders the rebuilding one first and skips a
+  second one.
 
 ### Minimizer
 

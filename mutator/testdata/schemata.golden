@@ -5,6 +5,8 @@ package schemata
 import (
 	"errors"
 	mut "github.com/illumination-k/mutrim/mut"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -16,203 +18,315 @@ var ErrTarget = errors.New("target")
 
 func Less(a, b int) bool {
 	{
-		if mut.Active("213b52813b77bcb4") {
-			return false
+		if mut.Active("fd555defc2fee05d") {
+			return true
 		}
-		return mut.Cmp("159b5e89d17dc10d", a, b, "<", "<=")
+		{
+			if mut.Active("9f7f4e0e040a35d1") {
+				return false
+			}
+			return mut.Not("096c34584c588380", mut.Cmp("159b5e89d17dc10d", a, b, "<", "<="))
+		}
 	}
 }
 func LessEq(a, b float64) bool {
 	{
-		if mut.Active("95c62f67dbda99b0") {
-			return false
+		if mut.Active("ad354992a548bd74") {
+			return true
 		}
-		return mut.Cmp("84a957dc37cc4af7", a, b, "<=", "<")
+		{
+			if mut.Active("a0edb1edfabceb87") {
+				return false
+			}
+			return mut.Not("11d9dd0d721231cb", mut.Cmp("84a957dc37cc4af7", a, b, "<=", "<"))
+		}
 	}
 }
 func Greater(a, b string) bool {
 	{
-		if mut.Active("53077abbbf9a175a") {
-			return false
+		if mut.Active("479ba6fdd6b56747") {
+			return true
 		}
-		return mut.Cmp("be06254d4f55ce70", a, b, ">", ">=")
+		{
+			if mut.Active("ae0481ea2b4a55f2") {
+				return false
+			}
+			return mut.Not("5b70ce4995c2d22b", mut.Cmp("be06254d4f55ce70", a, b, ">", ">="))
+		}
 	}
 }
 func GreaterEq(a Celsius) bool {
 	{
-		if mut.Active("2f5b92497d0e4360") {
-			return false
+		if mut.Active("4c92819c64d1137d") {
+			return true
 		}
-		return mut.Cmp("eff90fc95fc05c2f", a, 0, ">=", ">")
+		{
+			if mut.Active("01f050621df31341") {
+				return false
+			}
+			return mut.Not("cb82181b3f9ee6e6", mut.Cmp("eff90fc95fc05c2f", a, 0, ">=", ">"))
+		}
 	}
 }
 func ConstLeft(x int) bool {
 	{
-		if mut.Active("c07b3fb172260e5c") {
-			return false
+		if mut.Active("95cfe14f48182a19") {
+			return true
 		}
-		return mut.Cmp("6ad270dfb1805fd8", mut.Const("6f9a52869d353dc4", int(10), 11), x, "<", "<=")
+		{
+			if mut.Active("d5563e3676213d3a") {
+				return false
+			}
+			return mut.Not("5b1b101845e3d900", mut.Cmp("6ad270dfb1805fd8", mut.Const("6f9a52869d353dc4", int(10), 11), x, "<", "<="))
+		}
 	}
 }
 func IsNil(p *int) bool {
 	{
-		if mut.Active("1af45172ee135320") {
-			return false
+		if mut.Active("b65c9b23fff9b12c") {
+			return true
 		}
-		return mut.Not("375ee2d7faa63d31", p == nil)
+		{
+			if mut.Active("acff32fedaf12ad2") {
+				return false
+			}
+			return mut.Not("375ee2d7faa63d31", p == nil)
+		}
 	}
 }
 func NotNil(s []int) bool {
 	{
-		if mut.Active("c8fc7dbf040e1ab6") {
-			return false
+		if mut.Active("3f447a022e87d6cf") {
+			return true
 		}
-		return mut.Not("dbcf5912b6e8b60a", s != nil)
+		{
+			if mut.Active("8ec262d5cfbe84e9") {
+				return false
+			}
+			return mut.Not("dbcf5912b6e8b60a", s != nil)
+		}
 	}
 }
 func IsTarget(err error) bool {
 	{
-		if mut.Active("71cbe537182ade35") {
-			return false
+		if mut.Active("43e038ca8ecbcf1e") {
+			return true
 		}
-		return mut.Not("3e5fbba8411fc616", err == ErrTarget)
+		{
+			if mut.Active("fed87b4e4ab28bdd") {
+				return false
+			}
+			return mut.Not("3e5fbba8411fc616", err == ErrTarget)
+		}
 	}
 }
 func SameInterface(a, b any) bool {
 	{
-		if mut.Active("1bf7278e053fe044") {
-			return false
+		if mut.Active("66dbebac595c1789") {
+			return true
 		}
-		return mut.Not("8f0982042a267624", a == b)
+		{
+			if mut.Active("e74374954cad35ab") {
+				return false
+			}
+			return mut.Not("8f0982042a267624", a == b)
+		}
 	}
 }
 
 func Add(a, b int) int {
 	{
-		if mut.Active("b67d30cea9b50ee4") {
-			return 0
+		if mut.Active("fd10d75fd9385104") {
+			return 1
 		}
-		return mut.Arith("f45a3c2341f5ba02", a, b, "+", "-")
+		{
+			if mut.Active("437e8131b904cd5e") {
+				return 0
+			}
+			return mut.Arith("f45a3c2341f5ba02", a, b, "+", "-")
+		}
 	}
 }
 func Sub(a, b float64) float64 {
 	{
-		if mut.Active("80812b10fbf3b78b") {
-			return 0
+		if mut.Active("1c869f3ed5a18f39") {
+			return 1
 		}
-		return mut.Arith("0fd921b9496bbaa7", a, b, "-", "+")
+		{
+			if mut.Active("ce333371c40238e4") {
+				return 0
+			}
+			return mut.Arith("0fd921b9496bbaa7", a, b, "-", "+")
+		}
 	}
 }
 func Scale(d time.Duration) time.Duration {
 	{
-		if mut.Active("b67a562e03aa07c8") {
-			return 0
+		if mut.Active("770161b518b5fcfb") {
+			return 1
 		}
-		return mut.Arith("cb74fdd7f19e7123", d, 2, "*", "/")
+		{
+			if mut.Active("3404ffbf5b5f660e") {
+				return 0
+			}
+			return mut.Arith("cb74fdd7f19e7123", d, 2, "*", "/")
+		}
 	}
 }
 func Div(a, b int) int {
 	{
-		if mut.Active("45aede2cde88348d") {
-			return 0
+		if mut.Active("3e55ad3593cf184a") {
+			return 1
 		}
-		return mut.Arith("a702cfdb748843e6", a, b, "/", "*")
+		{
+			if mut.Active("d1a035e30450c913") {
+				return 0
+			}
+			return mut.Arith("a702cfdb748843e6", a, b, "/", "*")
+		}
 	}
 }
 func Mod(a, b int) int {
 	{
-		if mut.Active("07febdfc4e445d13") {
-			return 0
+		if mut.Active("08c1e5310d9584a4") {
+			return 1
 		}
-		return mut.ArithInt("4aa44471776485c5", a, b, "%", "*")
+		{
+			if mut.Active("5abc821338f5fa7d") {
+				return 0
+			}
+			return mut.ArithInt("4aa44471776485c5", a, b, "%", "*")
+		}
 	}
 }
 func MulComplex(a, b complex128) complex128 {
 	{
-		if mut.Active("6671d8b0f1adf09b") {
-			return 0
+		if mut.Active("0c55cbd0e00c895b") {
+			return 1
 		}
-		return mut.Arith("f96c372bad54a5f5", a, b, "*", "/")
+		{
+			if mut.Active("1bae11330bbe5598") {
+				return 0
+			}
+			return mut.Arith("f96c372bad54a5f5", a, b, "*", "/")
+		}
 	}
 }
 func Half(x float64) float64 {
 	{
-		if mut.Active("69dba3e15eed47db") {
-			return 0
+		if mut.Active("fe0ce2faf79b088d") {
+			return 1
 		}
-		return mut.Arith("17715f3be77a5f3e", x, mut.Const("e960fdea501e37d4", float64(0.5), 1.5), "*", "/")
+		{
+			if mut.Active("fd91ba1f60a90de6") {
+				return 0
+			}
+			return mut.Arith("17715f3be77a5f3e", x, mut.Const("e960fdea501e37d4", float64(0.5), 1.5), "*", "/")
+		}
 	}
 }
 func Sum[T int | float64](a, b T) T { return mut.Arith("8300bc4c99bc1d49", a, b, "+", "-") }
 func Shift(n uint) int {
 	{
-		if mut.Active("c1669c46a27a8f7f") {
-			return 0
+		if mut.Active("22d7724c6e775f32") {
+			return 1
 		}
-		return mut.Arith("1f743c242248ec92", mut.Const("c1f239c651c5b2a4", int(1), 2)<<n, mut.Const("65abc0ce6114c5c1", int(1), 2), "+", "-")
+		{
+			if mut.Active("9629b68dfcdf27d5") {
+				return 0
+			}
+			return mut.Arith("1f743c242248ec92", mut.Const("c1f239c651c5b2a4", int(1), 2)<<n, mut.Const("65abc0ce6114c5c1", int(1), 2), "+", "-")
+		}
 	}
 }
 
 func And(a bool, b func() bool) bool {
 	{
-		if mut.Active("f47f2ba7a37091eb") {
-			return false
+		if mut.Active("831cf1e5a316ef5d") {
+			return true
 		}
-		return mut.And("4027c284b09ea2f0", a, func() bool {
-			return b()
-		})
+		{
+			if mut.Active("5b6fe971e7206001") {
+				return false
+			}
+			return mut.And("4027c284b09ea2f0", a, func() bool {
+				return b()
+			})
+		}
 	}
 }
 func Or(a bool, b func() bool) bool {
 	{
-		if mut.Active("6dd33300bf3f167a") {
-			return false
+		if mut.Active("2b24517bc5488237") {
+			return true
 		}
-		return mut.Or("9299c8dc6692da73", a, func() bool {
-			return b()
-		})
+		{
+			if mut.Active("2c2d99aa9123a93e") {
+				return false
+			}
+			return mut.Or("9299c8dc6692da73", a, func() bool {
+				return b()
+			})
+		}
 	}
 }
 func Between(a, b, c int) bool {
 	{
-		if mut.Active("cf5ac3f2e6f7fb18") {
-			return false
+		if mut.Active("bff3cb5a192204bb") {
+			return true
 		}
-		return mut.Or("8da3a8831787f4ee", mut.And("e39ee287027bdf03", mut.Cmp("c9cd27b0b42477ae", a, b, "<", "<="), func() bool {
-			return mut.Cmp("3d331a785729e370", b, c, "<", "<=")
-		}), func() bool {
-			return mut.Not("7d79ec4f303ab61d", a == c)
-		})
+		{
+			if mut.Active("c844b97bb2a514c0") {
+				return false
+			}
+			return mut.Or("8da3a8831787f4ee", mut.And("e39ee287027bdf03", mut.Not("c97d5e9621343b62", mut.Cmp("c9cd27b0b42477ae", a, b, "<", "<=")), func() bool {
+				return mut.Not("1012e47ef377c2a5", mut.Cmp("3d331a785729e370", b, c, "<", "<="))
+			}), func() bool {
+				return mut.Not("7d79ec4f303ab61d", a == c)
+			})
+		}
 	}
 }
 
 func Sign(x int) int {
-	if mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, mut.Const("8fdd8f886b9db127", int(0), 1), ">", ">=")), true), false) {
-		{
-			if mut.Active("66dde5f45f2543a6") {
-				return 0
+	if mut.Not("ce944a6297477124", mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, mut.Const("8fdd8f886b9db127", int(0), 1), ">", ">=")), true), false)) {
+		if !mut.Active("b8c9915fbd6863b9") {
+			{
+				if mut.Active("93f8df02015b4ae0") {
+					return 0
+				}
+				return mut.Const("7e462188e672fa27", int(1), 2)
 			}
-			return mut.Const("7e462188e672fa27", int(1), 2)
 		}
 	}
 	{
-		if mut.Active("39774c0950282d59") {
-			return 0
+		if mut.Active("4ec55ea3c6057340") {
+			return 1
 		}
-		return -mut.Const("ec9b6bc5d69073cb", int(1), 2)
+		{
+			if mut.Active("dc0c04d734540010") {
+				return 0
+			}
+			return -mut.Const("ec9b6bc5d69073cb", int(1), 2)
+		}
 	}
 }
 
 func CountTo(n int) int {
 	c := mut.Const("36766ecd38bd6931", int(0), 1)
-	for i := mut.Const("84a2c361b94b85ea", int(0), 1); mut.Not("5adc5ee4ed84265b", mut.Cmp("10bc891894f8cba2", i, n, "<", "<=")); mut.Inc("ee70f52e628e38ee", &i) {
+	for i := mut.Const("84a2c361b94b85ea", int(0), 1); mut.Not("4e9c7e10c69b6dd2", mut.Cond("e730ff4031b69c92", mut.Not("5adc5ee4ed84265b", mut.Cmp("10bc891894f8cba2", i, n, "<", "<=")), false)); mut.Inc("ee70f52e628e38ee", &i) {
 		mut.Inc("fa46b33096c8373e", &c)
 	}
 	{
-		if mut.Active("9461868839a73ab7") {
-			return 0
+		if mut.Active("687da29d60c4139b") {
+			return 1
 		}
-		return c
+		{
+			if mut.Active("3f099ac2f13f4fb5") {
+				return 0
+			}
+			return c
+		}
 	}
 }
 
@@ -232,19 +346,29 @@ func (c *Counter) Inc() { mut.Inc("1cda4f2b33620015", &c.n) }
 
 func Classify(x int) string {
 	switch {
-	case mut.Cmp("cd9dbacb2034e5e3", x, mut.Const("5f5a3eed71e5ba20", int(0), 1), "<", "<="):
+	case mut.Not("34707c5f67de1d42", mut.Cmp("cd9dbacb2034e5e3", x, mut.Const("5f5a3eed71e5ba20", int(0), 1), "<", "<=")):
 		{
-			if mut.Active("399ca6ea6976fdfc") {
-				return ""
+			if mut.Active("de44dda349b3b224") {
+				return "mutrim"
 			}
-			return "negative"
+			{
+				if mut.Active("6e0f404fa073b426") {
+					return ""
+				}
+				return mut.Const("8f313341ea5b89a3", string("negative"), "")
+			}
 		}
 	}
 	{
-		if mut.Active("234236b958b008e4") {
-			return ""
+		if mut.Active("5733d855e4091492") {
+			return "mutrim"
 		}
-		return "non-negative"
+		{
+			if mut.Active("d0c4b80bd55305d8") {
+				return ""
+			}
+			return mut.Const("16c866f4700203fe", string("non-negative"), "")
+		}
 	}
 }
 
@@ -253,149 +377,307 @@ func Pair(x int) (int, error) {
 		if mut.Active("2681283d672fa8cd") {
 			return 0, nil
 		}
-		return x, nil
+		{
+			if mut.Active("591e90e757b11f53") {
+				return 1, nil
+			}
+			{
+				if mut.Active("dbe7d96917d5daf8") {
+					return 0, nil
+				}
+				return x, nil
+			}
+		}
+	}
+}
+
+func Halve(x int) (int, error) {
+	if mut.Not("e7a02783778866cb", mut.Cond("7dabe873ceb707d4", mut.Cond("9767a5f8f8130569", mut.Not("ca30a9b7e9932d2c", mut.ArithInt("fa712c42bd650c8b", x, mut.Const("f1ff3e6a599658e6", int(2), 3), "%", "*") != mut.Const("1cf1cd9be599201f", int(0), 1)), true), false)) {
+		if !mut.Active("9f698bf367b861dc") {
+			{
+				if mut.Active("24cd475ed1de6960") {
+					return 0, nil
+				}
+				{
+					if mut.Active("e273580510aaec53") {
+						return 0, nil
+					}
+					{
+						if mut.Active("fd2537660cbae7b3") {
+							return 1, ErrTarget
+						}
+						return mut.Const("76550a5a24465ddf", int(0), 1), ErrTarget
+					}
+				}
+			}
+		}
+	}
+	{
+		if mut.Active("d1e3b3da0b2badd3") {
+			return 0, nil
+		}
+		{
+			if mut.Active("cc1e7d0a4317f3d9") {
+				return 1, nil
+			}
+			{
+				if mut.Active("62b12f156213bb76") {
+					return 0, nil
+				}
+				return mut.Arith("d5527c967db90a60", x, mut.Const("80f6684b8bc5906d", int(2), 3), "/", "*"), nil
+			}
+		}
+	}
+}
+
+func IsEmpty(s []int) bool {
+	{
+		if mut.Active("f0f24f85303f1bb0") {
+			return true
+		}
+		{
+			if mut.Active("d0e8645b92a3776e") {
+				return false
+			}
+			return mut.Not("2be3a0080c922f26", len(s) == mut.Const("989d1970f28ea517", int(0), 1))
+		}
+	}
+}
+
+func NotEmpty(s []int) bool {
+	{
+		if mut.Active("6b241867a32bd4c3") {
+			return true
+		}
+		{
+			if mut.Active("04537f22181c8e70") {
+				return false
+			}
+			return mut.Not("284243702912411d", !IsEmpty(s))
+		}
 	}
 }
 
 func SkipConst() int {
 	const c = 2 * 3
 	{
-		if mut.Active("44d3d1ab4a34f5d6") {
-			return 0
+		if mut.Active("2e03a825dd95bfc1") {
+			return 1
 		}
-		return c
+		{
+			if mut.Active("559abaeb6c4028fc") {
+				return 0
+			}
+			return c
+		}
 	}
 }
 
 func SkipNamedBool(a, b int) Flag {
 	{
-		if mut.Active("ca84b7eec7690d1f") {
-			return false
+		if mut.Active("d211f157cd98bcc9") {
+			return true
 		}
-		return a < b
+		{
+			if mut.Active("3a23066a62a29b60") {
+				return false
+			}
+			return a < b
+		}
 	}
 }
 
 func SkipNamedBoolOperands(a, b Flag) Flag {
 	{
-		if mut.Active("64aee74e495f46b6") {
-			return false
+		if mut.Active("0e3c412313ea79c9") {
+			return true
 		}
-		return a && b
+		{
+			if mut.Active("f20533d3be2dce37") {
+				return false
+			}
+			return a && b
+		}
 	}
 }
 
 func SkipRecover(f func()) (caught bool) {
 	defer func() {
-		caught = mut.Not("a894464127e5d217", f != nil) && mut.Not("03e96412b880e329", recover() != nil)
+		if mut.Active("2506888744c4656f") {
+			_ = caught || mut.Not("03e96412b880e329", recover() != nil)
+		} else {
+			caught = caught || mut.Not("03e96412b880e329", recover() != nil)
+		}
 	}()
 	if !mut.Active("3a8a0d011d82b906") {
 		f()
 	}
-	return false
+	{
+		if mut.Active("db187832876f42cf") {
+			return true
+		}
+		return mut.Cond("31b9e745945742de", false, true)
+	}
 }
 
 func SkipMapPost(m map[int]int, k int) {
-	for ; mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[k], mut.Const("5cb4e302d80ccb19", int(3), 4), "<", "<=")); m[k]++ {
+	for ; mut.Not("1032736dfefefb11", mut.Cond("b500da3628a82f68", mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[k], mut.Const("5cb4e302d80ccb19", int(3), 4), "<", "<=")), false)); m[k]++ {
 	}
 }
 
 func Mask(a, b uint8) uint8 {
 	{
-		if mut.Active("fd9668639a4413f1") {
-			return 0
+		if mut.Active("5e8eb77661efa4ed") {
+			return 1
 		}
-		return mut.Bit("3f2d702e71f3daf2", a, b, "&", "|")
+		{
+			if mut.Active("9385aacdc3bcce54") {
+				return 0
+			}
+			return mut.Bit("3f2d702e71f3daf2", a, b, "&", "|")
+		}
 	}
 }
 func Either(a, b int) int {
 	{
-		if mut.Active("ea2513b3d7c12d6f") {
-			return 0
+		if mut.Active("63a9deb0e2e9e4b8") {
+			return 1
 		}
-		return mut.Bit("1707c72ac28d24e2", a, b, "|", "&")
+		{
+			if mut.Active("00bdd71e5e1b83cd") {
+				return 0
+			}
+			return mut.Bit("1707c72ac28d24e2", a, b, "|", "&")
+		}
 	}
 }
 func Shl(a int64, n uint) int64 {
 	{
-		if mut.Active("170a938f7dea30ed") {
-			return 0
+		if mut.Active("b9080d068d0c9ef2") {
+			return 1
 		}
-		return mut.Shift("e12c22e5f799f6bc", a, n, "<<", ">>")
+		{
+			if mut.Active("88d72e542b55c43c") {
+				return 0
+			}
+			return mut.Shift("e12c22e5f799f6bc", a, n, "<<", ">>")
+		}
 	}
 }
 func Negate(x int) int {
 	{
-		if mut.Active("29af8a43ae7d4d0b") {
-			return 0
+		if mut.Active("2182f978583bd56f") {
+			return 1
 		}
-		return mut.Neg("e420420160e75dde", x)
+		{
+			if mut.Active("ce8f4b003852c86b") {
+				return 0
+			}
+			return mut.Neg("e420420160e75dde", x)
+		}
 	}
 }
 
-func Record(log *[]string, s string) { *log = append(*log, s) }
+func Record(log *[]string, s string) {
+	if mut.Active("4fd0fb5cd78119fd") {
+		_ = append(*log, s)
+	} else {
+		*log = append(*log, s)
+	}
+}
 
 func Twice(log *[]string) {
 	if !mut.Active("fb308af6f5d4d8eb") {
-		Record(log, "a")
+		Record(log, mut.Const("3768b977d0736e4f", string("a"), ""))
 	}
 	if !mut.Active("518117ff9584d1f1") {
-		Record(log, "b")
+		Record(log, mut.Const("fadbcddba5e5bcc9", string("b"), ""))
 	}
 }
 
 func SkipInitCall(log *[]string) int {
 	n := mut.Const("8bf3562f116152b2", int(0), 1)
-	for Record(log, "init"); mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, mut.Const("85a965bcd51470c8", int(2), 3), "<", "<=")); Record(log, "post") {
-		n += mut.Const("6b3fe656d86a720a", int(2), 3)
+	for Record(log, mut.Const("9e53b7138ea22f42", string("init"), "")); mut.Not("d91794ebcc8a1f80", mut.Cond("181844d5113f5ab6", mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, mut.Const("85a965bcd51470c8", int(2), 3), "<", "<=")), false)); Record(log, mut.Const("0c090d1c32e6a657", string("post"), "")) {
+		if mut.Active("dd9faa28f369d881") {
+			n = mut.Const("9daa62ee8d646c88", int(1), 2)
+		} else {
+			n = mut.Arith("c538bc9b44a87780", n, mut.Const("9daa62ee8d646c88", int(1), 2), "+", "-")
+		}
 	}
 	{
-		if mut.Active("d98e8d1af4404ff4") {
-			return 0
+		if mut.Active("6522cda766791df8") {
+			return 1
 		}
-		return n
+		{
+			if mut.Active("ccd4bad58c122786") {
+				return 0
+			}
+			return n
+		}
 	}
 }
 
 func SkipNamedBoolCond(f Flag) int {
 	if f {
-		{
-			if mut.Active("7a0108058a77e4ef") {
-				return 0
+		if !mut.Active("7db0bc0743a1312c") {
+			{
+				if mut.Active("33708531f6b0060e") {
+					return 0
+				}
+				return mut.Const("fbbe3f655218b887", int(1), 2)
 			}
-			return mut.Const("fbbe3f655218b887", int(1), 2)
 		}
 	}
-	return mut.Const("ce8a4eb79c4b1476", int(0), 1)
+	{
+		if mut.Active("cd626deac174be93") {
+			return 1
+		}
+		return mut.Const("ce8a4eb79c4b1476", int(0), 1)
+	}
 }
 
 func Offset(x int64) int64 {
 	{
-		if mut.Active("e9d34c55a4e6befe") {
-			return 0
+		if mut.Active("875bf266deb3b83a") {
+			return 1
 		}
-		return mut.Arith("294570c070803888", x, mut.Const("c1afcb1c68f77752", int64(1), 2), "+", "-")
+		{
+			if mut.Active("21be5c604d45de0b") {
+				return 0
+			}
+			return mut.Arith("294570c070803888", x, mut.Const("c1afcb1c68f77752", int64(1), 2), "+", "-")
+		}
 	}
 }
 func Quarter(x float64) float64 {
 	{
-		if mut.Active("80452295ed7f00df") {
-			return 0
+		if mut.Active("5ffc5af862a702c7") {
+			return 1
 		}
-		return mut.Arith("b46148cb1fde63e5", x, mut.Const("10a72b0a872c4299", float64(0.25), 1.25), "*", "/")
+		{
+			if mut.Active("e41a2883f1ca2f84") {
+				return 0
+			}
+			return mut.Arith("b46148cb1fde63e5", x, mut.Const("10a72b0a872c4299", float64(0.25), 1.25), "*", "/")
+		}
 	}
 }
 func SkipNamedConst(d time.Duration) time.Duration {
 	{
-		if mut.Active("9b77e79bf3f160b8") {
-			return 0
+		if mut.Active("1e5b375736ad3eb7") {
+			return 1
 		}
-		return mut.Arith("f03d29a1832de755", d, 1, "+", "-")
+		{
+			if mut.Active("f6972fb7da60b343") {
+				return 0
+			}
+			return mut.Arith("f03d29a1832de755", d, 1, "+", "-")
+		}
 	}
 }
 func Boxed() any {
 	{
-		if mut.Active("8184a8ed47420132") {
+		if mut.Active("382fdbe8c832768e") {
 			return nil
 		}
 		return mut.Const("dd494c3e4d792423", int(7), 8)
@@ -403,35 +685,269 @@ func Boxed() any {
 }
 func SkipShiftConst(x float64) float64 {
 	{
-		if mut.Active("77ff131f695d7f46") {
-			return 0
+		if mut.Active("67b2bddf1b48fa0f") {
+			return 1
 		}
-		return mut.Arith("cb5def764dc7bc03", 1<<2, x, "+", "-")
+		{
+			if mut.Active("77bd7006cfff501f") {
+				return 0
+			}
+			return mut.Arith("cb5def764dc7bc03", 1<<2, x, "+", "-")
+		}
 	}
 }
 func NoSiteArrayLen() int {
 	var a [2]int
 	{
-		if mut.Active("c2d2361ee2dffe17") {
-			return 0
+		if mut.Active("6316cb990b6906d5") {
+			return 1
 		}
-		return len(a)
+		{
+			if mut.Active("0a7261ba57627f62") {
+				return 0
+			}
+			return len(a)
+		}
 	}
 }
 func NoSiteArrayKey() int {
 	{
-		if mut.Active("a97b617339e2027e") {
-			return 0
+		if mut.Active("daeeae03ec3b996b") {
+			return 1
 		}
-		return []int{3: mut.Const("c7f38552939d1bec", int(9), 10)}[mut.Const("ca0be1a5faf21986", int(3), 4)]
+		{
+			if mut.Active("77152e33833baa0d") {
+				return 0
+			}
+			return mut.Const("6f136b9995d64564", []int{3: mut.Const("c7f38552939d1bec", int(9), 10)}, nil)[mut.Const("ca0be1a5faf21986", int(3), 4)]
+		}
 	}
+}
+
+func FirstEven(xs []int) int {
+	for _, x := range xs {
+		if mut.Active("82d810f0dded54aa") {
+			break
+		}
+		if mut.Not("925d60b78bcabb45", mut.Cond("1bf08aab377dd22f", mut.Cond("2b3eac0e679b0f20", mut.Not("0fb3f1d5e2ad1cd8", mut.ArithInt("8b549cab6bacaf98", x, mut.Const("4fd5e581beb7fbfd", int(2), 3), "%", "*") != mut.Const("e1f68ecbf03cf84b", int(0), 1)), true), false)) {
+			if !mut.Active("1de7a3522db67388") {
+				if mut.Active("92cf53b800b1c89e") {
+					break
+				} else {
+					continue
+				}
+			}
+		}
+		{
+			if mut.Active("9483b9ba378b9c2d") {
+				return 1
+			}
+			{
+				if mut.Active("475aeacca7b70cb7") {
+					return 0
+				}
+				return x
+			}
+		}
+	}
+	{
+		if mut.Active("23bd5e7b97165f58") {
+			return 1
+		}
+		{
+			if mut.Active("0ed306ea1d0e9bda") {
+				return 0
+			}
+			return -mut.Const("4278fec05f2e2e15", int(1), 2)
+		}
+	}
+}
+
+func CountUntil(xs []int, stop int) int {
+	n := mut.Const("a5365312fd50c0e4", int(0), 1)
+	for _, x := range xs {
+		if mut.Active("cd2bc1571bd95184") {
+			break
+		}
+		if mut.Not("f01051a12790d473", mut.Cond("bcbf8f51e6ee3896", mut.Cond("cbef5e6f698067d1", mut.Not("3abbba1c626162c1", x == stop), true), false)) {
+			if !mut.Active("d772854b86509927") {
+				if mut.Active("4fed1f6436b67f1a") {
+					continue
+				} else {
+					break
+				}
+			}
+		}
+		mut.Inc("a187093afee09eb7", &n)
+	}
+	{
+		if mut.Active("d4f3001a0cd9a499") {
+			return 1
+		}
+		{
+			if mut.Active("88d2156763e0d4d5") {
+				return 0
+			}
+			return n
+		}
+	}
+}
+
+func Bound(x, lo int) int {
+	if mut.Not("0e380db107cb78a2", mut.Cond("22b4b507ae771ea7", mut.Cond("fdeb1c1bce5a84a4", mut.Not("040f5795958f76f6", mut.Cmp("68b8227a66b72b49", x, lo, "<", "<=")), true), false)) {
+		if !mut.Active("3290cc05c9d6c6e6") {
+			if mut.Active("c4a88f9bd5c38594") {
+				_ = lo
+			} else {
+				x = lo
+			}
+		}
+	} else {
+		if !mut.Active("72621e0b1cf57e9a") {
+			if mut.Active("9e98977fe44b96d1") {
+				_ = mut.Arith("12dc7e70a2ef6a11", x, mut.Const("0d79842947d152aa", int(1), 2), "+", "-")
+			} else {
+				x = mut.Arith("12dc7e70a2ef6a11", x, mut.Const("0d79842947d152aa", int(1), 2), "+", "-")
+			}
+		}
+	}
+	{
+		if mut.Active("49df885249a04482") {
+			return 1
+		}
+		{
+			if mut.Active("6ed6dcc73305abea") {
+				return 0
+			}
+			return x
+		}
+	}
+}
+
+func Describe(n int) string {
+	out := mut.Const("ce45400581986f0d", string("zero"), "")
+	switch {
+	case mut.Not("1663de8e047eb77f", mut.Cmp("2bec900b450b95fa", n, mut.Const("73fc0b11a49da29c", int(0), 1), "<", "<=")):
+		if !mut.Active("1ea466d8264afc3c") {
+			if mut.Active("806ce700567452a0") {
+				_ = mut.Const("d01a45201d94f36e", string("negative"), "")
+			} else {
+				out = mut.Const("d01a45201d94f36e", string("negative"), "")
+			}
+		}
+	case mut.Not("7615ceab4f5314b9", mut.Cmp("028747c1b345543b", n, mut.Const("0bf07c8512949eec", int(0), 1), ">", ">=")):
+		if !mut.Active("ecac633b4522d602") {
+			if mut.Active("b57df2a26f1bd846") {
+				_ = mut.Const("d3f3495791541d38", string("positive"), "")
+			} else {
+				out = mut.Const("d3f3495791541d38", string("positive"), "")
+			}
+		}
+	default:
+		if !mut.Active("eab556d65f52dca9") {
+			if mut.Active("3dc49fc685b44b84") {
+				out = mut.Const("ab4c9e74f559e8b9", string("!"), "")
+			} else {
+				out += mut.Const("ab4c9e74f559e8b9", string("!"), "")
+			}
+		}
+	}
+	{
+		if mut.Active("fc1fdc41ecf886d1") {
+			return "mutrim"
+		}
+		{
+			if mut.Active("cb8ce3bbd9ece9cc") {
+				return ""
+			}
+			return out
+		}
+	}
+}
+
+func Drain(ch <-chan int) int {
+	n := mut.Const("6d1b01d50523421c", int(0), 1)
+	for {
+		select {
+		case <-ch:
+			if !mut.Active("f3c0be9368f65207") {
+				mut.Inc("6e65a0da6155e3a8", &n)
+			}
+		default:
+			{
+				if mut.Active("859e2022a1ae6200") {
+					return 1
+				}
+				{
+					if mut.Active("ba02e4d0a2f20a0a") {
+						return 0
+					}
+					return n
+				}
+			}
+		}
+	}
+}
+
+func Prefixed(s string) bool {
+	{
+		if mut.Active("314588aee827aa40") {
+			return true
+		}
+		{
+			if mut.Active("c4bcb16fe7f4c715") {
+				return false
+			}
+			return mut.Const("caa79e64a99c721a", strings.HasPrefix, strings.HasSuffix)(s, mut.Const("a03fa508ecfe77d4", string("go"), ""))
+		}
+	}
+}
+
+func Smallest(xs []int) int {
+	{
+		if mut.Active("f429f0edf8e0aec0") {
+			return 1
+		}
+		{
+			if mut.Active("35de76c6f942e96c") {
+				return 0
+			}
+			return slices.Min(xs)
+		}
+	}
+}
+
+type Config struct {
+	Names   []string
+	Verbose bool
+	Retries int
+}
+
+func NewConfig(extra []string) Config {
+	c := Config{Names: mut.Const("8e7f7623dc4b3824", []string{mut.Const("c7ed4984a3078116", string("a"), "")}, nil), Verbose: mut.Cond("dcca91803ba22a10", true, false), Retries: mut.Const("eaad2b332ab3bb36", int(2), 3)}
+	if mut.Active("90401649b57b10b5") {
+		_ = append(c.Names, extra...)
+	} else {
+		c.Names = append(c.Names, extra...)
+	}
+	if mut.Active("7bb26aa7840f7984") {
+		c.Retries = mut.Const("aa0cc2222e38cae8", int(3), 4)
+	} else {
+		c.Retries = mut.Arith("1dd00b6e04870499", c.Retries, mut.Const("aa0cc2222e38cae8", int(3), 4), "*", "/")
+	}
+	return c
 }
 
 func Untested(x int) int {
 	{
-		if mut.Active("4c66d1a87b220957") {
-			return 0
+		if mut.Active("c948a40c0ebe981d") {
+			return 1
 		}
-		return mut.Arith("cca49fd2ab27512a", x, mut.Const("6a18b0a5efe7e475", int(1), 2), "+", "-")
+		{
+			if mut.Active("ab08ee593166ca26") {
+				return 0
+			}
+			return mut.Arith("cca49fd2ab27512a", x, mut.Const("6a18b0a5efe7e475", int(1), 2), "+", "-")
+		}
 	}
 }

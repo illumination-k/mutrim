@@ -14,9 +14,10 @@ type Overlay struct {
 }
 
 // Source applies mutant id to pkg and returns the rewritten file's path and
-// formatted contents. The AST is restored before returning.
-func Source(pkg *packages.Package, id string) (file string, src []byte, err error) {
-	for _, m := range Generate(pkg, Options{TypeCheck: false}) {
+// formatted contents. The AST is restored before returning. ops must be the
+// operators the mutant was generated with; nil means DefaultOperators.
+func Source(pkg *packages.Package, id string, ops []Operator) (file string, src []byte, err error) {
+	for _, m := range Generate(pkg, Options{Operators: ops}) {
 		if m.ID != id {
 			continue
 		}

@@ -54,28 +54,46 @@ func (Constant) Sites(ctx *Context, n ast.Node) []Site {
 	return []Site{s}
 }
 
-// mustBeConstant reports whether lit sits where Go requires a constant.
+// mustBeConstant reports whether lit sits where Go requires a literal or a
+// constant: a constant declaration, an array length, the key of an array or
+// slice literal, or a struct tag. The enclosing expressions are walked, not
+// only the parent, since a constant context extends through them
+// (`[2*3]int`, `[len("ab")]int`).
 func (c *Context) mustBeConstant(lit *ast.BasicLit) bool {
-	for _, n := range c.Path {
-		if d, ok := n.(*ast.GenDecl); ok && d.Tok == token.CONST {
-			return true
-		}
+	if c.inConstDecl() {
+		return true
 	}
-	switch p := c.parent(1).(type) {
-	case *ast.ArrayType:
-		return p.Len == lit
-	case *ast.KeyValueExpr:
-		if p.Key != lit {
+	child := ast.Node(lit)
+	for i := 1; i <= len(c.Path); i++ {
+		parent := c.parent(i)
+		switch p := parent.(type) {
+		case *ast.ArrayType:
+			if p.Len == child {
+				return true
+			}
+		case *ast.Field:
+			if p.Tag == child {
+				return true
+			}
+		case *ast.KeyValueExpr:
+			if p.Key != child {
+				return false
+			}
+			cl, ok := c.parent(i + 1).(*ast.CompositeLit)
+			if !ok {
+				return false
+			}
+			switch c.Info.TypeOf(cl).Underlying().(type) {
+			case *types.Array, *types.Slice:
+				return true
+			}
+		case ast.Expr:
+			// keep walking: the context of a whole expression is the
+			// context of the literal inside it
+		default:
 			return false
 		}
-		cl, ok := c.parent(2).(*ast.CompositeLit)
-		if !ok {
-			return false
-		}
-		switch c.Info.TypeOf(cl).Underlying().(type) {
-		case *types.Array, *types.Slice:
-			return true
-		}
+		child = parent
 	}
 	return false
 }
@@ -93,12 +111,31 @@ func (c *Context) basicTypeName(lit *ast.BasicLit) (string, bool) {
 		}
 		t = c.Info.TypeOf(p)
 	}
-	b, ok := types.Unalias(t).(*types.Basic)
-	if !ok || isUntyped(b) {
+	return c.universeName(t, lit.Pos())
+}
+
+// universeName spells t as the predeclared name it is, when the scope at
+// pos still resolves that name to the universe object: a basic type or
+// error. Anything else (a defined type, an untyped constant, a composite
+// type) has no name a rewrite may spell.
+func (c *Context) universeName(t types.Type, pos token.Pos) (string, bool) {
+	var name string
+	switch u := types.Unalias(t).(type) {
+	case *types.Basic:
+		if isUntyped(u) {
+			return "", false
+		}
+		name = u.Name()
+	case *types.Named:
+		if u.Obj().Pkg() != nil || u.Obj().Name() != "error" {
+			return "", false
+		}
+		name = "error"
+	default:
 		return "", false
 	}
-	_, obj := c.Pkg.Scope().Innermost(lit.Pos()).LookupParent(b.Name(), lit.Pos())
-	return b.Name(), obj == types.Universe.Lookup(b.Name())
+	_, obj := c.Pkg.Scope().Innermost(pos).LookupParent(name, pos)
+	return name, obj == types.Universe.Lookup(name)
 }
 
 func isUntyped(t types.Type) bool {

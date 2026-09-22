@@ -30,11 +30,10 @@ func (Negation) Sites(ctx *Context, n ast.Node) []Site {
 		Description: "cond -> !(cond)",
 		Apply:       func() { *cond = negated },
 		Undo:        func() { *cond = orig },
+		Wraps:       true,
 	}
 	if ctx.isBool(orig) {
-		// *cond is read at lowering time so that an inner rewrite of the
-		// condition (a relational site on the same node) is wrapped.
-		s.Schemata = func(l *Lowering) ast.Node { return l.Call("Not", *cond) }
+		s.Schemata = func(l *Lowering) ast.Node { return l.Call("Not", l.Expr()) }
 	}
 	return []Site{s}
 }
@@ -60,10 +59,10 @@ func (Condition) Sites(ctx *Context, n ast.Node) []Site {
 			Description: "cond -> " + value,
 			Apply:       func() { *cond = forced },
 			Undo:        func() { *cond = orig },
+			Wraps:       true,
 		}
 		if ctx.isBool(orig) {
-			// *cond is read at lowering time, like Negation's.
-			site.Schemata = func(l *Lowering) ast.Node { return l.Call("Cond", *cond, forced) }
+			site.Schemata = func(l *Lowering) ast.Node { return l.Call("Cond", l.Expr(), forced) }
 		}
 		sites = append(sites, site)
 	}
@@ -95,7 +94,8 @@ func (VoidCall) Sites(ctx *Context, n ast.Node) []Site {
 		Apply: func() {
 			s.X = &ast.CallExpr{Fun: &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}}, Body: &ast.BlockStmt{}}}
 		},
-		Undo: func() { s.X = orig },
+		Undo:  func() { s.X = orig },
+		Wraps: true,
 		// `if !mut.Active(id) { f() }` is not a simple statement, so a
 		// call in an if/for/switch init or a for post is declined.
 		Schemata: func(l *Lowering) ast.Node {
@@ -104,7 +104,7 @@ func (VoidCall) Sites(ctx *Context, n ast.Node) []Site {
 			}
 			return &ast.IfStmt{
 				Cond: &ast.UnaryExpr{Op: token.NOT, X: l.Active()},
-				Body: &ast.BlockStmt{List: []ast.Stmt{s}},
+				Body: &ast.BlockStmt{List: []ast.Stmt{l.Stmt()}},
 			}
 		},
 	}}

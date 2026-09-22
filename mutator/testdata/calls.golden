@@ -1,0 +1,48 @@
+calls.go:11:32 Prefixed return "result 1 -> false" viable=true | func Prefixed(s string) bool { return false }
+calls.go:11:32 Prefixed return "result 1 -> true" viable=true | func Prefixed(s string) bool { return true }
+calls.go:11:47 Prefixed method "HasPrefix -> HasSuffix" viable=true | func Prefixed(s string) bool { return strings.HasSuffix(s, "go") }
+calls.go:11:39 Prefixed call "call -> false" viable=true | func Prefixed(s string) bool {
+calls.go:11:60 Prefixed string "\"go\" -> \"\"" viable=true | func Prefixed(s string) bool { return strings.HasPrefix(s, "") }
+calls.go:13:31 Lower return "result 1 -> \"\"" viable=true | func Lower(s string) string { return "" }
+calls.go:13:31 Lower return "result 1 -> \"mutrim\"" viable=true | func Lower(s string) string { return "mutrim" }
+calls.go:13:46 Lower method "ToLower -> ToUpper" viable=true | func Lower(s string) string { return strings.ToUpper(s) }
+calls.go:13:38 Lower call "call -> \"\"" viable=true | func Lower(s string) string {
+calls.go:17:31 Smallest return "result 1 -> 0" viable=true | func Smallest(xs []int) int { return 0 }
+calls.go:17:31 Smallest return "result 1 -> 1" viable=true | func Smallest(xs []int) int { return 1 }
+calls.go:17:45 Smallest method "Min -> Max" viable=true | func Smallest(xs []int) int { return slices.Max(xs) }
+calls.go:17:38 Smallest call "call -> 0" viable=true | func Smallest(xs []int) int {
+calls.go:21:37 Earlier return "result 1 -> false" viable=true | func Earlier(a, b time.Time) bool { return false }
+calls.go:21:37 Earlier return "result 1 -> true" viable=true | func Earlier(a, b time.Time) bool { return true }
+calls.go:21:46 Earlier method "Before -> After" viable=true | func Earlier(a, b time.Time) bool { return a.After(b) }
+calls.go:21:44 Earlier call "call -> false" viable=true | func Earlier(a, b time.Time) bool {
+calls.go:23:60 EarlierCall return "result 1 -> false" viable=true | func EarlierCall(now func() time.Time, b time.Time) bool { return false }
+calls.go:23:60 EarlierCall return "result 1 -> true" viable=true | func EarlierCall(now func() time.Time, b time.Time) bool { return true }
+calls.go:23:73 EarlierCall method "Before -> After" viable=true | func EarlierCall(now func() time.Time, b time.Time) bool { return now().After(b) }
+calls.go:23:67 EarlierCall call "call -> false" viable=true | func EarlierCall(now func() time.Time, b time.Time) bool {
+calls.go:27:28 Count return "result 1 -> 0" viable=true | func Count(s string) int { return 0 }
+calls.go:27:28 Count return "result 1 -> 1" viable=true | func Count(s string) int { return 1 }
+calls.go:27:44 Count arithmetic "+ -> -" viable=true | func Count(s string) int { return width(s) - 1 }
+calls.go:27:35 Count call "call -> 0" viable=true | func Count(s string) int {
+calls.go:27:46 Count constant "1 -> 2" viable=true | func Count(s string) int { return width(s) + 2 }
+calls.go:29:28 width return "result 1 -> 0" viable=true | func width(s string) int { return 0 }
+calls.go:29:28 width return "result 1 -> 1" viable=true | func width(s string) int { return 1 }
+calls.go:34:21 Widths constant "0 -> 1" viable=true | out := make([]int, 1, len(xs))
+calls.go:35:23 Widths loopcond "range -> no iteration" viable=true | for _, x := range xs {
+calls.go:36:7 Widths assign "store -> dropped" viable=true | _ = append(out, int(int64(width(x))))
+calls.go:36:31 Widths call "call -> 0" viable=true | out = append(out, int(int64(func() int {
+calls.go:38:2 Widths return "result 1 -> nil" viable=true | return nil
+calls.go:41:69 Split string "\"=\" -> \"\"" viable=true | func Split(s string) (string, string, bool) { return strings.Cut(s, "") }
+calls.go:48:2 Deferred return "result 1 -> 0" viable=true | return 0
+calls.go:48:2 Deferred return "result 1 -> 1" viable=true | return 1
+calls.go:48:9 Deferred call "call -> 0" viable=true | return func() int {
+calls.go:52:19 Recovered assign "store -> dropped" viable=true | defer func() { _ = boxed(recover()) }()
+calls.go:53:8 Recovered string "\"boom\" -> \"\"" viable=true | panic("")
+calls.go:57:5 boxed negation "cond -> !(cond)" viable=true | if !(v == nil) {
+calls.go:57:5 boxed condition "cond -> true" viable=true | if true {
+calls.go:57:5 boxed condition "cond -> false" viable=true | if false {
+calls.go:57:14 boxed branch "if body -> empty" viable=true | if v == nil {
+calls.go:57:7 boxed relational "== -> !=" viable=true | if v != nil {
+calls.go:58:3 boxed return "result 1 -> 1" viable=true | return 1
+calls.go:58:10 boxed constant "0 -> 1" viable=true | return 1
+calls.go:60:2 boxed return "result 1 -> 0" viable=true | return 0
+calls.go:60:9 boxed constant "1 -> 2" viable=true | return 2

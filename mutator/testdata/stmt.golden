@@ -1,26 +1,41 @@
-stmt.go:7:20 count return "return -> zero values" viable=true | func count() int { return 0 }
+stmt.go:5:29 record assign "store -> dropped" viable=true | func record(s string) { _ = append(log, s) }
+stmt.go:7:20 count return "result 1 -> 0" viable=true | func count() int { return 0 }
+stmt.go:7:20 count return "result 1 -> 1" viable=true | func count() int { return 1 }
 stmt.go:10:2 Step voidcall "call -> removed" viable=true | func() {
+stmt.go:10:9 Step string "\"step\" -> \"\"" viable=true | record("")
 stmt.go:11:5 Step negation "cond -> !(cond)" viable=true | if !(x > 0) {
 stmt.go:11:5 Step condition "cond -> true" viable=true | if true {
 stmt.go:11:5 Step condition "cond -> false" viable=true | if false {
+stmt.go:11:11 Step branch "if body -> empty" viable=true | if x > 0 {
 stmt.go:11:7 Step relational "> -> >=" viable=true | if x >= 0 {
+stmt.go:11:7 Step invert "> -> <=" viable=true | if x <= 0 {
 stmt.go:11:9 Step constant "0 -> 1" viable=true | if x > 1 {
 stmt.go:12:3 Step voidcall "call -> removed" viable=true | func() {
+stmt.go:12:10 Step string "\"pos\" -> \"\"" viable=true | record("")
 stmt.go:14:22 Step negation "cond -> !(cond)" viable=true | for record("init"); !(x < 3); record("post") {
+stmt.go:14:22 Step loopcond "cond -> false" viable=true | for record("init"); false; record("post") {
 stmt.go:14:6 Step voidcall "call -> removed" viable=true | for func() {
+stmt.go:14:13 Step string "\"init\" -> \"\"" viable=true | for record(""); x < 3; record("post") {
 stmt.go:14:24 Step relational "< -> <=" viable=true | for record("init"); x <= 3; record("post") {
+stmt.go:14:24 Step invert "< -> >=" viable=true | for record("init"); x >= 3; record("post") {
 stmt.go:14:26 Step constant "3 -> 4" viable=true | for record("init"); x < 4; record("post") {
 stmt.go:14:29 Step voidcall "call -> removed" viable=true | for record("init"); x < 3; func() {
+stmt.go:14:36 Step string "\"post\" -> \"\"" viable=true | for record("init"); x < 3; record("") {
 stmt.go:15:3 Step incdec "++ -> --" viable=true | x--
 stmt.go:18:5 Step negation "cond -> !(cond)" viable=true | if !(x == 0) {
 stmt.go:18:5 Step condition "cond -> true" viable=true | if true {
 stmt.go:18:5 Step condition "cond -> false" viable=true | if false {
+stmt.go:18:12 Step branch "if body -> empty" viable=true | if x == 0 {
 stmt.go:18:7 Step relational "== -> !=" viable=true | if x != 0 {
 stmt.go:18:10 Step constant "0 -> 1" viable=true | if x == 1 {
-stmt.go:21:2 Step return "return -> zero values" viable=true | return 0
+stmt.go:19:9 Step string "\"zero\" -> \"\"" viable=true | panic("") // panic is kept: the function must still terminate
+stmt.go:21:2 Step return "result 1 -> 0" viable=true | return 0
+stmt.go:21:2 Step return "result 1 -> 1" viable=true | return 1
 stmt.go:29:5 Named negation "cond -> !(cond)" viable=true | if !(f) {
 stmt.go:29:5 Named condition "cond -> true" viable=true | if true {
 stmt.go:29:5 Named condition "cond -> false" viable=true | if false {
-stmt.go:30:3 Named return "return -> zero values" viable=true | return 0
+stmt.go:29:7 Named branch "if body -> empty" viable=true | if f {
+stmt.go:30:3 Named return "result 1 -> 0" viable=true | return 0
 stmt.go:30:10 Named constant "1 -> 2" viable=true | return 2
+stmt.go:32:2 Named return "result 1 -> 1" viable=true | return 1
 stmt.go:32:9 Named constant "0 -> 1" viable=true | return 1

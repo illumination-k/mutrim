@@ -1,0 +1,62 @@
+branch.go:7:9 Sign string "\"\" -> \"mutrim\"" viable=true | out := "mutrim"
+branch.go:8:5 Sign negation "cond -> !(cond)" viable=true | if !(x < 0) {
+branch.go:8:5 Sign condition "cond -> true" viable=true | if true {
+branch.go:8:5 Sign condition "cond -> false" viable=true | if false {
+branch.go:8:11 Sign branch "if body -> empty" viable=true | if x < 0 {
+branch.go:10:9 Sign branch "else body -> empty" viable=true | } else {
+branch.go:8:7 Sign relational "< -> <=" viable=true | if x <= 0 {
+branch.go:8:7 Sign invert "< -> >=" viable=true | if x >= 0 {
+branch.go:8:9 Sign constant "0 -> 1" viable=true | if x < 1 {
+branch.go:9:7 Sign assign "store -> dropped" viable=true | _ = "negative"
+branch.go:9:9 Sign string "\"negative\" -> \"\"" viable=true | out = ""
+branch.go:11:7 Sign assign "store -> dropped" viable=true | _ = "positive"
+branch.go:11:9 Sign string "\"positive\" -> \"\"" viable=true | out = ""
+branch.go:13:5 Sign negation "cond -> !(cond)" viable=true | if !(x == 0) {
+branch.go:13:5 Sign condition "cond -> true" viable=true | if true {
+branch.go:13:5 Sign condition "cond -> false" viable=true | if false {
+branch.go:13:7 Sign relational "== -> !=" viable=true | if x != 0 {
+branch.go:13:10 Sign constant "0 -> 1" viable=true | if x == 1 {
+branch.go:16:2 Sign branch "case body -> empty" viable=true | case x == 0:
+branch.go:16:9 Sign relational "== -> !=" viable=true | case x != 0:
+branch.go:16:12 Sign constant "0 -> 1" viable=true | case x == 1:
+branch.go:17:7 Sign assign "store -> dropped" viable=true | _ = "zero"
+branch.go:17:9 Sign string "\"zero\" -> \"\"" viable=true | out = ""
+branch.go:18:2 Sign branch "default body -> empty" viable=true | default:
+branch.go:19:7 Sign assignop "+= -> -=" viable=false | out -= "!"
+branch.go:19:7 Sign assignop "+= -> =" viable=true | out = "!"
+branch.go:19:10 Sign string "\"!\" -> \"\"" viable=true | out += ""
+branch.go:21:2 Sign return "result 1 -> \"\"" viable=true | return ""
+branch.go:21:2 Sign return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+branch.go:27:5 Terminating negation "cond -> !(cond)" viable=true | if !(x < 0) {
+branch.go:27:5 Terminating condition "cond -> true" viable=true | if true {
+branch.go:27:5 Terminating condition "cond -> false" viable=true | if false {
+branch.go:27:11 Terminating branch "if body -> empty" viable=true | if x < 0 {
+branch.go:29:9 Terminating branch "else body -> empty" viable=true | } else {
+branch.go:27:7 Terminating relational "< -> <=" viable=true | if x <= 0 {
+branch.go:27:7 Terminating invert "< -> >=" viable=true | if x >= 0 {
+branch.go:27:9 Terminating constant "0 -> 1" viable=true | if x < 1 {
+branch.go:28:3 Terminating return "result 1 -> \"\"" viable=true | return ""
+branch.go:28:3 Terminating return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+branch.go:28:10 Terminating string "\"negative\" -> \"\"" viable=true | return ""
+branch.go:30:3 Terminating return "result 1 -> \"\"" viable=true | return ""
+branch.go:30:3 Terminating return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+branch.go:30:10 Terminating string "\"positive\" -> \"\"" viable=true | return ""
+branch.go:36:2 Fallthrough branch "case body -> empty" viable=true | case 0:
+branch.go:36:7 Fallthrough constant "0 -> 1" viable=true | case 1:
+branch.go:38:2 Fallthrough branch "case body -> empty" viable=true | case 1:
+branch.go:38:7 Fallthrough constant "1 -> 2" viable=true | case 2:
+branch.go:39:3 Fallthrough return "result 1 -> \"\"" viable=true | return ""
+branch.go:39:3 Fallthrough return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+branch.go:39:10 Fallthrough string "\"small\" -> \"\"" viable=true | return ""
+branch.go:41:2 Fallthrough return "result 1 -> \"\"" viable=true | return ""
+branch.go:41:2 Fallthrough return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
+branch.go:41:9 Fallthrough string "\"large\" -> \"\"" viable=true | return ""
+branch.go:46:7 Recv constant "0 -> 1" viable=true | n := 1
+branch.go:48:2 Recv branch "case body -> empty" viable=true | case v := <-ch:
+branch.go:49:5 Recv assign "store -> dropped" viable=true | _ = v
+branch.go:50:2 Recv branch "default body -> empty" viable=true | default:
+branch.go:51:5 Recv assign "store -> dropped" viable=true | _ = -1
+branch.go:51:7 Recv negatives "-x -> x" viable=true | n = +1
+branch.go:51:8 Recv constant "1 -> 2" viable=true | n = -2
+branch.go:53:2 Recv return "result 1 -> 0" viable=true | return 0
+branch.go:53:2 Recv return "result 1 -> 1" viable=true | return 1

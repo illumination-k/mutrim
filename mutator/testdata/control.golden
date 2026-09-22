@@ -1,21 +1,36 @@
 control.go:4:11 Sum constant "0 -> 1" viable=true | total := 1
 control.go:5:14 Sum negation "cond -> !(cond)" viable=true | for i := 0; !(i < len(xs)); i++ {
+control.go:5:14 Sum loopcond "cond -> false" viable=true | for i := 0; false; i++ {
 control.go:5:11 Sum constant "0 -> 1" viable=true | for i := 1; i < len(xs); i++ {
 control.go:5:16 Sum relational "< -> <=" viable=true | for i := 0; i <= len(xs); i++ {
+control.go:5:16 Sum invert "< -> >=" viable=true | for i := 0; i >= len(xs); i++ {
 control.go:5:27 Sum incdec "++ -> --" viable=true | for i := 0; i < len(xs); i-- {
 control.go:6:6 Sum negation "cond -> !(cond)" viable=true | if !(xs[i] > 0) {
 control.go:6:6 Sum condition "cond -> true" viable=true | if true {
 control.go:6:6 Sum condition "cond -> false" viable=true | if false {
+control.go:6:16 Sum branch "if body -> empty" viable=true | if xs[i] > 0 {
 control.go:6:12 Sum relational "> -> >=" viable=true | if xs[i] >= 0 {
+control.go:6:12 Sum invert "> -> <=" viable=true | if xs[i] <= 0 {
 control.go:6:14 Sum constant "0 -> 1" viable=true | if xs[i] > 1 {
+control.go:7:10 Sum assignop "+= -> -=" viable=true | total -= xs[i]
+control.go:7:10 Sum assignop "+= -> =" viable=true | total = xs[i]
 control.go:10:6 Sum negation "cond -> !(cond)" viable=true | for !(total > 100) {
+control.go:10:6 Sum loopcond "cond -> false" viable=true | for false {
 control.go:10:12 Sum relational "> -> >=" viable=true | for total >= 100 {
+control.go:10:12 Sum invert "> -> <=" viable=true | for total <= 100 {
 control.go:10:14 Sum constant "100 -> 101" viable=true | for total > 101 {
 control.go:11:3 Sum incdec "-- -> ++" viable=true | total++
-control.go:16:2 Sum return "return -> zero values" viable=true | return 0
+control.go:14:3 Sum loopctrl "break -> continue" viable=true | continue
+control.go:16:2 Sum return "result 1 -> 0" viable=true | return 0
+control.go:16:2 Sum return "result 1 -> 1" viable=true | return 1
 control.go:22:2 (*Counter).Inc incdec "++ -> --" viable=true | c.n--
-control.go:26:2 Closure return "return -> zero values" viable=true | return nil
+control.go:26:2 Closure return "result 1 -> nil" viable=true | return nil
 control.go:27:6 Closure negation "cond -> !(cond)" viable=true | if !(true) {
 control.go:27:6 Closure condition "cond -> true" viable=true | if true {
 control.go:27:6 Closure condition "cond -> false" viable=true | if false {
-control.go:30:3 Closure return "return -> zero values" viable=true | return false
+control.go:27:11 Closure branch "if body -> empty" viable=true | if true {
+control.go:27:6 Closure boolean "true -> false" viable=true | if false {
+control.go:28:4 Closure return "result 1 -> true" viable=true | return true
+control.go:28:11 Closure boolean "false -> true" viable=true | return true
+control.go:30:3 Closure return "result 1 -> false" viable=true | return false
+control.go:30:10 Closure boolean "true -> false" viable=true | return false

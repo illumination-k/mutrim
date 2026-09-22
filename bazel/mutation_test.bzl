@@ -108,7 +108,8 @@ mutrim_schemata = go_rule(
         ),
         "operators": attr.string_list(
             doc = """Operators to apply, as `mutrim gen -operators` takes them: names,
-"default", and "-name" to remove one. Empty applies every operator.""",
+"default", and "-name" to remove one. Empty applies the default set, which leaves out
+the opt-in operators.""",
         ),
         "_mutrim": attr.label(
             default = Label("//cmd/mutrim"),
@@ -152,7 +153,8 @@ def mutation_test(name, srcs, embed, deps = [], operators = [], shard_count = No
         embed: exactly one go_library.
         deps: dependencies of the test sources.
         operators: operators to apply, as `mutrim gen -operators` takes them
-            (e.g. `["default", "-constant"]`); empty applies every operator.
+            (e.g. `["default", "-constant"]`); empty applies the default set,
+            which leaves out the opt-in operators.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),

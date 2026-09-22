@@ -31,20 +31,20 @@ func load(t *testing.T, name string) *packages.Package {
 // render lists mutants in a position-first, path-free form for golden files.
 // Each line ends with the source line as it reads after the mutant is applied,
 // so the golden files also pin the rewrite itself, not only its location.
-func render(t *testing.T, pkg *packages.Package, ms []mutator.Mutant) string {
+func render(t *testing.T, pkg *packages.Package, ops []mutator.Operator, ms []mutator.Mutant) string {
 	t.Helper()
 	var b strings.Builder
 	for _, m := range ms {
 		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v | %s\n",
 			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable,
-			mutatedLine(t, pkg, m))
+			mutatedLine(t, pkg, ops, m))
 	}
 	return b.String()
 }
 
-func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
+func mutatedLine(t *testing.T, pkg *packages.Package, ops []mutator.Operator, m mutator.Mutant) string {
 	t.Helper()
-	_, src, err := mutator.Source(pkg, m.ID)
+	_, src, err := mutator.Source(pkg, m.ID, ops)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,21 +55,46 @@ func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
 	return strings.TrimSpace(lines[m.Line-1])
 }
 
+// goldenFixtures lists the testdata packages pinned by a golden file, with
+// the -operators spec to generate them with; an empty spec is the default
+// operator set.
+var goldenFixtures = []struct{ name, operators string }{
+	{name: "relational"},
+	{name: "arith"},
+	{name: "logical"},
+	{name: "bitwise"},
+	{name: "constant"},
+	{name: "control"},
+	{name: "stmt"},
+	{name: "ret"},
+	{name: "assign"},
+	{name: "loop"},
+	{name: "branch"},
+	{name: "literal"},
+	{name: "calls", operators: "default,call"},
+	{name: "excluded"},
+}
+
 func TestGenerateGolden(t *testing.T) {
-	for _, name := range []string{"relational", "arith", "logical", "bitwise", "constant", "control", "stmt", "ret", "excluded"} {
+	for _, fixture := range goldenFixtures {
+		name := fixture.name
 		t.Run(name, func(t *testing.T) {
+			ops, err := mutator.Operators(fixture.operators)
+			if err != nil {
+				t.Fatal(err)
+			}
 			pkg := load(t, name)
-			mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})
-			got := render(t, pkg, mutants)
+			mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
+			got := render(t, pkg, ops, mutants)
 			// Every Source call above applied and undid a mutant; the tree
 			// must be back to the original so that a second pass agrees.
-			if again := render(t, pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true})); again != got {
+			if again := render(t, pkg, ops, mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})); again != got {
 				t.Fatalf("mutants differ after apply/undo round trip:\n--- first ---\n%s--- second ---\n%s", got, again)
 			}
 			golden := filepath.Join("testdata", name+".golden")
 			if *update {
-				if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
-					t.Fatal(err)
+				if werr := os.WriteFile(golden, []byte(got), 0o600); werr != nil {
+					t.Fatal(werr)
 				}
 			}
 			want, err := os.ReadFile(filepath.Clean(golden))
@@ -93,7 +118,7 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestSourceUnknownMutant(t *testing.T) {
-	if _, _, err := mutator.Source(load(t, "killable"), "0000000000000000"); err == nil {
+	if _, _, err := mutator.Source(load(t, "killable"), "0000000000000000", nil); err == nil {
 		t.Error("expected an error for an unknown mutant ID")
 	}
 }
@@ -166,7 +191,7 @@ func TestOverlayKillsMutant(t *testing.T) {
 		t.Fatal("no viable relational mutant in killable fixture")
 	}
 
-	file, src, err := mutator.Source(pkg, target.ID)
+	file, src, err := mutator.Source(pkg, target.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,12 +285,16 @@ func TestOperators(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
+	defaults := names(mutator.DefaultOperators)
 	cases := map[string]string{
-		"":                              names(mutator.DefaultOperators),
-		"default":                       names(mutator.DefaultOperators),
-		"default,-constant,-voidcall":   "relational,arithmetic,logical,bitwise,negatives,negation,condition,incdec,return",
+		"":                              defaults,
+		"default":                       defaults,
+		"default,-constant,-voidcall":   strings.ReplaceAll(strings.ReplaceAll(defaults, "constant,", ""), "voidcall,", ""),
 		"return, relational":            "relational,return",
 		"constant,-constant,arithmetic": "arithmetic",
+		// call is not a default, so only its name selects it.
+		"default,call": names(mutator.AllOperators),
+		"call":         "call",
 	}
 	for spec, want := range cases {
 		ops, err := mutator.Operators(spec)

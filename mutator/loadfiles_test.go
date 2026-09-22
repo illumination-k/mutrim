@@ -169,8 +169,10 @@ func TestLoadFilesImportcfg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ms := mutator.Generate(pkg, mutator.Options{TypeCheck: true}); len(ms) != 5 {
-		t.Errorf("got %d mutants, want 5 (&&, !=, + and the two returns of A and B)", len(ms))
+	// &&, !=, + and the swap, literal and return mutants of A and B: the
+	// point is that both files type-check against the export data.
+	if ms := mutator.Generate(pkg, mutator.Options{TypeCheck: true}); len(ms) != 10 {
+		t.Errorf("got %d mutants, want 10", len(ms))
 	}
 
 	for name, cfg := range map[string]string{

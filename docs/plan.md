@@ -61,8 +61,8 @@ and `mutrim overlay` lets `go test -overlay` run a single mutant.
        Apply, Undo func()   // in-place AST rewrite and its exact inverse
    }
    ```
-   Families: relational, arithmetic, logical (one table-driven `BinaryOp`), condition
-   negation, increment, return replacement. Only function bodies are walked.
+   Families: one table-driven `BinaryOp` for the operator swaps plus a type per statement
+   family; CLAUDE.md lists every operator mutrim ships. Only function bodies are walked.
 3. **Mutant ID.** `sha256(pkgPath, enclosing func name, AST path from func root, operator
    name, description)` truncated to 16 hex chars. Position-independent by construction; a test
    asserts that inserting lines above a site does not change its ID.
@@ -101,12 +101,18 @@ Goal: one build per package; the test binary re-executed per mutant.
    | `i++`            | `mut.Inc(id, &i)`; map elements use `if mut.Active(id) {…}` |
    | `return x`       | `{ if mut.Active(id) { return <zero> }; return x }`         |
 
+   The operators added after this phase follow the same two shapes: an expression becomes a
+   helper call, a statement is wrapped in an `if mut.Active(id)`. Where several mutants sit
+   on one node, one rebuilds the node and the others wrap what it left (`Site.Wraps`), so the
+   lowerings nest.
+
    Sites the lowering declines stay as they are and their mutants are reported `NOT_VIABLE`
    under schemata: constant expressions (a call is not a constant), boolean results or
    operands of a defined type (the helpers return plain `bool`), untyped non-constant
-   operands, `&&`/`||` whose right operand calls `recover()`, and `m[k]++` in a `for` post
-   statement. `mutrim gen -schemata` flips `viable` to false for them so the runner never
-   selects an ID the binary does not contain.
+   operands, `&&`/`||` whose right operand calls `recover()`, `m[k]++` in a `for` post
+   statement, a body whose last statement makes its `switch` or `if` terminating, and a
+   generic library function, which has no function value. `mutrim gen -schemata` flips
+   `viable` to false for them so the runner never selects an ID the binary does not contain.
 
    The `mut` runtime reads `GOMUTANT_ID` once at init. With the variable unset every helper
    is the identity; `TestSchemataIdentity` runs the fixture suite against the schemata source

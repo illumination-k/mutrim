@@ -19,10 +19,11 @@ var notEmbedded = map[string]bool{
 	`SkipConst * -> /`:                  true, // constant expression
 	`SkipNamedBool < -> <=`:             true, // result is a defined bool type
 	`SkipNamedBoolOperands && -> ||`:    true, // operands are a defined bool type
-	`SkipRecover && -> ||`:              true, // recover() in the closure operand
+	`SkipRecover || -> &&`:              true, // recover() in the closure operand
 	`SkipMapPost ++ -> --`:              true, // map element in a for post statement
 	`Shift << -> >>`:                    true, // constant left operand of a shift
 	`Sign -x -> x`:                      true, // constant expression
+	`FirstEven -x -> x`:                 true,
 	`SkipInitCall call -> removed`:      true, // call in a for init or post statement
 	`SkipNamedBoolCond cond -> !(cond)`: true, // condition of a defined bool type
 	`SkipNamedBoolCond cond -> true`:    true,
@@ -33,6 +34,10 @@ var notEmbedded = map[string]bool{
 	`SkipShiftConst << -> >>`:           true, // constant left operand of a shift
 	`SkipShiftConst 1 -> 2`:             true, // operands of a constant shift
 	`SkipShiftConst 2 -> 3`:             true,
+	`SkipNamedBool < -> >=`:             true, // result is a defined bool type
+	`Classify case body -> empty`:       true, // the case body makes the switch terminating
+	`Drain default body -> empty`:       true,
+	`Smallest Min -> Max`:               true, // a generic function has no function value
 }
 
 // TestSchemataIdentity lowers the schemata fixture, pins the generated
@@ -78,23 +83,101 @@ func TestSchemataIdentity(t *testing.T) {
 		t.Errorf("schemata source differs from %s (run with -update to accept)\n--- got ---\n%s", golden, src)
 	}
 
-	dir := t.TempDir()
-	mutated := filepath.Join(dir, filepath.Base(file))
-	if werr := os.WriteFile(mutated, src, 0o600); werr != nil {
-		t.Fatal(werr)
+	if out, err := goTestOverlay(t, "schemata", overlayFor(t, sch), ""); err != nil {
+		t.Fatalf("schemata source must pass the fixture tests: %v\n%s", err, out)
 	}
-	overlay, err := json.Marshal(mutator.Overlay{Replace: map[string]string{file: mutated}})
+}
+
+// overlayFor writes the lowered sources to a temp directory and returns the
+// go build -overlay file naming them.
+func overlayFor(t *testing.T, sch *mutator.Schemata) string {
+	t.Helper()
+	dir := t.TempDir()
+	overlay := mutator.Overlay{Replace: map[string]string{}}
+	for orig, src := range sch.Files {
+		mutated := filepath.Join(dir, filepath.Base(orig))
+		if err := os.WriteFile(mutated, src, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		overlay.Replace[orig] = mutated
+	}
+	data, err := json.Marshal(overlay)
 	if err != nil {
 		t.Fatal(err)
 	}
-	overlayPath := filepath.Join(dir, "overlay.json")
-	if err := os.WriteFile(overlayPath, overlay, 0o600); err != nil {
+	path := filepath.Join(dir, "overlay.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(t.Context(), "go", "test", "-overlay", overlayPath, "./testdata/schemata") //nolint:gosec // test-controlled args
-	cmd.Env = append(os.Environ(), "GOMUTANT_ID=")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	return path
+}
+
+// goTestOverlay runs the fixture's own tests against the lowered sources
+// with GOMUTANT_ID set to id; an empty id is the identity run.
+func goTestOverlay(t *testing.T, fixture, overlayPath, id string) ([]byte, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-count=1", "-overlay", overlayPath, "./testdata/"+fixture) //nolint:gosec // test-controlled args
+	cmd.Env = append(os.Environ(), "GOMUTANT_ID="+id)
+	return cmd.CombinedOutput()
+}
+
+// TestSchemataOptInIdentity lowers the opt-in call operator, which the
+// schemata fixture does not use: the source must compile, behave like the
+// original with GOMUTANT_ID unset, and fail the fixture's tests when one of
+// its mutants is selected.
+func TestSchemataOptInIdentity(t *testing.T) {
+	pkg := load(t, "calls")
+	ops, err := mutator.Operators("default,call")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
+	sch, err := mutator.Lower(pkg, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected string
+	for _, m := range mutants {
+		if m.Operator == "call" && m.Func == "Count" && sch.Embedded[m.ID] {
+			selected = m.ID
+		}
+	}
+	if selected == "" {
+		t.Fatal("no call mutant of Count embedded")
+	}
+
+	overlayPath := overlayFor(t, sch)
+	if out, err := goTestOverlay(t, "calls", overlayPath, ""); err != nil {
 		t.Fatalf("schemata source must pass the fixture tests: %v\n%s", err, out)
+	}
+	if out, err := goTestOverlay(t, "calls", overlayPath, selected); err == nil {
+		t.Errorf("mutant %s should have been killed\n%s", selected, out)
+	}
+}
+
+// TestSchemataCompiles lowers the fixture of every operator family and
+// compiles it: the schemata source of a package must always build, since one
+// broken file costs every mutant of the package. The fixtures without tests
+// are only compiled, which is what `go test` on them does.
+func TestSchemataCompiles(t *testing.T) {
+	for _, fixture := range goldenFixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			ops, err := mutator.Operators(fixture.operators)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkg := load(t, fixture.name)
+			sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sch.Embedded) == 0 {
+				t.Fatal("no mutant embedded")
+			}
+			if out, err := goTestOverlay(t, fixture.name, overlayFor(t, sch), ""); err != nil {
+				t.Fatalf("schemata source must build: %v\n%s", err, out)
+			}
+		})
 	}
 }
 

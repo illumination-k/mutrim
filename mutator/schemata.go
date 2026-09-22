@@ -30,8 +30,20 @@ type Lowering struct {
 	// ID is the mutant being embedded.
 	ID string
 
-	runtime string // import name of RuntimePath in this file
+	runtime string   // import name of RuntimePath in this file
+	current ast.Node // the node's lowering so far
 }
+
+// Current is the node the site sits on, as the lowerings of the mutants
+// embedded before it left it. A site whose replacement embeds the node must
+// read it from here, not from the original node, so that the mutants of one
+// node nest instead of replacing each other.
+func (l *Lowering) Current() ast.Node { return l.current }
+
+// Stmt and Expr are Current for the two kinds of node a site replaces.
+func (l *Lowering) Stmt() ast.Stmt { return l.current.(ast.Stmt) }
+
+func (l *Lowering) Expr() ast.Expr { return l.current.(ast.Expr) }
 
 // Call builds `mut.fn(id, args...)`.
 func (l *Lowering) Call(fn string, args ...ast.Expr) *ast.CallExpr {
@@ -79,9 +91,10 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		byFile[m.site.file] = append(byFile[m.site.file], m)
 	}
 	for _, ms := range byNode {
-		// Expression rewrites first, then the operators that wrap the result.
+		// The rewrite that rebuilds the node first, then the ones that wrap
+		// what it left.
 		sort.SliceStable(ms, func(i, j int) bool {
-			return !wraps(ms[i].Operator) && wraps(ms[j].Operator)
+			return !ms[i].site.Wraps && ms[j].site.Wraps
 		})
 	}
 
@@ -92,10 +105,17 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		name := pkg.Fset.Position(f.Package).Filename
 		runtime := runtimeName(pkg, f)
 		astutil.Apply(f, nil, func(c *astutil.Cursor) bool {
+			current := c.Node()
+			lowered := false
 			for _, m := range byNode[c.Node()] {
-				l := &Lowering{Cursor: c, ID: m.ID, runtime: runtime}
+				if lowered && !m.site.Wraps {
+					continue // its replacement would discard the lowering before it
+				}
+				l := &Lowering{Cursor: c, ID: m.ID, runtime: runtime, current: current}
 				if n := m.site.Schemata(l); n != nil {
 					c.Replace(n)
+					current = n
+					lowered = true
 					out.Embedded[m.ID] = true
 				}
 			}
@@ -115,13 +135,6 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		out.Files[name] = buf.Bytes()
 	}
 	return out, nil
-}
-
-// wraps reports whether the operator's schemata wrap the node's current
-// lowering (read at lowering time) instead of rebuilding it from the
-// original node's parts.
-func wraps(operator string) bool {
-	return operator == Negation{}.Name() || operator == Condition{}.Name()
 }
 
 // runtimeName picks an import name for the runtime that no identifier in f

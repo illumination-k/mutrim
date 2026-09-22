@@ -1,0 +1,66 @@
+loop.go:6:7 Scan constant "0 -> 1" viable=true | n := 1
+loop.go:7:23 Scan loopcond "range -> no iteration" viable=true | for _, x := range xs {
+loop.go:8:6 Scan negation "cond -> !(cond)" viable=true | if !(x == 0) {
+loop.go:8:6 Scan condition "cond -> true" viable=true | if true {
+loop.go:8:6 Scan condition "cond -> false" viable=true | if false {
+loop.go:8:13 Scan branch "if body -> empty" viable=true | if x == 0 {
+loop.go:8:8 Scan relational "== -> !=" viable=true | if x != 0 {
+loop.go:8:11 Scan constant "0 -> 1" viable=true | if x == 1 {
+loop.go:9:4 Scan loopctrl "continue -> break" viable=true | break
+loop.go:11:6 Scan negation "cond -> !(cond)" viable=true | if !(x < 0) {
+loop.go:11:6 Scan condition "cond -> true" viable=true | if true {
+loop.go:11:6 Scan condition "cond -> false" viable=true | if false {
+loop.go:11:12 Scan branch "if body -> empty" viable=true | if x < 0 {
+loop.go:11:8 Scan relational "< -> <=" viable=true | if x <= 0 {
+loop.go:11:8 Scan invert "< -> >=" viable=true | if x >= 0 {
+loop.go:11:10 Scan constant "0 -> 1" viable=true | if x < 1 {
+loop.go:12:4 Scan loopctrl "break -> continue" viable=true | continue
+loop.go:14:3 Scan incdec "++ -> --" viable=true | n--
+loop.go:16:2 Scan return "result 1 -> 0" viable=true | return 0
+loop.go:16:2 Scan return "result 1 -> 1" viable=true | return 1
+loop.go:22:7 InSwitch constant "0 -> 1" viable=true | n := 1
+loop.go:23:23 InSwitch loopcond "range -> no iteration" viable=true | for _, x := range xs {
+loop.go:25:3 InSwitch branch "case body -> empty" viable=true | case x == 0:
+loop.go:25:10 InSwitch relational "== -> !=" viable=true | case x != 0:
+loop.go:25:13 InSwitch constant "0 -> 1" viable=true | case x == 1:
+loop.go:27:3 InSwitch branch "default body -> empty" viable=true | default:
+loop.go:28:4 InSwitch incdec "++ -> --" viable=true | n--
+loop.go:31:2 InSwitch return "result 1 -> 0" viable=true | return 0
+loop.go:31:2 InSwitch return "result 1 -> 1" viable=true | return 1
+loop.go:35:7 Labeled constant "0 -> 1" viable=true | n := 1
+loop.go:37:25 Labeled loopcond "range -> no iteration" viable=true | for _, row := range xs {
+loop.go:38:25 Labeled loopcond "range -> no iteration" viable=true | for _, x := range row {
+loop.go:39:7 Labeled negation "cond -> !(cond)" viable=true | if !(x < 0) {
+loop.go:39:7 Labeled condition "cond -> true" viable=true | if true {
+loop.go:39:7 Labeled condition "cond -> false" viable=true | if false {
+loop.go:39:13 Labeled branch "if body -> empty" viable=true | if x < 0 {
+loop.go:39:9 Labeled relational "< -> <=" viable=true | if x <= 0 {
+loop.go:39:9 Labeled invert "< -> >=" viable=true | if x >= 0 {
+loop.go:39:11 Labeled constant "0 -> 1" viable=true | if x < 1 {
+loop.go:42:4 Labeled incdec "++ -> --" viable=true | n--
+loop.go:45:2 Labeled return "result 1 -> 0" viable=true | return 0
+loop.go:45:2 Labeled return "result 1 -> 1" viable=true | return 1
+loop.go:51:7 Count constant "0 -> 1" viable=true | c := 1
+loop.go:52:14 Count negation "cond -> !(cond)" viable=true | for i := 0; !(i < n); i++ {
+loop.go:52:14 Count loopcond "cond -> false" viable=true | for i := 0; false; i++ {
+loop.go:52:11 Count constant "0 -> 1" viable=true | for i := 1; i < n; i++ {
+loop.go:52:16 Count relational "< -> <=" viable=true | for i := 0; i <= n; i++ {
+loop.go:52:16 Count invert "< -> >=" viable=true | for i := 0; i >= n; i++ {
+loop.go:52:21 Count incdec "++ -> --" viable=true | for i := 0; i < n; i-- {
+loop.go:53:3 Count incdec "++ -> --" viable=true | c--
+loop.go:55:2 Count return "result 1 -> 0" viable=true | return 0
+loop.go:55:2 Count return "result 1 -> 1" viable=true | return 1
+loop.go:59:7 Forever constant "0 -> 1" viable=true | n := 1
+loop.go:61:6 Forever negation "cond -> !(cond)" viable=true | if !(stop()) {
+loop.go:61:6 Forever condition "cond -> true" viable=true | if true {
+loop.go:61:6 Forever condition "cond -> false" viable=true | if false {
+loop.go:61:13 Forever branch "if body -> empty" viable=true | if stop() {
+loop.go:62:4 Forever return "result 1 -> 0" viable=true | return 0
+loop.go:62:4 Forever return "result 1 -> 1" viable=true | return 1
+loop.go:64:3 Forever incdec "++ -> --" viable=true | n--
+loop.go:70:11 Sum constant "0 -> 1" viable=true | total := 1
+loop.go:71:23 Sum loopcond "range -> no iteration" viable=true | for _, x := range xs {
+loop.go:72:9 Sum assignop "+= -> -=" viable=true | total -= x
+loop.go:72:9 Sum assignop "+= -> =" viable=true | total = x
+loop.go:74:2 Sum return "result 1 -> 0" viable=true | return 0
+loop.go:74:2 Sum return "result 1 -> 1" viable=true | return 1
