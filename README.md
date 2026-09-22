@@ -159,6 +159,12 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
   -confirm-baseline 3 -confirm-kills 3 -out report.json
 ```
 
+Each mutant's timeout follows the tests reaching it: `-timeout-factor` (3) × their traced
+durations + `-timeout-const` (2s), at least 10s and at most `-timeout-factor` × the baseline
+run, so a mutant looping forever in a hot function reached by one quick test gives up long
+before the whole suite's worth. Each result records its `timeout_ms`; `-timeout` sets one
+timeout for every mutant instead.
+
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
 of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
 test whose requirements the other selected tests satisfy between them. `selected` lists the

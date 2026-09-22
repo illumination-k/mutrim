@@ -31,6 +31,10 @@ import (
 // produced false TIMEOUTs with a 2s floor.
 const MinTimeout = 10 * time.Second
 
+// DefaultTimeoutFactor multiplies the reaching tests' durations, and the
+// baseline for the cap, when Options.TimeoutFactor is zero.
+const DefaultTimeoutFactor = 3
+
 // Options configures Run.
 type Options struct {
 	// TestBin is a test binary built from schemata sources (`go test -c`).
@@ -62,9 +66,16 @@ type Options struct {
 	// every time is an error, as a failing baseline always is.
 	ConfirmBaseline int
 	// Timeout per test process (one per mutant, or with Subtests one per
-	// parent of the rows reaching it); zero derives 3× the baseline run, at
-	// least MinTimeout.
+	// parent of the rows reaching it) overrides the derived one. Zero
+	// derives it per mutant from the traced durations of the rows reaching
+	// it: TimeoutFactor × their sum + TimeoutConst, at least MinTimeout and
+	// at most TimeoutFactor × the baseline run.
 	Timeout time.Duration
+	// TimeoutFactor scales the derived timeout; zero means
+	// DefaultTimeoutFactor.
+	TimeoutFactor float64
+	// TimeoutConst is added to the derived timeout for process startup.
+	TimeoutConst time.Duration
 	// Shard selects mutants whose ID % Shards == Shard. Shards <= 1 runs all.
 	Shard, Shards int
 	// InDiff, if set, scopes the run to the lines it adds: a mutant
@@ -111,12 +122,15 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if base.Status != Lived {
 		return nil, fmt.Errorf("runner: baseline run failed (%s); the tests must pass without a mutant\n%s", base.Status, base.output)
 	}
-	timeout := o.Timeout
-	if timeout == 0 {
-		timeout = max(3*time.Duration(base.DurationMS)*time.Millisecond, MinTimeout)
+	if o.TimeoutFactor == 0 {
+		o.TimeoutFactor = DefaultTimeoutFactor
+	}
+	maxTimeout := o.Timeout
+	if maxTimeout == 0 {
+		maxTimeout = max(o.scale(base.DurationMS), MinTimeout)
 	}
 	names := rows(started(base.output), o.Subtests)
-	logger.Printf("baseline %dms, timeout %s, %d tests", base.DurationMS, timeout, len(names))
+	logger.Printf("baseline %dms, timeout at most %s, %d tests", base.DurationMS, maxTimeout, len(names))
 
 	tests, err := o.traceTests(ctx, names)
 	if err != nil {
@@ -124,7 +138,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	reachers := map[string][]string{}
 	flaky := map[string]bool{}
+	durations := map[string]int64{}
 	for _, t := range tests {
+		durations[t.Name] = t.DurationMS
 		for _, id := range t.Sites {
 			reachers[id] = append(reachers[id], t.Name)
 		}
@@ -141,7 +157,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: timeout.Milliseconds(), Tests: tests, Results: []Result{}}
+	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: maxTimeout.Milliseconds(), Tests: tests, Results: []Result{}}
 	if len(o.Mutants) > 0 {
 		report.Pkg = o.Mutants[0].Pkg
 	}
@@ -164,10 +180,11 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
+			timeout := o.mutantTimeout(reachers[m.ID], durations, maxTimeout)
 			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, flaky); err != nil {
 				return nil, err
 			}
-			logger.Printf("%s %s %s:%d %s %q (%dms)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, suspicion(r.SuspiciousBy))
+			logger.Printf("%s %s %s:%d %s %q (%dms, timeout %s)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, timeout, suspicion(r.SuspiciousBy))
 		}
 		report.Results = append(report.Results, r)
 	}
@@ -179,6 +196,26 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		logger.Printf("%d of %d mutants have an unconfirmed kill; see suspicious_by", report.Totals.Suspicious, report.Totals.Mutants)
 	}
 	return report, nil
+}
+
+// mutantTimeout is the timeout of a mutant reached by rows: Options.Timeout
+// when set, else TimeoutFactor × the rows' traced durations + TimeoutConst,
+// clamped to [MinTimeout, maxTimeout]. A mutant reached by one quick test
+// then times out long before one reached by the whole suite.
+func (o Options) mutantTimeout(rows []string, durations map[string]int64, maxTimeout time.Duration) time.Duration {
+	if o.Timeout > 0 {
+		return o.Timeout
+	}
+	var sum int64
+	for _, r := range rows {
+		sum += durations[r]
+	}
+	return min(max(o.scale(sum)+o.TimeoutConst, MinTimeout), maxTimeout)
+}
+
+// scale is TimeoutFactor × ms milliseconds.
+func (o Options) scale(ms int64) time.Duration {
+	return time.Duration(o.TimeoutFactor * float64(ms) * float64(time.Millisecond))
 }
 
 // runMutant runs the rows reaching mutant id against it and merges the
@@ -198,7 +235,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 // group — that kill is a real observation — but it does override LIVED:
 // nothing was observed to pass either.
 func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration, flaky map[string]bool) (Result, error) {
-	r := Result{MutantID: id, Status: Lived}
+	r := Result{MutantID: id, Status: Lived, TimeoutMS: timeout.Milliseconds()}
 	for _, group := range groupByParent(rows) {
 		res, err := o.exec(ctx, id, "", testPattern(group), timeout)
 		if err != nil {

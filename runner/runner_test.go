@@ -104,7 +104,7 @@ func TestRunReportGolden(t *testing.T) {
 	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 3000 {
 		t.Errorf("unexpected report metadata: %+v", report)
 	}
-	if !strings.Contains(logs.String(), "timeout 3s, 14 tests\n") {
+	if !strings.Contains(logs.String(), "timeout at most 3s, 14 tests\n") {
 		t.Errorf("the baseline must run every test:\n%s", logs.String())
 	}
 	// Every top-level test ran on its own and reached some sites.
@@ -288,7 +288,8 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 	}
 }
 
-// The derived timeout is 3× the baseline with MinTimeout as the floor, and
+// The derived timeout is capped at 3× the baseline with MinTimeout as the
+// floor, each result records the one it ran under, and
 // a GOMUTANT_ID inherited from the environment must not leak into the
 // baseline run.
 func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
@@ -311,6 +312,9 @@ func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
 		t.Errorf("timeout_ms = %d, want %d (baseline %dms)", report.TimeoutMS, want, report.BaselineMS)
 	}
 	for _, r := range report.Results {
+		if r.Status.Executed() && (r.TimeoutMS < runner.MinTimeout.Milliseconds() || r.TimeoutMS > report.TimeoutMS) {
+			t.Errorf("%s: timeout_ms = %d, want within [%d, %d]", r.MutantID, r.TimeoutMS, runner.MinTimeout.Milliseconds(), report.TimeoutMS)
+		}
 		if r.Status == runner.Killed && r.TestsRun != 1 {
 			t.Errorf("%s: -test.run narrowing ran %d tests, want 1", r.MutantID, r.TestsRun)
 		}

@@ -90,6 +90,9 @@ type Result struct {
 	// rows failed against is LIVED.
 	SuspiciousBy []string `json:"suspicious_by,omitempty"`
 	DurationMS   int64    `json:"duration_ms"`
+	// TimeoutMS is the timeout each of the mutant's test processes ran
+	// under, so a TIMEOUT can be audited; zero when nothing ran.
+	TimeoutMS int64 `json:"timeout_ms,omitempty"`
 }
 
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
@@ -118,12 +121,14 @@ type Totals struct {
 type Report struct {
 	// Pkg is the import path of the mutated package, taken from its
 	// mutants; empty when there were none.
-	Pkg        string   `json:"pkg"`
-	BaselineMS int64    `json:"baseline_ms"`
-	TimeoutMS  int64    `json:"timeout_ms"`
-	Tests      []Test   `json:"tests"`
-	Results    []Result `json:"results"`
-	Totals     Totals   `json:"totals"`
+	Pkg        string `json:"pkg"`
+	BaselineMS int64  `json:"baseline_ms"`
+	// TimeoutMS is the longest a mutant's test process may run:
+	// Options.Timeout, or the cap of the derived per-mutant timeouts.
+	TimeoutMS int64    `json:"timeout_ms"`
+	Tests     []Test   `json:"tests"`
+	Results   []Result `json:"results"`
+	Totals    Totals   `json:"totals"`
 }
 
 // ReadReport loads a report written by an earlier run.

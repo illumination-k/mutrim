@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/tools/go/packages"
 
@@ -259,7 +260,9 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	out := fs.String("out", "", "write report.json here (default: $TEST_UNDECLARED_OUTPUTS_DIR/report.json, else stdout)")
 	previous := fs.String("previous", "", "report.json of an earlier run; its results are copied forward")
 	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines run, the rest are SKIPPED")
-	timeout := fs.Duration("timeout", 0, "per-mutant timeout (default: 3× the baseline run)")
+	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between 10s and -timeout-factor × the baseline run)")
+	timeoutFactor := fs.Float64("timeout-factor", runner.DefaultTimeoutFactor, "multiplier of the derived per-mutant timeout")
+	timeoutConst := fs.Duration("timeout-const", 2*time.Second, "added to the derived per-mutant timeout for process startup")
 	tests := fs.String("tests", "", "comma-separated top-level tests to run (default: all)")
 	subtests := fs.Bool("subtests", false, "make each subtest (TestX/case) a row of the kill matrix: traced on its own and named in killed_by; subtest names must be stable across runs")
 	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
@@ -275,7 +278,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	opts := runner.Options{
 		TestBin: *testBin, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
 		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline,
-		Timeout: *timeout, Log: stderr,
+		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, Log: stderr,
 	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {
 		return err
