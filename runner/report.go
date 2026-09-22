@@ -93,6 +93,9 @@ type Test struct {
 type Result struct {
 	MutantID string `json:"mutant_id"`
 	Status   Status `json:"status"`
+	// Class is the mutant's class (mutator.Mutant.Class), which
+	// Totals.Classes groups the score by.
+	Class string `json:"class,omitempty"`
 	// TestsRun counts the rows (see Test) that ran: those reaching the
 	// mutant's site, fewer when a panic stopped the run early.
 	TestsRun int `json:"tests_run"`
@@ -135,6 +138,20 @@ type Totals struct {
 	// partitioning them, and says how much of the run is flaky.
 	Suspicious int     `json:"suspicious"`
 	Score      float64 `json:"score"`
+	// Classes breaks the score down by mutant class (mutator.ClassErrPath,
+	// ClassConcurrency, ClassDefault), so the score of error-handling code
+	// can be read next to the overall one.
+	Classes map[string]ClassTotals `json:"classes,omitempty"`
+}
+
+// ClassTotals is the score of one mutant class, counted as in Totals:
+// Killed includes timeouts, Survived the mutants the score counts as
+// survivors (Report.Survived).
+type ClassTotals struct {
+	Mutants  int     `json:"mutants"`
+	Killed   int     `json:"killed"`
+	Survived int     `json:"survived"`
+	Score    float64 `json:"score"`
 }
 
 // Report is the JSON written by Run.
@@ -168,9 +185,22 @@ func ReadReport(path string) (*Report, error) {
 }
 
 func (r *Report) total() {
-	var t Totals
+	t := Totals{Classes: map[string]ClassTotals{}}
 	for _, res := range r.Results {
 		t.Mutants++
+		class := cmp.Or(res.Class, mutator.ClassDefault)
+		c := t.Classes[class]
+		c.Mutants++
+		switch {
+		case res.Status == Killed || res.Status == Timeout:
+			c.Killed++
+		case r.Survived(res.Status):
+			c.Survived++
+		}
+		if c.Killed+c.Survived > 0 {
+			c.Score = float64(c.Killed) / float64(c.Killed+c.Survived)
+		}
+		t.Classes[class] = c
 		if len(res.SuspiciousBy) > 0 {
 			t.Suspicious++
 		}

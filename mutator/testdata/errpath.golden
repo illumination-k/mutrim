@@ -1,0 +1,43 @@
+errpath.go:15:5 Parse condition "cond -> true" viable=true | if true {
+errpath.go:15:5 Parse condition "cond -> false" viable=true | if false {
+errpath.go:16:3 Parse return "result 1 -> 1" viable=true | return 1, fmt.Errorf("parse %q: %w", s, ErrEmpty)
+errpath.go:16:3 Parse return "result 2 -> nil" viable=true class=errpath | return 0, nil
+errpath.go:16:3 Parse return "return -> zero values" viable=true | return 0, nil
+errpath.go:16:24 Parse errpath "%w -> %v" viable=true class=errpath | return 0, fmt.Errorf("parse %q: %v", s, ErrEmpty)
+errpath.go:19:5 Parse condition "cond -> true" viable=true class=errpath | if true {
+errpath.go:19:5 Parse condition "cond -> false" viable=true class=errpath | if false {
+errpath.go:20:3 Parse return "result 1 -> 1" viable=true | return 1, fmt.Errorf("parse: %w", err)
+errpath.go:20:3 Parse return "result 2 -> nil" viable=true class=errpath | return 0, nil
+errpath.go:20:3 Parse return "return -> zero values" viable=true | return 0, nil
+errpath.go:20:24 Parse errpath "%w -> %v" viable=true class=errpath | return 0, fmt.Errorf("parse: %v", err)
+errpath.go:20:13 Parse errpath "fmt.Errorf -> err" viable=true class=errpath | return 0, func(err error) error {
+errpath.go:22:2 Parse return "result 1 -> 0" viable=true | return 0, nil
+errpath.go:22:2 Parse return "result 1 -> 1" viable=true | return 1, nil
+errpath.go:22:2 Parse return "return -> zero values" viable=true | return 0, nil
+errpath.go:27:2 IsEmpty return "result 1 -> false" viable=true | return false
+errpath.go:27:2 IsEmpty return "result 1 -> true" viable=true | return true
+errpath.go:27:9 IsEmpty errpath "errors.Is -> true" viable=true class=errpath | return func(error, any) bool {
+errpath.go:27:9 IsEmpty errpath "errors.Is -> false" viable=true class=errpath | return func(error, any) bool {
+errpath.go:33:5 NumError condition "cond -> true" viable=true | if true {
+errpath.go:33:5 NumError condition "cond -> false" viable=true | if false {
+errpath.go:33:5 NumError errpath "errors.As -> true" viable=true class=errpath | if func(error, any) bool {
+errpath.go:33:5 NumError errpath "errors.As -> false" viable=true class=errpath | if func(error, any) bool {
+errpath.go:34:3 NumError return "result 1 -> nil" viable=true class=errpath | return nil
+errpath.go:41:5 Must condition "cond -> true" viable=true | if true {
+errpath.go:41:5 Must condition "cond -> false" viable=true | if false {
+errpath.go:42:3 Must errpath "panic -> removed" viable=true class=errpath | func() {
+errpath.go:48:5 Check condition "cond -> true" viable=true | if true {
+errpath.go:48:5 Check condition "cond -> false" viable=true | if false {
+errpath.go:49:3 Check errpath "panic -> removed" viable=true class=errpath | func() {
+errpath.go:51:2 Check return "result 1 -> 0" viable=true | return 0
+errpath.go:51:2 Check return "result 1 -> 1" viable=true | return 1
+errpath.go:56:5 Abs condition "cond -> true" viable=true | if true {
+errpath.go:56:5 Abs condition "cond -> false" viable=true | if false {
+errpath.go:57:3 Abs return "result 1 -> 0" viable=true | return 0
+errpath.go:57:3 Abs return "result 1 -> 1" viable=true | return 1
+errpath.go:65:22 Safe condition "cond -> true" viable=true class=errpath | if r := recover(); true {
+errpath.go:65:22 Safe condition "cond -> false" viable=true class=errpath | if r := recover(); false {
+errpath.go:65:11 Safe errpath "recover() -> nil" viable=true class=errpath | if r := func(any) any {
+errpath.go:83:3 Sign return "result 1 -> 0" viable=true | return 0
+errpath.go:85:3 Sign return "result 1 -> 0" viable=true | return 0
+errpath.go:85:3 Sign return "result 1 -> 1" viable=true | return 1

@@ -1,19 +1,19 @@
-concurrency.go:19:2 (*Counter).Inc concurrency "defer -> removed" viable=true | defer func() {
-concurrency.go:19:2 (*Counter).Inc concurrency "defer f() -> f()" viable=true | c.mu.Unlock()
-concurrency.go:29:3 Sum concurrency "go f() -> f()" viable=true | func() {
-concurrency.go:30:4 Sum concurrency "defer -> removed" viable=true | defer func() {
-concurrency.go:30:4 Sum concurrency "defer f() -> f()" viable=true | wg.Done()
-concurrency.go:31:4 Sum concurrency "atomic.AddInt64 -> +=" viable=true | total += int64(x)
-concurrency.go:40:23 Produce concurrency "buffer -> 0" viable=true | ch := make(chan int, 0)
-concurrency.go:42:3 Produce concurrency "send -> removed" viable=true |
-concurrency.go:50:24 Buffered concurrency "buffer -> 0" viable=true | return make(chan int, 0)
-concurrency.go:50:24 Buffered concurrency "buffer -> buffer+1" viable=true | return make(chan int, n+1)
-concurrency.go:56:18 First concurrency "case -> never ready" viable=true | case v, ok := <-(<-chan int)(nil):
-concurrency.go:58:9 First concurrency "case -> never ready" viable=true | case <-(<-chan struct{})(nil):
-concurrency.go:65:8 Handoff concurrency "unbuffered -> buffer 1" viable=true | ch := make(chan int, 1)
-concurrency.go:66:25 Handoff concurrency "buffer -> 0" viable=true | done := make(chan int, 0)
-concurrency.go:67:2 Handoff concurrency "go f() -> f()" viable=true | func() { done <- <-ch }()
-concurrency.go:67:14 Handoff concurrency "send -> removed" viable=true | go func() {}()
-concurrency.go:68:2 Handoff concurrency "send -> removed" viable=true |
-concurrency.go:79:2 Init concurrency "once.Do(f) -> f()" viable=true | func() { inits++ }()
-concurrency.go:87:2 Flag concurrency "atomic.StoreInt32 -> =" viable=true | g = 1
+concurrency.go:19:2 (*Counter).Inc concurrency "defer -> removed" viable=true class=concurrency | defer func() {
+concurrency.go:19:2 (*Counter).Inc concurrency "defer f() -> f()" viable=true class=concurrency | c.mu.Unlock()
+concurrency.go:29:3 Sum concurrency "go f() -> f()" viable=true class=concurrency | func() {
+concurrency.go:30:4 Sum concurrency "defer -> removed" viable=true class=concurrency | defer func() {
+concurrency.go:30:4 Sum concurrency "defer f() -> f()" viable=true class=concurrency | wg.Done()
+concurrency.go:31:4 Sum concurrency "atomic.AddInt64 -> +=" viable=true class=concurrency | total += int64(x)
+concurrency.go:40:23 Produce concurrency "buffer -> 0" viable=true class=concurrency | ch := make(chan int, 0)
+concurrency.go:42:3 Produce concurrency "send -> removed" viable=true class=concurrency |
+concurrency.go:50:24 Buffered concurrency "buffer -> 0" viable=true class=concurrency | return make(chan int, 0)
+concurrency.go:50:24 Buffered concurrency "buffer -> buffer+1" viable=true class=concurrency | return make(chan int, n+1)
+concurrency.go:56:18 First concurrency "case -> never ready" viable=true class=concurrency | case v, ok := <-(<-chan int)(nil):
+concurrency.go:58:9 First concurrency "case -> never ready" viable=true class=concurrency | case <-(<-chan struct{})(nil):
+concurrency.go:65:8 Handoff concurrency "unbuffered -> buffer 1" viable=true class=concurrency | ch := make(chan int, 1)
+concurrency.go:66:25 Handoff concurrency "buffer -> 0" viable=true class=concurrency | done := make(chan int, 0)
+concurrency.go:67:2 Handoff concurrency "go f() -> f()" viable=true class=concurrency | func() { done <- <-ch }()
+concurrency.go:67:14 Handoff concurrency "send -> removed" viable=true class=concurrency | go func() {}()
+concurrency.go:68:2 Handoff concurrency "send -> removed" viable=true class=concurrency |
+concurrency.go:79:2 Init concurrency "once.Do(f) -> f()" viable=true class=concurrency | func() { inits++ }()
+concurrency.go:87:2 Flag concurrency "atomic.StoreInt32 -> =" viable=true class=concurrency | g = 1

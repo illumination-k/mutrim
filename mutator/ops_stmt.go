@@ -39,7 +39,8 @@ func (Negation) Sites(ctx *Context, n ast.Node) []Site {
 }
 
 // Condition forces the condition of an if statement to true and to false.
-// The condition is still evaluated, so its side effects are kept.
+// The condition is still evaluated, so its side effects are kept. A nil
+// check's sites are of ClassErrPath.
 type Condition struct{}
 
 func (Condition) Name() string { return "condition" }
@@ -51,12 +52,18 @@ func (Condition) Sites(ctx *Context, n ast.Node) []Site {
 	}
 	cond := &s.Cond
 	orig := *cond
+	// Forcing `err != nil` takes or skips the error path.
+	class := ""
+	if ctx.isNilCheck(orig) {
+		class = ClassErrPath
+	}
 	sites := make([]Site, 0, 2)
 	for _, value := range []string{"true", "false"} {
 		forced := ast.NewIdent(value)
 		site := Site{
 			Node:        orig,
 			Description: "cond -> " + value,
+			Class:       class,
 			Apply:       func() { *cond = forced },
 			Undo:        func() { *cond = orig },
 			Wraps:       true,

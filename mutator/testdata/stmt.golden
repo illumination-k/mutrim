@@ -28,7 +28,8 @@ stmt.go:18:5 Step condition "cond -> false" viable=true | if false {
 stmt.go:18:12 Step branch "if body -> empty" viable=true | if x == 0 {
 stmt.go:18:7 Step relational "== -> !=" viable=true | if x != 0 {
 stmt.go:18:10 Step constant "0 -> 1" viable=true | if x == 1 {
-stmt.go:19:9 Step string "\"zero\" -> \"\"" viable=true | panic("") // panic is kept: the function must still terminate
+stmt.go:19:3 Step errpath "panic -> removed" viable=true class=errpath | func() {
+stmt.go:19:9 Step string "\"zero\" -> \"\"" viable=true | panic("") // no voidcall site; errpath removes it, since the if does not terminate the function
 stmt.go:21:2 Step return "result 1 -> 0" viable=true | return 0
 stmt.go:21:2 Step return "result 1 -> 1" viable=true | return 1
 stmt.go:29:5 Named negation "cond -> !(cond)" viable=true | if !(f) {

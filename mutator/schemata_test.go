@@ -322,3 +322,51 @@ func TestSchemataVetPrintf(t *testing.T) {
 		t.Fatalf("go vet -printf on the schemata source: %v\n%s", err, out)
 	}
 }
+
+// TestSchemataErrPath lowers the errpath operator: the source must pass
+// vet's printf check (a degraded format stays constant), behave like the
+// original with GOMUTANT_ID unset, and have every errpath mutant killed by
+// the fixture's tests but the one they cannot tell apart.
+func TestSchemataErrPath(t *testing.T) {
+	pkg := load(t, "errpath")
+	ops, err := mutator.Operators("errpath")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
+	sch, err := mutator.Lower(pkg, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlayPath := overlayFor(t, sch)
+	vet := exec.CommandContext(t.Context(), "go", "vet", "-printf", "-overlay", overlayPath, "./testdata/errpath") //nolint:gosec // test-controlled args
+	if out, err := vet.CombinedOutput(); err != nil {
+		t.Fatalf("go vet -printf on the schemata source: %v\n%s", err, out)
+	}
+	bin := filepath.Join(t.TempDir(), "errpath.test")
+	build := exec.CommandContext(t.Context(), "go", "test", "-c", "-o", bin, "-overlay", overlayPath, "./testdata/errpath") //nolint:gosec // test-controlled args
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	run := func(id string) error {
+		cmd := exec.CommandContext(t.Context(), bin) //nolint:gosec // test-controlled args
+		cmd.Env = append(os.Environ(), "GOMUTANT_ID="+id)
+		return cmd.Run()
+	}
+	if err := run(""); err != nil {
+		t.Fatalf("schemata source must pass the fixture tests: %v", err)
+	}
+	// errors.As forced to true leaves the target nil, which NumError
+	// returns as it would without a match.
+	lives := map[string]bool{"NumError errors.As -> true": true}
+	for _, m := range mutants {
+		key := m.Func + " " + m.Description
+		if !sch.Embedded[m.ID] {
+			t.Errorf("%s: not embedded", key)
+			continue
+		}
+		if killed := run(m.ID) != nil; killed == lives[key] {
+			t.Errorf("%s: killed=%v", key, killed)
+		}
+	}
+}

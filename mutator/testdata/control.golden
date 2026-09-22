@@ -24,7 +24,7 @@ control.go:14:3 Sum loopctrl "break -> continue" viable=true | continue
 control.go:16:2 Sum return "result 1 -> 0" viable=true | return 0
 control.go:16:2 Sum return "result 1 -> 1" viable=true | return 1
 control.go:22:2 (*Counter).Inc incdec "++ -> --" viable=true | c.n--
-control.go:26:2 Closure return "result 1 -> nil" viable=true | return nil
+control.go:26:2 Closure return "result 1 -> nil" viable=true class=errpath | return nil
 control.go:27:6 Closure negation "cond -> !(cond)" viable=true | if !(true) {
 control.go:27:6 Closure condition "cond -> true" viable=true | if true {
 control.go:27:6 Closure condition "cond -> false" viable=true | if false {
