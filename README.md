@@ -18,6 +18,10 @@ go run ./cmd/mutrim gen -operators default,call ./path/to/pkg
 go run ./cmd/mutrim gen -match '^\(\*Tree\)\.' -exclude-files '_gen\.go$' \
   -exclude-re 'constant: 0 -> 1' ./path/to/pkg
 
+# Calls to log and slog are excluded by default; name others, or turn the rule off.
+go run ./cmd/mutrim gen -exclude-calls 'default,(*Metrics).Observe' ./path/to/pkg
+go run ./cmd/mutrim gen -exclude-calls none ./path/to/pkg
+
 # Apply one mutant through go build -overlay and run the package's tests.
 go run ./cmd/mutrim overlay -id <mutant id> -o overlay.json ./path/to/pkg
 go test -overlay overlay.json ./path/to/pkg
@@ -30,7 +34,17 @@ A failing `go test` means the mutant was killed.
 `-exclude-files <re,...>` drops the files matching one of the regexps (both are tried
 against the path as reported, its path relative to the working directory, and its base
 name); `-exclude-re <re>` drops the mutants whose `func operator: description` matches, so
-a rewrite can be excluded wherever it occurs. A filtered mutant is still listed, with
+a rewrite can be excluded wherever it occurs.
+
+`-exclude-calls <glob,...>` drops the mutants of a call whose callee matches — the call
+itself and everything in its arguments — because no test asserts on what a logging call
+does: removing `log.Printf("n=%d", n+1)`, or mutating the `n+1` it logs, produces a mutant
+nothing can kill. The callee is matched as go/types names it, with and without the package
+path (`slog.Info` and `log/slog.Info`, `(*slog.Logger).Info`). The default list is
+`log.*`, `(*log.Logger).*`, `slog.*`, `(*slog.Logger).*`; an explicit list replaces it, the
+entry `default` keeps it (`default,(*Metrics).Observe`), and `none` excludes no call.
+
+A filtered mutant is still listed, with
 `"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
 building or executing it — the counts of a filtered run stay comparable with an unfiltered
 one, and `IGNORED` mutants count towards no score.
@@ -163,6 +177,7 @@ mutation_test(
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
     match = "^Compute",                    # optional; the gen filters, per attribute
     exclude_files = ["_gen\\.go$"],
+    exclude_calls = ["default", "(*Metrics).Observe"],  # logging calls are excluded anyway
     subtests = True,                       # optional; `mutrim run -subtests`
     shard_count = 4,
 )
