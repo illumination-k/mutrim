@@ -59,9 +59,14 @@ func (s Status) Executed() bool {
 // top-level test, or with Options.Subtests a subtest, run on its own
 // against the unmutated package.
 type Test struct {
+	// Name is the test's name, qualified as Pkg.TestX when it belongs to
+	// another package than the mutated one (Options.ExtraTests).
 	Name string `json:"name"`
+	// Pkg is the import path of the package of an extra test binary; empty
+	// for the mutated package's own tests.
+	Pkg string `json:"pkg,omitempty"`
 	// Parent is the test that runs this one as a subtest (`TestX` for
-	// `TestX/case`); empty for a top-level test.
+	// `TestX/case`), qualified like Name; empty for a top-level test.
 	Parent     string `json:"parent,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
 	// Sites lists the IDs of the mutants whose site the test reaches; only

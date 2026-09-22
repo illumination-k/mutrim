@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -385,10 +386,6 @@ func TestCommandErrors(t *testing.T) {
 	if err := writeJSON(reportFile, nil, runner.Report{Pkg: "example.com/a"}); err != nil {
 		t.Fatal(err)
 	}
-	other := filepath.Join(dir, "other.json")
-	if err := writeJSON(other, nil, runner.Report{Pkg: "example.com/b"}); err != nil {
-		t.Fatal(err)
-	}
 	mutantsFile := filepath.Join(dir, "mutants.json")
 	if err := writeJSON(mutantsFile, nil, []mutator.Mutant{}); err != nil {
 		t.Fatal(err)
@@ -419,12 +416,12 @@ func TestCommandErrors(t *testing.T) {
 		"run missing in-diff":        {"run", "-test-bin", "x.test", "-mutants", mutantsFile, "-in-diff", missing},
 		"run bad confirm-kills":      {"run", "-confirm-kills", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad confirm-baseline":   {"run", "-confirm-baseline", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run bad extra-test":         {"run", "-extra-test", "x.test", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"minimize bad flag":          {"minimize", "-bogus"},
 		"minimize no report":         {"minimize"},
 		"minimize missing report":    {"minimize", missing},
 		"minimize bad keep":          {"minimize", "-keep", "(", missing},
 		"minimize missing srcs":      {"minimize", "-srcs", missing, reportFile},
-		"minimize several packages":  {"minimize", reportFile, other},
 		"minimize missing mutants":   {"minimize", "-mutants", missing, reportFile},
 		"minimize unwritable":        {"minimize", "-o", notADir, reportFile},
 		"minimize unwritable matrix": {"minimize", "-matrix", notADir, reportFile},
@@ -760,5 +757,92 @@ func TestMinimizeExcludesFlakyTests(t *testing.T) {
 	}
 	if len(matrix.Tests) != 1 || matrix.Tests[0].Name != "TestStable" {
 		t.Errorf("matrix rows = %+v, want TestStable alone", matrix.Tests)
+	}
+}
+
+// run -extra-test runs the tests of a package importing the mutated one
+// against its mutants, and minimize takes the reports of both packages as
+// one matrix: app's tests are one row each, whether a report names them
+// bare (app's own) or qualified (lib's -extra-test).
+func TestRunExtraTestThenMinimize(t *testing.T) {
+	const (
+		libDir = "../../runner/testdata/cross/lib"
+		appDir = "../../runner/testdata/cross/app"
+		libPkg = "github.com/illumination-k/mutrim/runner/testdata/cross/lib"
+		appPkg = "github.com/illumination-k/mutrim/runner/testdata/cross/app"
+	)
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	// build lowers pkgDir under its own directory and compiles the test
+	// binaries of the given packages against it.
+	build := func(name, pkgDir string, testDirs ...string) (mutantsPath string, bins []string) {
+		t.Helper()
+		sch := filepath.Join(dir, name)
+		mutantsPath = filepath.Join(sch, "mutants.json")
+		if err := os.MkdirAll(sch, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := run(t.Context(), []string{"gen", "-schemata", sch, "-o", mutantsPath, pkgDir}, &stdout, &stderr); err != nil {
+			t.Fatalf("gen -schemata %s: %v\n%s", pkgDir, err, stderr.String())
+		}
+		for i, td := range testDirs {
+			bin := filepath.Join(sch, strconv.Itoa(i)+".test")
+			cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(sch, "overlay.json"), "-o", bin, td) //nolint:gosec // test-controlled args
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("go test -c: %v\n%s", err, out)
+			}
+			bins = append(bins, bin)
+		}
+		return mutantsPath, bins
+	}
+	libMutants, libBins := build("lib", libDir, libDir, appDir)
+	appMutants, appBins := build("app", appDir, appDir)
+
+	libReport := filepath.Join(dir, "lib.json")
+	args := []string{"run", "-subtests", "-test-bin", libBins[0], "-extra-test", appPkg + "=" + libBins[1] + "," + appDir, "-mutants", libMutants, "-dir", libDir, "-timeout", "1s", "-out", libReport}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run -extra-test: %v\n%s", err, stderr.String())
+	}
+	appReport := filepath.Join(dir, "app.json")
+	args = []string{"run", "-subtests", "-test-bin", appBins[0], "-mutants", appMutants, "-dir", appDir, "-timeout", "1s", "-out", appReport}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+	var rep runner.Report
+	if err := readJSON(libReport, &rep); err != nil {
+		t.Fatal(err)
+	}
+	var killedByApp bool
+	for _, r := range rep.Results {
+		for _, k := range r.KilledBy {
+			killedByApp = killedByApp || strings.HasPrefix(k, appPkg+".TestPercent/")
+		}
+	}
+	if !killedByApp {
+		t.Errorf("no mutant of lib killed by app's tests: %+v", rep.Results)
+	}
+
+	stdout.Reset()
+	if err := run(t.Context(), []string{"minimize", "-keep", "^TestPercent/above$", libReport, appReport}, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize: %v\n%s", err, stderr.String())
+	}
+	var result minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("minimize output is not JSON: %v\n%s", err, stdout.String())
+	}
+	rows := map[string]bool{}
+	for _, s := range result.Selected {
+		rows[s.Name] = s.Protected
+	}
+	for _, r := range result.Redundant {
+		rows[r.Name] = false
+	}
+	want := map[string]bool{
+		libPkg + ".TestClampInside":   false,
+		appPkg + ".TestPercent/below": false,
+		appPkg + ".TestPercent/above": true, // -keep matches the name within its package
+	}
+	if !maps.Equal(rows, want) {
+		t.Errorf("rows = %v, want %v", rows, want)
 	}
 }

@@ -3,8 +3,9 @@
 # then `mutrim minimize` and `mutrim report` on its report. Arguments are the
 # flags of `mutrim run` (such as -subtests), the rlocationpaths of mutrim, the
 # test binary and mutants.json, then the test sources (scanned for the
-# mutrim:keep tag), "--", and the library sources (quoted by the Stryker
-# report). MUTRIM_IN_DIFF, when set, is the unified diff the run is scoped to.
+# mutrim:keep tag), "--", the library sources (quoted by the Stryker
+# report), "--", and per extra test the file holding its import path and its
+# binary. MUTRIM_IN_DIFF, when set, is the unified diff the run is scoped to.
 
 # --- begin runfiles.bash initialization v3 ---
 # Copy-pasted from the Bazel Bash runfiles library v3.
@@ -41,8 +42,15 @@ while [[ $# -gt 0 && "$1" != "--" ]]; do
 done
 shift
 lib_srcs=""
-for src in "$@"; do
-	lib_srcs="${lib_srcs:+$lib_srcs,}$(rlocation "$src")"
+while [[ $# -gt 0 && "$1" != "--" ]]; do
+	lib_srcs="${lib_srcs:+$lib_srcs,}$(rlocation "$1")"
+	shift
+done
+shift
+extra=()
+while [[ $# -gt 1 ]]; do
+	extra+=(-extra-test "$(<"$(rlocation "$1")")=$(rlocation "$2")")
+	shift 2
 done
 out="${TEST_UNDECLARED_OUTPUTS_DIR:?}"
 
@@ -56,7 +64,7 @@ if [[ -n "${MUTRIM_IN_DIFF:-}" ]]; then
 fi
 
 "$mutrim" run ${run_flags[@]+"${run_flags[@]}"} -test-bin "$test_bin" -mutants "$mutants" -out "$out/report.json" \
-	${in_diff[@]+"${in_diff[@]}"}
+	${extra[@]+"${extra[@]}"} ${in_diff[@]+"${in_diff[@]}"}
 "$mutrim" minimize -mutants "$mutants" -srcs "$test_srcs" -o "$out/minimize.json" "$out/report.json"
 "$mutrim" report -format stryker -mutants "$mutants" -srcs "$lib_srcs" \
 	-o "$out/mutation-report.json" "$out/report.json"
