@@ -69,8 +69,9 @@ func (AssignOp) Sites(ctx *Context, n ast.Node) []Site {
 			Undo:        func() { s.Tok = tok },
 			// `x op y` stands for the whole statement: a swap Go rejects
 			// there (`s -= t` on strings) fails this check too.
-			Check:    func() error { return ctx.CheckExpr(&ast.BinaryExpr{X: lhs, OpPos: s.TokPos, Op: to, Y: rhs}) },
-			Schemata: assignOpSchemata(s, from, to),
+			Check:      func() error { return ctx.CheckExpr(&ast.BinaryExpr{X: lhs, OpPos: s.TokPos, Op: to, Y: rhs}) },
+			Schemata:   assignOpSchemata(s, from, to),
+			Equivalent: ctx.equivalentSwap(from, to, lhs, rhs),
 		})
 	}
 	tok := s.Tok

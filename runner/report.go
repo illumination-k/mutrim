@@ -44,6 +44,16 @@ const (
 	// NotViable it counts towards no score, but it says the suppression
 	// was asked for.
 	Ignored Status = "IGNORED"
+	// Equivalent means a static rule proved the mutant computes what the
+	// original does (mutator.Mutant.Equivalent), so it was never built
+	// or executed; it counts towards no score.
+	Equivalent Status = "EQUIVALENT"
+	// SuspectEquivalent means every test reaching the mutant passed, as
+	// for LIVED, and reached exactly the sites it reaches without the
+	// mutant: the mutant changed neither the outcome nor the path taken,
+	// which predicts an equivalent mutant (Schuler & Zeller, STVR 2013).
+	// It counts towards no score unless Report.CountSuspect.
+	SuspectEquivalent Status = "SUSPECT_EQUIVALENT"
 )
 
 // Executed reports whether the status came from running the tests, and
@@ -52,7 +62,7 @@ const (
 // it forward would hide a mutant whose runs keep dying from
 // infrastructure, so it is executed again instead.
 func (s Status) Executed() bool {
-	return s == Killed || s == Lived || s == Timeout
+	return s == Killed || s == Lived || s == Timeout || s == SuspectEquivalent
 }
 
 // Test is one entry of the report's tests, a row of the kill matrix: a
@@ -101,7 +111,8 @@ type Result struct {
 }
 
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
-// timeout + lived + no_coverage), or zero when nothing is viable.
+// timeout + lived + no_coverage), or zero when nothing is viable; with
+// Report.CountSuspect, suspect_equivalent joins the denominator.
 type Totals struct {
 	Mutants int `json:"mutants"`
 	Killed  int `json:"killed"`
@@ -115,6 +126,10 @@ type Totals struct {
 	NotViable  int `json:"not_viable"`
 	Ignored    int `json:"ignored"`
 	Skipped    int `json:"skipped"`
+	Equivalent int `json:"equivalent"`
+	// SuspectEquivalent counts the survivors whose trace the mutant left
+	// unchanged; see SuspectEquivalent.
+	SuspectEquivalent int `json:"suspect_equivalent"`
 	// Suspicious counts the mutants with at least one unconfirmed kill
 	// (Result.SuspiciousBy). It overlaps the statuses above rather than
 	// partitioning them, and says how much of the run is flaky.
@@ -130,10 +145,13 @@ type Report struct {
 	BaselineMS int64  `json:"baseline_ms"`
 	// TimeoutMS is the longest a mutant's test process may run:
 	// Options.Timeout, or the cap of the derived per-mutant timeouts.
-	TimeoutMS int64    `json:"timeout_ms"`
-	Tests     []Test   `json:"tests"`
-	Results   []Result `json:"results"`
-	Totals    Totals   `json:"totals"`
+	TimeoutMS int64 `json:"timeout_ms"`
+	// CountSuspect says SUSPECT_EQUIVALENT mutants count as survivors:
+	// in the score, the weak spots and the exported reports.
+	CountSuspect bool     `json:"count_suspect,omitempty"`
+	Tests        []Test   `json:"tests"`
+	Results      []Result `json:"results"`
+	Totals       Totals   `json:"totals"`
 }
 
 // ReadReport loads a report written by an earlier run.
@@ -173,12 +191,26 @@ func (r *Report) total() {
 			t.Ignored++
 		case Skipped:
 			t.Skipped++
+		case Equivalent:
+			t.Equivalent++
+		case SuspectEquivalent:
+			t.SuspectEquivalent++
 		}
 	}
-	if viable := t.Killed + t.Timeout + t.Lived + t.NoCoverage; viable > 0 {
+	viable := t.Killed + t.Timeout + t.Lived + t.NoCoverage
+	if r.CountSuspect {
+		viable += t.SuspectEquivalent
+	}
+	if viable > 0 {
 		t.Score = float64(t.Killed+t.Timeout) / float64(viable)
 	}
 	r.Totals = t
+}
+
+// Survived reports whether a mutant with status s counts as a survivor
+// in r: LIVED and NO_COVERAGE, and SUSPECT_EQUIVALENT when CountSuspect.
+func (r *Report) Survived(s Status) bool {
+	return s == Lived || s == NoCoverage || (s == SuspectEquivalent && r.CountSuspect)
 }
 
 // Spot is a function with surviving mutants: either no test reaches them
@@ -197,6 +229,9 @@ type Spot struct {
 // in reports, most survivors first. Mutants absent from every report are
 // ignored, so shard reports can be passed together.
 //
+// A SUSPECT_EQUIVALENT mutant is a survivor only in a report that
+// counts it (Report.CountSuspect).
+//
 // A RUN_ERROR mutant is no survivor — the run died from infrastructure,
 // so nothing was observed about the mutant — and counts towards nothing:
 // the function it is in is a weak spot only through its other mutants.
@@ -205,6 +240,9 @@ func WeakSpots(mutants []mutator.Mutant, reports ...*Report) []Spot {
 	for _, r := range reports {
 		for _, res := range r.Results {
 			status[res.MutantID] = res.Status
+			if res.Status == SuspectEquivalent && r.Survived(res.Status) {
+				status[res.MutantID] = Lived
+			}
 		}
 	}
 	spots := map[string]*Spot{} // keyed by package and function, since reports may span packages

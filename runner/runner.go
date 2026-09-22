@@ -97,6 +97,10 @@ type Options struct {
 	TimeoutFactor float64
 	// TimeoutConst is added to the derived timeout for process startup.
 	TimeoutConst time.Duration
+	// CountSuspect counts SUSPECT_EQUIVALENT mutants as survivors, in the
+	// score and wherever the report is read (Report.CountSuspect); by
+	// default they count towards no score.
+	CountSuspect bool
 	// Shard selects mutants whose ID % Shards == Shard. Shards <= 1 runs all.
 	Shard, Shards int
 	// InDiff, if set, scopes the run to the lines it adds: a mutant
@@ -210,18 +214,24 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		return nil, err
 	}
 	reachers := map[string][]row{}
-	flaky := map[string]bool{}
 	durations := map[string]int64{}
+	ref := baseline{flaky: map[string]bool{}, sites: map[string][]string{}}
 	for i, t := range tests {
 		durations[t.Name] = t.DurationMS
+		ref.sites[t.Name] = t.Sites
 		for _, id := range t.Sites {
 			reachers[id] = append(reachers[id], names[i])
 		}
 		if t.Flaky {
-			flaky[t.Name] = true
+			ref.flaky[t.Name] = true
 			logger.Printf("%s is flaky: it failed some of the %d baseline runs; its failures are no kills", t.Name, o.ConfirmBaseline)
 		}
 	}
+
+	if ref.traceDir, err = os.MkdirTemp("", "mutrim-mutant-trace-"); err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(ref.traceDir) //nolint:errcheck // a leftover temp dir is harmless
 
 	previous := map[string]Result{}
 	if o.Previous != nil {
@@ -230,7 +240,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	report := &Report{BaselineMS: baseMS, TimeoutMS: maxTimeout.Milliseconds(), Tests: tests, Results: []Result{}}
+	report := &Report{BaselineMS: baseMS, TimeoutMS: maxTimeout.Milliseconds(), CountSuspect: o.CountSuspect, Tests: tests, Results: []Result{}}
 	if len(o.Mutants) > 0 {
 		report.Pkg = o.Mutants[0].Pkg
 	}
@@ -244,6 +254,8 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			r = Result{MutantID: m.ID, Status: Skipped}
 		case m.Ignored != "":
 			r = Result{MutantID: m.ID, Status: Ignored}
+		case m.Equivalent != "":
+			r = Result{MutantID: m.ID, Status: Equivalent}
 		case !m.Viable:
 			r = Result{MutantID: m.ID, Status: NotViable}
 		case len(reachers[m.ID]) == 0:
@@ -254,7 +266,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
 			timeout := o.mutantTimeout(o.qualifyAll(reachers[m.ID]), durations, maxTimeout)
-			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, flaky); err != nil {
+			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, ref); err != nil {
 				return nil, err
 			}
 			logger.Printf("%s %s %s:%d %s %q (%dms, timeout %s)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, timeout, suspicion(r.SuspiciousBy))
@@ -307,41 +319,86 @@ func (o Options) scale(ms int64) time.Duration {
 // nothing can be said of the mutant. It never overrides a kill of another
 // group — that kill is a real observation — but it does override LIVED:
 // nothing was observed to pass either.
-func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout time.Duration, flaky map[string]bool) (Result, error) {
+//
+// Every process is traced, and a LIVED mutant no row failed against, not
+// even suspiciously, and whose processes reached exactly the sites their
+// rows reach without it is SUSPECT_EQUIVALENT: it changed neither an
+// outcome nor the path taken. The trace is the union over a process's
+// rows, compared with the union of their own.
+func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout time.Duration, ref baseline) (Result, error) {
 	r := Result{MutantID: id, Status: Lived, TimeoutMS: timeout.Milliseconds()}
+	differed := false
 	byBin := make([][]string, len(o.bins))
 	for _, rw := range rows {
 		byBin[rw.bin] = append(byBin[rw.bin], rw.name)
 	}
 	for bin, names := range byBin {
 		for _, group := range groupByParent(names) {
-			status, err := o.runGroup(ctx, &r, bin, group, timeout, flaky)
+			status, changed, err := o.runGroup(ctx, &r, bin, group, timeout, ref)
 			if err != nil {
 				return Result{}, err
 			}
+			differed = differed || changed
 			if rank[status] > rank[r.Status] {
 				r.Status = status
 			}
 		}
 	}
+	if r.Status == Lived && !differed {
+		r.Status = SuspectEquivalent
+	}
 	return r, nil
 }
 
+// baseline is what the trace runs observed without a mutant, which a
+// mutant's runs are judged against.
+type baseline struct {
+	// flaky holds the rows Test.Flaky marks, by their name in the report.
+	flaky map[string]bool
+	// sites holds the sites each row reaches (Test.Sites), by its name in
+	// the report.
+	sites map[string][]string
+	// traceDir receives the traces of the mutants' runs.
+	traceDir string
+}
+
+// reached is the union of the sites the rows reach.
+func (b baseline) reached(rows []string) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range rows {
+		for _, id := range b.sites[r] {
+			out[id] = true
+		}
+	}
+	return out
+}
+
 // runGroup runs the rows of one binary and parent against mutant r,
-// records its kills in r and returns the group's status.
-func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []string, timeout time.Duration, flaky map[string]bool) (Status, error) {
+// records its kills in r and returns the group's status, and whether the
+// mutant made a row fail or changed the sites the rows reach.
+func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []string, timeout time.Duration, ref baseline) (status Status, changed bool, err error) {
 	b := o.bins[bin]
-	res, err := o.exec(ctx, b, r.MutantID, "", testPattern(group), timeout)
+	trace := filepath.Join(ref.traceDir, r.MutantID+".trace")
+	res, err := o.exec(ctx, b, r.MutantID, trace, testPattern(group), timeout)
 	if err != nil {
-		return "", err
+		return "", false, err
+	}
+	reached, err := readTrace(trace)
+	if err != nil {
+		return "", false, err
+	}
+	qualified := make([]string, len(group))
+	for i, name := range group {
+		qualified[i] = o.qualify(row{bin, name})
 	}
 	ran, failed := parseOutput(res.output, res.Status == Timeout, group)
+	changed = len(failed) > 0 || !maps.Equal(reached, ref.reached(qualified))
 	r.TestsRun += ran
 	r.DurationMS += res.DurationMS
 
 	candidates := []string{}
 	for _, name := range failed {
-		if q := o.qualify(row{bin, name}); flaky[q] {
+		if q := o.qualify(row{bin, name}); ref.flaky[q] {
 			r.SuspiciousBy = append(r.SuspiciousBy, q)
 		} else {
 			candidates = append(candidates, name)
@@ -349,7 +406,7 @@ func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []strin
 	}
 	killed, suspicious, ms, err := o.confirmKills(ctx, b, r.MutantID, candidates, timeout)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	for _, name := range killed {
 		r.KilledBy = append(r.KilledBy, o.qualify(row{bin, name}))
@@ -362,9 +419,9 @@ func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []strin
 	if len(failed) > 0 && len(killed) == 0 {
 		// Every failure of this group is suspicious, so nothing here
 		// tells the mutant from the original.
-		return Lived, nil
+		return Lived, changed, nil
 	}
-	return res.Status, nil
+	return res.Status, changed, nil
 }
 
 // rank orders the statuses of a group's run, weakest first: the run's own
@@ -449,13 +506,11 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 				failures++
 				failed = res
 			}
-			data, err := os.ReadFile(trace) //nolint:gosec // our own temp file
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
+			reached, err := readTrace(trace)
+			if err != nil {
 				return nil, err
 			}
-			for _, id := range strings.Fields(string(data)) {
-				sites[id] = true
-			}
+			maps.Copy(sites, reached)
 			t.DurationMS = max(t.DurationMS, res.DurationMS)
 		}
 		if failures == runs {
@@ -466,6 +521,23 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 		tests = append(tests, t)
 	}
 	return tests, nil
+}
+
+// readTrace reads the sites a GOMUTANT_TRACE file lists and removes the
+// file; a missing file means no site was reached.
+func readTrace(path string) (map[string]bool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // our own temp file
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	sites := map[string]bool{}
+	for _, id := range strings.Fields(string(data)) {
+		sites[id] = true
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return sites, nil
 }
 
 // parent is the test that runs name as a subtest; empty for a top-level

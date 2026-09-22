@@ -363,6 +363,7 @@ def mutation_test(
         subtests = False,
         confirm_kills = 1,
         confirm_baseline = 1,
+        count_suspect = False,
         extra_tests = [],
         race = False,
         shard_count = None,
@@ -450,6 +451,10 @@ def mutation_test(
             (`mutrim run -confirm-baseline`); one that fails in some runs and
             passes in others is marked flaky and takes no part in the kill
             matrix or the cover. 1 trusts the first run.
+        count_suspect: counts `SUSPECT_EQUIVALENT` mutants (survivors whose
+            tests reached the same sites as without them) as survivors
+            (`mutrim run -count-suspect`); by default they count towards no
+            score.
         extra_tests: go_tests of packages importing the library, whose tests
             also run against its mutants (`mutrim run -extra-test`).
         race: builds the test binary with the race detector (`race = "on"`
@@ -521,7 +526,8 @@ def mutation_test(
                ["$(rlocationpaths :{})".format(lib_srcs), "--"] +
                (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
-               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []),
+               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
+               (["-count-suspect"] if count_suspect else []),
         data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.

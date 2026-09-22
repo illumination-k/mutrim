@@ -33,6 +33,9 @@ const (
 	// tests: a run of the branch mutant of Die exits the process instead
 	// of failing a test.
 	runerrorDir = "./testdata/runerror"
+	// equivalentDir holds a fixture with an equivalent, a suspect
+	// equivalent and a plain surviving mutant.
+	equivalentDir = "./testdata/equivalent"
 )
 
 // buildFixture lowers the schemata fixture and compiles its test binary.
@@ -64,7 +67,7 @@ func buildPkgOverlay(t *testing.T, dir string) (bin string, mutants []mutator.Mu
 		t.Fatal(err)
 	}
 	for i := range mutants {
-		if mutants[i].Ignored == "" {
+		if !mutants[i].Excluded() {
 			mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
 		}
 	}
@@ -793,7 +796,10 @@ func TestRunExtraTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if alone.Totals.Lived == 0 {
+	// lib's test takes the same path through a boundary mutant, so its
+	// survivors are suspects as much as plain LIVED.
+	survivors := func(t runner.Totals) int { return t.Lived + t.SuspectEquivalent }
+	if survivors(alone.Totals) == 0 {
 		t.Fatalf("lib's own test must leave mutants alive: %+v", alone.Totals)
 	}
 
@@ -821,7 +827,7 @@ func TestRunExtraTests(t *testing.T) {
 	if !slices.Equal(names, want) {
 		t.Errorf("tests = %v, want %v", names, want)
 	}
-	if report.Totals.Killed <= alone.Totals.Killed || report.Totals.Lived >= alone.Totals.Lived {
+	if report.Totals.Killed <= alone.Totals.Killed || survivors(report.Totals) >= survivors(alone.Totals) {
 		t.Errorf("app's tests must kill more: alone %+v, with app %+v", alone.Totals, report.Totals)
 	}
 	var byApp int
@@ -846,5 +852,70 @@ func TestRunExtraTests(t *testing.T) {
 		if _, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: libDir, ExtraTests: extra}); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
+	}
+}
+
+// A mutant a static rule proves equivalent is never executed and counts
+// towards no score. A survivor whose tests reached exactly the sites
+// they reach without it is SUSPECT_EQUIVALENT, left out of the score
+// unless CountSuspect; one that changed the path its tests took stays
+// LIVED.
+func TestRunEquivalent(t *testing.T) {
+	bin, mutants := buildPkg(t, equivalentDir)
+	find := func(fn, op, desc string) mutator.Mutant {
+		t.Helper()
+		for _, m := range mutants {
+			if m.Func == fn && m.Operator == op && m.Description == desc {
+				return m
+			}
+		}
+		t.Fatalf("fixture has no %s %s %q mutant", fn, op, desc)
+		return mutator.Mutant{}
+	}
+	scale := find("Scale", "arithmetic", "* -> /")
+	maxBoundary := find("Max", "relational", "> -> >=")
+	record := find("Record", "relational", "> -> >=")
+	if scale.Equivalent == "" {
+		t.Fatalf("Scale's %q mutant is not marked equivalent: %+v", scale.Description, scale)
+	}
+
+	rep, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: equivalentDir, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := result(t, rep, scale.ID); res.Status != runner.Equivalent || res.TestsRun != 0 {
+		t.Errorf("Scale's mutant = %+v, want EQUIVALENT and not executed", res)
+	}
+	if res := result(t, rep, maxBoundary.ID); res.Status != runner.SuspectEquivalent || res.TestsRun != 1 {
+		t.Errorf("Max's boundary mutant = %+v, want SUSPECT_EQUIVALENT after running TestMax", res)
+	}
+	if res := result(t, rep, record.ID); res.Status != runner.Lived {
+		t.Errorf("Record's boundary mutant = %+v, want LIVED (its test reached note)", res)
+	}
+	tot := rep.Totals
+	if tot.Equivalent == 0 || tot.SuspectEquivalent == 0 {
+		t.Fatalf("totals = %+v, want equivalent and suspect_equivalent counted", tot)
+	}
+	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Score != want {
+		t.Errorf("score = %v, want %v (suspects excluded)", tot.Score, want)
+	}
+	if rep.Survived(runner.SuspectEquivalent) {
+		t.Error("a suspect counts as a survivor without CountSuspect")
+	}
+
+	counted, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: equivalentDir, Timeout: 5 * time.Second,
+		CountSuspect: true, Previous: rep,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tot = counted.Totals
+	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage+tot.SuspectEquivalent); tot.Score != want || tot.Score >= rep.Totals.Score {
+		t.Errorf("score with CountSuspect = %v, want %v, below %v", tot.Score, want, rep.Totals.Score)
+	}
+	spots := runner.WeakSpots(mutants, counted)
+	if !slices.ContainsFunc(spots, func(s runner.Spot) bool { return s.Func == "Max" && s.Lived > 0 }) {
+		t.Errorf("weak spots = %+v, want Max counted with CountSuspect", spots)
 	}
 }

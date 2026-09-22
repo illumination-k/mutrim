@@ -105,22 +105,23 @@ const (
 
 // status maps a runner status onto the schema's vocabulary. A mutant the
 // type-check or the lowering rejected never built, which is what the
-// schema calls a compile error; one a diff or a filter excluded is
-// Ignored, the schema's status for a mutant left out of the score on
-// purpose.
-func status(s runner.Status) Status {
-	switch s {
-	case runner.Killed:
+// schema calls a compile error; one a diff or a filter excluded, or one
+// proven or suspected equivalent, is Ignored, the schema's status for a
+// mutant left out of the score on purpose, unless r counts it as a
+// survivor (runner.Report.CountSuspect).
+func status(r *runner.Report, s runner.Status) Status {
+	switch {
+	case s == runner.Killed:
 		return Killed
-	case runner.Lived:
+	case s == runner.Lived, s == runner.SuspectEquivalent && r.CountSuspect:
 		return Survived
-	case runner.Timeout:
+	case s == runner.Timeout:
 		return Timeout
-	case runner.NoCoverage:
+	case s == runner.NoCoverage:
 		return NoCoverage
-	case runner.RunError:
+	case s == runner.RunError:
 		return RuntimeError
-	case runner.Ignored, runner.Skipped:
+	case s == runner.Ignored, s == runner.Skipped, s == runner.Equivalent, s == runner.SuspectEquivalent:
 		return Ignored
 	default:
 		return CompileError
@@ -136,11 +137,13 @@ var defaultThresholds = Thresholds{High: 80, Low: 60}
 // out, so a single shard's report yields that shard only.
 func ToStryker(mutants []mutator.Mutant, reports []*runner.Report, srcs *Sources) *Stryker {
 	results := map[string]runner.Result{}
+	from := map[string]*runner.Report{} // mutant ID -> the report of its result
 	tests := map[string]bool{}
 	covered := map[string][]string{} // mutant ID -> test names, in report order
 	for _, r := range reports {
 		for _, res := range r.Results {
 			results[res.MutantID] = res
+			from[res.MutantID] = r
 		}
 		for _, t := range r.Tests {
 			if tests[t.Name] {
@@ -170,7 +173,7 @@ func ToStryker(mutants []mutator.Mutant, reports []*runner.Report, srcs *Sources
 		if !ok {
 			f = File{Language: "go", Source: srcs.Read(m.File)}
 		}
-		f.Mutants = append(f.Mutants, toMutant(m, res, covered[m.ID]))
+		f.Mutants = append(f.Mutants, toMutant(m, res, status(from[m.ID], res.Status), covered[m.ID]))
 		out.Files[name] = f
 	}
 	if len(tests) > 0 {
@@ -183,7 +186,7 @@ func ToStryker(mutants []mutator.Mutant, reports []*runner.Report, srcs *Sources
 	return out
 }
 
-func toMutant(m mutator.Mutant, res runner.Result, coveredBy []string) Mutant {
+func toMutant(m mutator.Mutant, res runner.Result, st Status, coveredBy []string) Mutant {
 	out := Mutant{
 		ID:          m.ID,
 		MutatorName: m.Operator,
@@ -193,7 +196,7 @@ func toMutant(m mutator.Mutant, res runner.Result, coveredBy []string) Mutant {
 			Start: Position{Line: m.Line, Column: m.Col},
 			End:   Position{Line: m.EndLine, Column: m.EndCol},
 		},
-		Status:    status(res.Status),
+		Status:    st,
 		CoveredBy: coveredBy,
 		KilledBy:  res.KilledBy,
 		Duration:  res.DurationMS,
@@ -210,6 +213,10 @@ func toMutant(m mutator.Mutant, res runner.Result, coveredBy []string) Mutant {
 		out.StatusReason = "not in the diff"
 	case m.Ignored != "":
 		out.StatusReason = strings.TrimSpace(m.Ignored + " " + m.Reason)
+	case m.Equivalent != "":
+		out.StatusReason = "equivalent: " + m.Equivalent
+	case res.Status == runner.SuspectEquivalent:
+		out.StatusReason = "suspect equivalent: no test failed and the tests reached the same sites"
 	}
 	return out
 }
@@ -242,15 +249,16 @@ func displayPath(cwd, file string) string {
 // order, paired with the status that says why.
 func Survivors(mutants []mutator.Mutant, reports []*runner.Report) []Survivor {
 	results := map[string]runner.Status{}
+	survived := map[string]bool{}
 	for _, r := range reports {
 		for _, res := range r.Results {
 			results[res.MutantID] = res.Status
+			survived[res.MutantID] = r.Survived(res.Status)
 		}
 	}
 	out := []Survivor{}
 	for _, m := range mutants {
-		switch results[m.ID] {
-		case runner.Lived, runner.NoCoverage:
+		if survived[m.ID] {
 			out = append(out, Survivor{Mutant: m, Status: results[m.ID]})
 		}
 	}

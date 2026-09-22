@@ -128,6 +128,18 @@ never copies it forward, so the mutant is executed again), and `minimize` ignore
 no test alive and is no weak spot. A `--- FAIL:` or `panic:` line overrides it, since the
 failure then came from inside a test: the mutant is at fault and the run is a regular kill.
 
+Equivalent mutants are filtered in two ways. `gen` proves some equivalent statically and marks
+them `"equivalent"` in `mutants.json` with the rule that did: `identity-operand` (`x * 1` →
+`x / 1`, `x << 0` → `x >> 0`, `x + 0` → `x - 0` on integers, and their compound assignments)
+and `non-negative-operand` (a boundary swap against a constant that `len`, `cap` or an unsigned
+value cannot tell apart, `len(s) > -1` → `len(s) >= -1`). `run` reports them `EQUIVALENT`
+without building or executing them. `run` also traces every mutant run: a survivor that no
+test failed against and whose tests reached exactly the sites they reach without it is
+`SUSPECT_EQUIVALENT` (it changed neither an outcome nor the path taken, which predicts
+equivalence; Schuler & Zeller, STVR 2013). Neither counts towards the score; `run
+-count-suspect` (the `count_suspect` attribute of `mutation_test`) counts suspects as survivors
+again, in the score, the weak spots and the exported reports.
+
 `run -subtests` makes each subtest a row of that matrix instead of its parent: the baseline
 run names them (`=== RUN TestParse/empty_input`), each is traced on its own with
 `-test.run '^TestParse$/^empty_input$'`, and per mutant the reaching subtests of one parent
@@ -272,8 +284,9 @@ mutrim report -format github -max-per-line 1 -mutants mutants.json report.json
 `KILLED`, `LIVED`, `TIMEOUT` and `NO_COVERAGE` map onto the schema's `Killed`, `Survived`,
 `Timeout` and `NoCoverage`; `RUN_ERROR` is a `RuntimeError`, which the schema keeps out of the
 score; `NOT_VIABLE` is a `CompileError`, since the mutant never built,
-and `IGNORED` and `SKIPPED` are `Ignored`, with the directive or filter that suppressed it,
-or `not in the diff`, as its `statusReason`. Each mutant carries the tests that reach it (`coveredBy`) and the ones that
+and `IGNORED`, `SKIPPED`, `EQUIVALENT` and `SUSPECT_EQUIVALENT` are `Ignored`, with the
+directive or filter that suppressed it, `not in the diff`, or the equivalence, as its
+`statusReason` (a suspect is `Survived` under `-count-suspect`). Each mutant carries the tests that reach it (`coveredBy`) and the ones that
 killed it (`killedBy`), so the viewer shows the kill matrix per mutant. A mutant no report
 mentions is left out, so one shard's report renders that shard.
 

@@ -57,7 +57,9 @@ commands:
             -subtests makes each subtest a row of it; -in-diff scopes the
             run to the lines a unified diff adds; -confirm-kills and
             -confirm-baseline rerun to keep flaky tests out of the matrix;
-            -extra-test adds the tests of a package importing it
+            -extra-test adds the tests of a package importing it; a
+            survivor that left every test's trace unchanged is reported
+            SUSPECT_EQUIVALENT and scored only with -count-suspect
   minimize  from report.json files (the shards of a package, or several
             packages), list the tests a greedy set cover finds redundant,
             the functions whose mutants survive, and the tests found flaky
@@ -174,15 +176,15 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // files with an embedded mutant are lowered, the rest (including files
 // excluded by build constraints) are copied as they are, so the directory
 // can replace the package. Mutants the lowering declined are marked not
-// viable, so the runner never selects them; ignored mutants are not
-// embedded either, but keep their status.
+// viable, so the runner never selects them; ignored and equivalent
+// mutants are not embedded either, but keep their status.
 func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
 	sch, err := mutator.Lower(pkg, ms)
 	if err != nil {
 		return err
 	}
 	for i := range ms {
-		if ms[i].Ignored == "" {
+		if !ms[i].Excluded() {
 			ms[i].Viable = ms[i].Viable && sch.Embedded[ms[i].ID]
 		}
 	}
@@ -275,6 +277,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	subtests := fs.Bool("subtests", false, "make each subtest (TestX/case) a row of the kill matrix: traced on its own and named in killed_by; subtest names must be stable across runs")
 	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
 	confirmBaseline := fs.Int("confirm-baseline", 1, "run each test this many times while tracing; one that fails in some runs and passes in others is marked flaky, and its failures are never kills")
+	countSuspect := fs.Bool("count-suspect", false, "count SUSPECT_EQUIVALENT mutants (survivors whose tests reached the same sites as without them) as survivors in the score and the reports")
 	dir := fs.String("dir", "", "working directory for the test binary")
 	var extra []runner.Binary
 	fs.Func("extra-test", "`pkg=bin[,dir]`: the test binary of package pkg, which imports the mutated one, built against the same schemata sources; its tests run against the mutants too, named pkg.TestX (repeatable)", func(v string) error {
@@ -295,7 +298,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 	opts := runner.Options{
 		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
-		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline,
+		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, CountSuspect: *countSuspect,
 		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, Log: stderr,
 	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {

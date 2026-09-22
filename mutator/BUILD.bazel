@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "arid.go",
         "directive.go",
+        "equivalent.go",
         "filter.go",
         "load.go",
         "loadfiles.go",
