@@ -1,6 +1,8 @@
 package mutator_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -156,5 +158,117 @@ func TestFilterSpecErrors(t *testing.T) {
 		t.Errorf("empty entries: %v", err)
 	} else if len(f.Files) != 0 {
 		t.Errorf("empty entries became patterns: %v", f.Files)
+	}
+}
+
+// The default exclude-calls list covers a logging call, the expressions it
+// logs, and a method of a logger, and nothing else. The fixture marks the
+// lines it must cover with a "// logged" comment.
+func TestFilterExcludeCallsDefault(t *testing.T) {
+	pkg := load(t, "logging")
+	filter, err := mutator.FilterSpec{}.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := loggedLines(t)
+	ignored, kept := 0, 0
+	for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
+		want := ""
+		if logged[m.Line] {
+			want = "exclude-calls"
+		}
+		if m.Ignored != want {
+			t.Errorf("%s:%d %s %q: ignored=%q, want %q", filepath.Base(m.File), m.Line, m.Func, m.Description, m.Ignored, want)
+		}
+		if want == "" {
+			kept++
+		} else {
+			ignored++
+		}
+	}
+	if ignored == 0 || kept == 0 {
+		t.Fatalf("the logging fixture must have both kinds of mutant: %d ignored, %d kept", ignored, kept)
+	}
+}
+
+// loggedLines reads the lines of the logging fixture the default list must
+// cover, marked with a trailing "// logged" comment.
+func loggedLines(t *testing.T) map[int]bool {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Clean("testdata/logging/logging.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[int]bool{}
+	for i, line := range strings.Split(string(src), "\n") {
+		if strings.HasSuffix(strings.TrimSpace(line), "// logged") {
+			out[i+1] = true
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("the logging fixture marks no line")
+	}
+	return out
+}
+
+// An explicit list replaces the default one, "default" extends it and
+// "none" excludes no call at all.
+func TestFilterExcludeCallsSpec(t *testing.T) {
+	// Functions whose mutants the spec must ignore; the others keep all
+	// of theirs.
+	cases := map[string]struct {
+		spec    string
+		ignored []string
+	}{
+		"default":     {"", []string{"Retry", "Report"}},
+		"named":       {"default", []string{"Retry", "Report"}},
+		"none":        {"none", nil},
+		"other calls": {"fmt.*", []string{"Describe"}},
+		"extended":    {"default, fmt.*", []string{"Retry", "Report", "Describe"}},
+		"import path": {"log/slog.*", []string{"Retry"}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			pkg := load(t, "logging")
+			filter, err := mutator.FilterSpec{ExcludeCalls: tc.spec}.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ignored := map[string]int{}
+			for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
+				if m.Ignored == "exclude-calls" {
+					ignored[m.Func]++
+				} else if m.Ignored != "" {
+					t.Errorf("%s %q: ignored=%q, want exclude-calls or kept", m.Func, m.Description, m.Ignored)
+				}
+			}
+			for _, fn := range tc.ignored {
+				if ignored[fn] == 0 {
+					t.Errorf("%s: no mutant ignored, want some", fn)
+				}
+				delete(ignored, fn)
+			}
+			for fn, n := range ignored {
+				t.Errorf("%s: %d mutants ignored, want none", fn, n)
+			}
+		})
+	}
+}
+
+func TestFilterExcludeCallsErrors(t *testing.T) {
+	cases := map[string]string{
+		"bad glob":       "log.[-]",
+		"none with more": "none,log.*",
+	}
+	for name, spec := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := mutator.FilterSpec{ExcludeCalls: spec}.Compile()
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), "exclude-calls") {
+				t.Errorf("error does not name the rule: %v", err)
+			}
+		})
 	}
 }

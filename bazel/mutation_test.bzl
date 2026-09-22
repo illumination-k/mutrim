@@ -62,6 +62,7 @@ def _mutrim_schemata_impl(ctx):
     args.add_joined("-exclude-files", ctx.attr.exclude_files, join_with = ",", omit_if_empty = True)
     if ctx.attr.exclude_re:
         args.add("-exclude-re", ctx.attr.exclude_re)
+    args.add_joined("-exclude-calls", ctx.attr.exclude_calls, join_with = ",", omit_if_empty = True)
     args.add("-schemata", overlay.dirname)
     args.add("-o", ctx.outputs.mutants)
     args.add_all(go_srcs)
@@ -136,6 +137,11 @@ in the `(*T).Name` form of `mutrim gen -match`.""",
             doc = """Drops the mutants whose `func operator: description` matches this
 regexp (`mutrim gen -exclude-re`).""",
         ),
+        "exclude_calls": attr.string_list(
+            doc = """Drops the mutants of a call whose callee matches one of these globs,
+and of its arguments (`mutrim gen -exclude-calls`). Empty applies the built-in list,
+which the entry "default" also names; `["none"]` excludes no call.""",
+        ),
         "_mutrim": attr.label(
             default = Label("//cmd/mutrim"),
             executable = True,
@@ -165,6 +171,7 @@ def mutation_test(
         files = [],
         exclude_files = [],
         exclude_re = "",
+        exclude_calls = [],
         shard_count = None,
         env = {},
         **kwargs):
@@ -186,8 +193,8 @@ def mutation_test(
       single-file viewer). Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
 
-    `match`, `files`, `exclude_files` and `exclude_re` narrow the sites that
-    are mutated; a mutant they reject is still listed in `mutants.json` and
+    `match`, `files`, `exclude_files`, `exclude_re` and `exclude_calls` narrow
+    the sites that are mutated; a mutant they reject is still listed in `mutants.json` and
     reported `IGNORED`, so the counts stay comparable across runs. A single
     site or function is suppressed in the source instead, with a
     `//mutrim:disable` directive, which is reported the same way.
@@ -208,6 +215,10 @@ def mutation_test(
             regexps (`mutrim gen -exclude-files`).
         exclude_re: drops the mutants whose `func operator: description`
             matches this regexp (`mutrim gen -exclude-re`).
+        exclude_calls: drops the mutants of a call whose callee matches one of
+            these globs, and of its arguments (`mutrim gen -exclude-calls`);
+            empty applies the built-in list of logging calls, which the entry
+            `"default"` also names, and `["none"]` excludes no call.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -226,6 +237,7 @@ def mutation_test(
         files = files,
         exclude_files = exclude_files,
         exclude_re = exclude_re,
+        exclude_calls = exclude_calls,
         testonly = True,
         visibility = ["//visibility:private"],
     )
