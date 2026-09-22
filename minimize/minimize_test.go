@@ -126,6 +126,16 @@ func TestGreedyPrunesSubsumedSelections(t *testing.T) {
 	}
 }
 
+// Adjacent requirement bits are all counted: the constant mutant of the
+// bit iteration (NextSet(i + 2)) surfaced that no test pinned this.
+func TestGreedyGainCountsEveryRequirement(t *testing.T) {
+	m := criteria.Compose(map[string]int64{"TestAll": 1}, criteria.Weighted{Criterion: criteria.SiteCoverage{"TestAll": {"a", "b", "c"}}, Weight: 2})
+	res := minimize.Greedy(m, minimize.Options{})
+	if len(res.Selected) != 1 || res.Selected[0].New != 3 || res.Selected[0].Gain != 6 {
+		t.Errorf("selected = %+v, want TestAll with 3 new requirements and gain 6", res.Selected)
+	}
+}
+
 func TestTagged(t *testing.T) {
 	dir := t.TempDir()
 	src := `package p
