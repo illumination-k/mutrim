@@ -3,12 +3,11 @@
 mutrim_schemata lowers a go_library into schemata sources, with every mutant
 embedded and selected at runtime through GOMUTANT_ID, and exposes them as a Go
 library with the library's import path. mutation_test embeds that library into
-a go_test, the identity check, and re-executes the resulting binary once per
-mutant from a sharded sh_test.
+a go_test, the identity check, and _mutrim_test re-executes the resulting
+binary once per mutant, with mutrim itself as the sharded test executable.
 """
 
 load("@rules_go//go:def.bzl", "GoArchive", "GoInfo", "go_context", "go_rule", "go_test", "new_go_info")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 def _mutrim_schemata_impl(ctx):
     library = ctx.attr.library
@@ -166,6 +165,41 @@ Provides the same GoInfo as a go_library with the library's import path, so
 it can be embedded into a go_test in place of the original library.""",
 )
 
+def _mutrim_test_impl(ctx):
+    mutrim = ctx.executable._mutrim
+    executable = ctx.actions.declare_file(ctx.label.name + ("." + mutrim.extension if mutrim.extension else ""))
+    ctx.actions.symlink(output = executable, target_file = mutrim, is_executable = True)
+    runfiles = ctx.runfiles(files = ctx.files.data)
+    for target in [ctx.attr._mutrim] + ctx.attr.data:
+        runfiles = runfiles.merge(target[DefaultInfo].default_runfiles)
+    return [
+        DefaultInfo(executable = executable, runfiles = runfiles),
+        RunEnvironmentInfo(environment = {
+            k: ctx.expand_location(v, ctx.attr.data)
+            for k, v in ctx.attr.env.items()
+        }),
+    ]
+
+_mutrim_test = rule(
+    _mutrim_test_impl,
+    test = True,
+    attrs = {
+        "data": attr.label_list(
+            allow_files = True,
+            doc = "Files the test reads, named in args by their runfiles paths.",
+        ),
+        "env": attr.string_dict(
+            doc = "Environment of the test, subject to $(location) expansion.",
+        ),
+        "_mutrim": attr.label(
+            default = Label("//cmd/mutrim"),
+            executable = True,
+            cfg = "target",
+        ),
+    },
+    doc = "Runs `mutrim` as the test executable, with the rule's args.",
+)
+
 def mutation_test(
         name,
         srcs,
@@ -303,21 +337,18 @@ def mutation_test(
         testonly = True,
         visibility = ["//visibility:private"],
     )
-    mutrim = str(Label("//cmd/mutrim"))
-    inputs = [mutrim, ":" + schemata + "_test", ":" + mutants] + srcs
-    sh_test(
+    _mutrim_test(
         name = name,
-        srcs = [Label("//bazel:run.sh")],
-        # Flags of `mutrim run` come first; "--" separates the test sources,
-        # scanned for the mutrim:keep tag, from the library sources, which
-        # the Stryker report quotes.
-        args = (["-subtests"] if subtests else []) +
+        # Flags of `mutrim bazel-test`; the arguments are the library
+        # sources, which the Stryker report quotes, and flags after "--" go
+        # to `mutrim run`.
+        args = ["bazel-test", "-test-bin", "$(rlocationpath :{}_test)".format(schemata), "-mutants", "$(rlocationpath :{})".format(mutants)] +
+               ["-test-src=$(rlocationpath {})".format(src) for src in srcs] +
+               ["$(rlocationpaths :{})".format(lib_srcs), "--"] +
+               (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
-               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
-               ["$(rlocationpath {})".format(t) for t in inputs] +
-               ["--", "$(rlocationpaths :{})".format(lib_srcs)],
-        data = inputs + [":" + lib_srcs],
-        deps = ["@bazel_tools//tools/bash/runfiles"],
+               (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []),
+        data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.
         env = {"GO_TEST_RUN_FROM_BAZEL": "1"} | env,

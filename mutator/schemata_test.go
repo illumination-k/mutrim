@@ -307,3 +307,18 @@ func TestLowerSkipsAndReimports(t *testing.T) {
 		}
 	}
 }
+
+// TestSchemataVetPrintf lowers the literal fixture, whose printf formats
+// are string sites, and runs vet's printf check on the result: a lowered
+// format is no longer constant, which go test and nogo reject (#67).
+func TestSchemataVetPrintf(t *testing.T) {
+	pkg := load(t, "literal")
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "vet", "-printf", "-overlay", overlayFor(t, sch), "./testdata/literal") //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go vet -printf on the schemata source: %v\n%s", err, out)
+	}
+}

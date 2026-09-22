@@ -177,6 +177,45 @@ func TestGenSchemataThenRun(t *testing.T) {
 	if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) || third.Totals.Score != 0 {
 		t.Errorf("an unrelated diff must skip every mutant: %+v", third.Totals)
 	}
+
+	// bazel-test, the test executable of mutation_test, resolves runfiles
+	// paths, reads MUTRIM_IN_DIFF, and writes every output next to
+	// report.json.
+	runfilesDir := filepath.Join(dir, "runfiles")
+	if err := os.MkdirAll(filepath.Join(runfilesDir, "_main"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	libSrc, err := filepath.Abs(filepath.Join(schemataFixture, "schemata.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{bin, mutantsPath, libSrc} {
+		if err := os.Symlink(f, filepath.Join(runfilesDir, "_main", filepath.Base(f))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("RUNFILES_DIR", runfilesDir)
+	t.Setenv("MUTRIM_IN_DIFF", diffPath)
+	stdout.Reset()
+	args = []string{"bazel-test", "-test-bin", "_main/schemata.test", "-mutants", "_main/mutants.json", "_main/schemata.go", "--", "-timeout", "1s"}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("bazel-test: %v\n%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("bazel-test must write to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
+	}
+	var fourth runner.Report
+	if err := readJSON(filepath.Join(outDir, "report.json"), &fourth); err != nil {
+		t.Fatal(err)
+	}
+	if fourth.Totals.Skipped != len(fourth.Results) {
+		t.Errorf("bazel-test must pass MUTRIM_IN_DIFF to run: %+v", fourth.Totals)
+	}
+	for _, f := range []string{"minimize.json", "mutation-report.json", "mutation-report.html"} {
+		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
+			t.Error(err)
+		}
+	}
 }
 
 // Bazel mode: gen type-checks the given files from export data instead of
@@ -354,7 +393,7 @@ func TestGenArid(t *testing.T) {
 		t.Error("the built-in rules ignored no mutant of the arid fixture")
 	}
 	for _, m := range gen(t, "-no-arid") {
-		if m.Ignored != "" {
+		if m.Ignored != "" && m.Ignored != "printf-format" {
 			t.Errorf("%s %q: ignored=%q with -no-arid", m.Func, m.Description, m.Ignored)
 		}
 	}
@@ -419,6 +458,9 @@ func TestCommandErrors(t *testing.T) {
 		"run missing in-diff":        {"run", "-test-bin", "x.test", "-mutants", mutantsFile, "-in-diff", missing},
 		"run bad confirm-kills":      {"run", "-confirm-kills", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad confirm-baseline":   {"run", "-confirm-baseline", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"bazel-test bad flag":        {"bazel-test", "-bogus"},
+		"bazel-test without flags":   {"bazel-test"},
+		"bazel-test without outputs": {"bazel-test", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"minimize bad flag":          {"minimize", "-bogus"},
 		"minimize no report":         {"minimize"},
 		"minimize missing report":    {"minimize", missing},
