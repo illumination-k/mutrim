@@ -5,6 +5,8 @@ embedded and selected at runtime through GOMUTANT_ID, and exposes them as a Go
 library with the library's import path. mutation_test embeds that library into
 a go_test, the identity check, and _mutrim_test re-executes the resulting
 binary once per mutant, with mutrim itself as the sharded test executable.
+mutrim_relink relinks the go_test of another package against the schemata
+library, so its tests can kill the mutants too.
 """
 
 load("@rules_go//go:def.bzl", "GoArchive", "GoInfo", "go_context", "go_rule", "go_test", "new_go_info")
@@ -165,6 +167,152 @@ Provides the same GoInfo as a go_library with the library's import path, so
 it can be embedded into a go_test in place of the original library.""",
 )
 
+def _fields(info):
+    return {name: getattr(info, name) for name in dir(info)}
+
+def _rlocationpath(ctx, f):
+    """The runfiles path of f, as $(rlocationpath) spells it."""
+    if f.short_path.startswith("../"):
+        return f.short_path[3:]
+    return ctx.workspace_name + "/" + f.short_path
+
+def _mutrim_relink_impl(ctx):
+    go = go_context(
+        ctx,
+        go_context_data = ctx.attr._go_context_data,
+        maybe_needs_cc_toolchain = False,
+    )
+    library = ctx.attr.library.label
+    test = ctx.attr.test
+    root = test[GoArchive]
+
+    # Every archive of the test binary, dependencies first. Archives are
+    # keyed by importmap, which is unique within one link; the internal and
+    # external test archives share the test's label. Starlark has no
+    # recursion or while loop, so the depth-first walk runs off an explicit
+    # stack, bounded by the pushes it can make: an archive is pushed once
+    # per importer and once more after its dependencies.
+    transitive = root.transitive.to_list()
+    bound = 2
+    for data in transitive:
+        bound += 2 * (1 + len(data._dep_labels))
+    order = []
+    expanded = {}
+    stack = [(root, False)]
+    for _ in range(bound):
+        if not stack:
+            break
+        arc, after = stack.pop()
+        key = arc.data.importmap
+        if after:
+            order.append(arc)
+            continue
+        if key in expanded:
+            continue
+        expanded[key] = True
+        stack.append((arc, True))
+        if arc.data.label == library:
+            continue
+        for dep in arc.direct:
+            if dep.data.importmap not in expanded:
+                stack.append((dep, False))
+    if stack:
+        fail("mutation_test: the archives of {} were not all visited".format(test.label))
+
+    # The mutated library is replaced by its schemata, and every archive
+    # that imports it, directly or not, is recompiled against the
+    # replacement: the linker rejects export data that differs from the one
+    # a package was compiled with. This is what go_test itself does to link
+    # the library under test with its external tests.
+    archives = {}
+    changed = {}
+    importpath = None
+    test_srcs = []
+    for i, arc in enumerate(order[:-1]):
+        key = arc.data.importmap
+        if arc.data.label == test.label:
+            test_srcs += [f for f in arc.data.srcs if f.basename.endswith("_test.go") and f not in test_srcs]
+            if getattr(arc.source, "testfilter", None) == "exclude":
+                importpath = arc.data.importpath
+        if arc.data.label == library:
+            archives[key] = ctx.attr.schemata[GoArchive]
+            changed[key] = True
+            continue
+        if not [d for d in arc.direct if changed.get(d.data.importmap)]:
+            archives[key] = arc
+            continue
+        source = _fields(arc.source)
+        source["deps"] = [archives[d.data.importmap] for d in arc.direct]
+        archives[key] = go.archive(go, GoInfo(**source), _recompile_suffix = ".{}{}".format(ctx.label.name, i))
+        changed[key] = True
+    if library not in [arc.data.label for arc in order]:
+        fail("mutation_test: {} does not depend on {}; extra_tests are the tests of packages importing it".format(test.label, library))
+
+    # The root is the test main; relink it with the settings go_test uses,
+    # so the binary changes to its own package directory under the runfiles
+    # tree like the original.
+    source = _fields(root.source)
+    source["name"] = ctx.label.name + "~testmain"
+    source["deps"] = [archives[d.data.importmap] for d in root.direct]
+    run_dir = test.label.package or "."
+    if test.label.repo_name:
+        run_dir = "../{}/{}".format(test.label.repo_name, run_dir)
+    _, executable, runfiles = go.binary(
+        go,
+        name = ctx.label.name,
+        source = GoInfo(**source),
+        gc_linkopts = [
+            "-X",
+            "+initfirst/github.com/bazelbuild/rules_go/go/tools/bzltestutil/chdir.RunDir=" + run_dir,
+            "-X",
+            "testing.testBinary=1",
+        ],
+    )
+
+    # `mutrim bazel-test -extra-test` reads the manifest: the package the
+    # binary tests, the binary, and its test files, scanned for the
+    # mutrim:keep tag, all as runfiles paths.
+    manifest = ctx.actions.declare_file(ctx.label.name + ".json")
+    ctx.actions.write(manifest, json.encode({
+        "pkg": importpath or root.data.importpath,
+        "bin": _rlocationpath(ctx, executable),
+        "srcs": [_rlocationpath(ctx, f) for f in test_srcs],
+    }))
+    return [DefaultInfo(
+        files = depset([manifest]),
+        runfiles = runfiles.merge(test[DefaultInfo].default_runfiles).merge(
+            ctx.runfiles(files = [executable] + test_srcs),
+        ),
+    )]
+
+mutrim_relink = go_rule(
+    _mutrim_relink_impl,
+    attrs = {
+        "test": attr.label(
+            mandatory = True,
+            providers = [GoArchive],
+            doc = "The go_test of a package that imports the mutated library.",
+        ),
+        "library": attr.label(
+            mandatory = True,
+            doc = "The go_library mutation_test mutates.",
+        ),
+        "schemata": attr.label(
+            mandatory = True,
+            providers = [GoArchive],
+            doc = "The mutrim_schemata of that library.",
+        ),
+        "_go_context_data": attr.label(
+            default = "@rules_go//:go_context_data",
+        ),
+    },
+    doc = """Relinks a go_test against the schemata of the library it imports.
+
+The output is a JSON manifest naming the package the test binary tests, the
+binary and the package's test files, as runfiles paths; the runfiles hold
+them.""",
+)
+
 def _mutrim_test_impl(ctx):
     mutrim = ctx.executable._mutrim
     executable = ctx.actions.declare_file(ctx.label.name + ("." + mutrim.extension if mutrim.extension else ""))
@@ -216,6 +364,8 @@ def mutation_test(
         confirm_kills = 1,
         confirm_baseline = 1,
         count_suspect = False,
+        extra_tests = [],
+        race = False,
         shard_count = None,
         env = {},
         **kwargs):
@@ -247,6 +397,16 @@ def mutation_test(
     the matrix with reruns: an unreproduced kill lands in `suspicious_by`
     instead of `killed_by`, and a test that does not pass reliably on its
     own is marked flaky and left out of `minimize.json` entirely.
+
+    `extra_tests` names the go_tests of other packages that import the
+    library. Each is relinked against the mutants (`<name>_extra<i>`), and
+    its tests run against them too, named `<importpath>.TestX` in the
+    report, so a mutant only a downstream package's tests catch is KILLED
+    instead of LIVED or NO_COVERAGE. It cannot be combined with `race` yet.
+
+    `race` builds the test binary with the race detector, which the
+    opt-in `concurrency` operator needs: a data race it introduces fails
+    the test that hits it, and a deadlock ends as a TIMEOUT, a kill.
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
@@ -295,6 +455,10 @@ def mutation_test(
             tests reached the same sites as without them) as survivors
             (`mutrim run -count-suspect`); by default they count towards no
             score.
+        extra_tests: go_tests of packages importing the library, whose tests
+            also run against its mutants (`mutrim run -extra-test`).
+        race: builds the test binary with the race detector (`race = "on"`
+            of go_test), for the `concurrency` operator.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -302,6 +466,10 @@ def mutation_test(
     """
     if len(embed) != 1:
         fail("mutation_test: embed must name exactly one go_library, got {}".format(embed))
+    if race and extra_tests:
+        # The race transition of go_test does not reach the relinked tests,
+        # whose archives would then mix modes.
+        fail("mutation_test: race and extra_tests cannot be combined yet")
     schemata = name + "_schemata"
     mutants = name + ".mutants.json"
     mutrim_schemata(
@@ -324,6 +492,7 @@ def mutation_test(
         embed = [":" + schemata],
         deps = deps,
         env = env,
+        race = "on" if race else "auto",
         **kwargs
     )
     lib_srcs = schemata + "_srcs"
@@ -334,6 +503,18 @@ def mutation_test(
         testonly = True,
         visibility = ["//visibility:private"],
     )
+    extra = []
+    for i, test in enumerate(extra_tests):
+        relinked = "{}_extra{}".format(name, i)
+        mutrim_relink(
+            name = relinked,
+            test = test,
+            library = embed[0],
+            schemata = ":" + schemata,
+            testonly = True,
+            visibility = ["//visibility:private"],
+        )
+        extra.append(":" + relinked)
     _mutrim_test(
         name = name,
         # Flags of `mutrim bazel-test`; the arguments are the library
@@ -341,12 +522,13 @@ def mutation_test(
         # to `mutrim run`.
         args = ["bazel-test", "-test-bin", "$(rlocationpath :{}_test)".format(schemata), "-mutants", "$(rlocationpath :{})".format(mutants)] +
                ["-test-src=$(rlocationpath {})".format(src) for src in srcs] +
+               ["-extra-test=$(rlocationpath {})".format(t) for t in extra] +
                ["$(rlocationpaths :{})".format(lib_srcs), "--"] +
                (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
                (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
                (["-count-suspect"] if count_suspect else []),
-        data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs,
+        data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.
         env = {"GO_TEST_RUN_FROM_BAZEL": "1"} | env,

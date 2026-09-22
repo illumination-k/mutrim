@@ -10,7 +10,8 @@ Pre-alpha; see [docs/plan.md](docs/plan.md) for the roadmap.
 go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 
 # Select operators: names, "default", and "-name" to remove one. Every operator but
-# "call" (a non-void call replaced by its result's zero value) is in the default set.
+# "call" (a non-void call replaced by its result's zero value) and "concurrency" is in
+# the default set.
 go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
 go run ./cmd/mutrim gen -operators default,call ./path/to/pkg
 
@@ -149,6 +150,39 @@ must be stable across runs (a name derived from random data is not), and subtest
 order-independent, as with Stryker's per-test coverage: a case relying on the state a
 sibling left behind can fail on its own, which `run` reports as an error.
 
+## Cross-package kills
+
+A package's own tests are not the only ones that exercise it: a mutant that only a
+downstream package's tests catch is `LIVED` or `NO_COVERAGE` when only the package's tests
+run. `run -extra-test pkg=bin[,dir]` (repeatable) adds the test binary of package `pkg`,
+which imports the mutated one, built with the same overlay. Its tests are traced and run
+against the mutants like the package's own, and are named `pkg.TestX` in `tests`,
+`killed_by` and `suspicious_by`, with `tests[].pkg` set; the package's own tests keep their
+bare names.
+
+```bash
+go test -c -overlay out/overlay.json -o app.test ./path/to/app
+go run ./cmd/mutrim run -test-bin pkg.test -dir ./path/to/pkg \
+  -extra-test example.com/app=app.test,./path/to/app -mutants mutants.json -out report.json
+```
+
+## Concurrency mutants
+
+The opt-in `concurrency` operator (`-operators default,concurrency`) mimics real Go
+concurrency bugs by inverting their fixes (Tu et al., "Understanding real-world concurrency
+bugs in Go", ASPLOS 2019): `defer f()` removed or run on the spot, `go f()` run inline, a
+send `ch <- v` removed, `make(chan T)` given a buffer of 1 and `make(chan T, n)` losing its
+buffer (or, for a size computed at run time, growing by one), a select case whose channel
+becomes nil so it never fires, `atomic.AddT(&x, d)` / `atomic.StoreT(&x, v)` made the plain
+`x += d` / `x = v`, and `once.Do(f)` made `f()`. Removing a `close`, a `Lock` / `Unlock`, a
+WaitGroup `Add` / `Done` / `Wait` or a `cancel()` is a call statement removed, which
+`voidcall` already does.
+
+Their kills depend on scheduling. Build the test binary with the race detector
+(`go test -c -race`, the `race` attribute of `mutation_test`), so an introduced data race
+fails the test that hits it, and confirm kills with `run -confirm-kills N`. A mutant that
+deadlocks runs into the per-mutant timeout and counts as killed (`TIMEOUT`).
+
 ## Flaky tests
 
 A kill read from one run is not always a kill. Shi, Bell and Marinov (ISSTA 2019) measured
@@ -190,10 +224,12 @@ each of them, and `weak_spots` (with `-mutants`) the functions whose mutants sur
 matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their doc comment
 (`-srcs` names the `_test.go` files or directories to scan) are always kept; `-keep` sees the
 full `TestX/case` name of a subtest row, and a tag on the parent keeps every one of its
-subtests. `-matrix` exports
+subtests; with qualified rows both match the name within its package. `-matrix` exports
 the composed test × requirement matrix as JSON for an exact solver. The shards of one package
-can be passed together; reports of different packages are refused, since their test names would
-collide and no test of one package covers a requirement of another.
+can be passed together, and so can the reports of several packages: each bare test name is
+then qualified with its report's package, so a test is one row wherever it appears — the
+tests of `app` that ran against `pkg`'s mutants with `-extra-test` and against `app`'s own
+mutants carry the sites and kills of both.
 
 ## Scoping a run to a diff
 
@@ -281,6 +317,7 @@ mutation_test(
     subtests = True,                       # optional; `mutrim run -subtests`
     confirm_kills = 3,                     # optional; `mutrim run -confirm-kills`
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
+    extra_tests = ["//app:app_test"],      # optional; `mutrim run -extra-test`
     shard_count = 4,
 )
 ```
@@ -293,7 +330,11 @@ to the test's undeclared outputs (`bazel-testlogs/pkg/mutant_calc/test.outputs/`
 directory per shard; pass the shards' reports together to `mutrim minimize` or
 `mutrim report` for a whole-package verdict). Mutants are generated
 hermetically: the rule type-checks the library against the export data rules_go compiled for
-its dependencies, so no `go` command runs inside the sandbox. Passing
+its dependencies, so no `go` command runs inside the sandbox. `extra_tests` names the
+`go_test`s of packages importing the library: each is relinked against the schemata library
+(`mutant_calc_extra0`, ...), recompiling every package between the test and the library as
+`go_test` itself does for external tests, and its tests run against the mutants too; the
+target must be visible to the `mutation_test`'s package, and `race` cannot be set with it yet. Passing
 `--test_env=MUTRIM_IN_DIFF=$PWD/pr.diff` scopes the run to a diff, as above.
 
 Not supported yet: cgo packages and `//go:embed` directives in the library under test (the

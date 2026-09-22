@@ -73,14 +73,14 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                                                                                                                                     | Depends on                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                    | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                        | stdlib only                         |
-| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, `report.json`, incremental | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                           | `bits-and-blooms/bitset`            |
-| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                                                                     | `criteria`, `bitset`, `go/parser`   |
-| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                         | `mutator`, `runner`                 |
+| Package    | Responsibility                                                                                                                                                                                                                                                    | Depends on                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                                                                   | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                       | stdlib only                         |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, `report.json`, incremental | `mutator` (for `Mutant`)            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                                                                          | `bits-and-blooms/bitset`            |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                    | `criteria`, `bitset`, `go/parser`   |
+| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                        | `mutator`, `runner`                 |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -93,36 +93,41 @@ run on the result.
 
 - Operators (`mutator.AllOperators`, one `ops_*.go` per family):
 
-  | Operator     | Mutation                                                                                |
-  | ------------ | --------------------------------------------------------------------------------------- |
-  | `relational` | boundary swap `<` ↔ `<=`, `>` ↔ `>=`, and `==` ↔ `!=`                                   |
-  | `invert`     | negated comparison `<` → `>=` (schemata spell it `!(a < b)`)                            |
-  | `arithmetic` | `+` `-` `*` `/` `%`                                                                     |
-  | `logical`    | `&&` ↔ `\|\|`                                                                           |
-  | `bitwise`    | `&` ↔ `\|`, `^`/`&^` → `&`, `<<` ↔ `>>`                                                 |
-  | `negatives`  | unary removal `-x` → `x`, `!x` → `x`                                                    |
-  | `negation`   | the condition of an `if` or `for` negated                                               |
-  | `condition`  | `if cond` → `if true` / `if false`                                                      |
-  | `incdec`     | `i++` ↔ `i--`                                                                           |
-  | `assignop`   | `+=` ↔ `-=` (arithmetic, bitwise, shift tables), and `op=` → `=`                        |
-  | `voidcall`   | a call statement removed                                                                |
-  | `assign`     | the store of `x = y` dropped, y still evaluated                                         |
-  | `branch`     | the body of an `if`, an `else`, a `case` or a select clause emptied                     |
-  | `loopctrl`   | `break` ↔ `continue`                                                                    |
-  | `loopcond`   | `for cond` → `for false`, `for range` → no iteration                                    |
-  | `constant`   | numeric literal `c` → `c+1`, never where a constant is required                         |
-  | `boolean`    | `true` ↔ `false`                                                                        |
-  | `string`     | `"s"` → `""`, `""` → `"mutrim"`; a printf format is ignored as `printf-format`          |
-  | `composite`  | a slice or map literal loses its elements                                               |
-  | `method`     | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`) |
-  | `call`       | a non-void call → the zero value of its result (**opt-in**)                             |
-  | `return`     | each result → its zero value and one other value of its type; all results at once       |
+  | Operator      | Mutation                                                                                                                                                       |
+  | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `relational`  | boundary swap `<` ↔ `<=`, `>` ↔ `>=`, and `==` ↔ `!=`                                                                                                          |
+  | `invert`      | negated comparison `<` → `>=` (schemata spell it `!(a < b)`)                                                                                                   |
+  | `arithmetic`  | `+` `-` `*` `/` `%`                                                                                                                                            |
+  | `logical`     | `&&` ↔ `\|\|`                                                                                                                                                  |
+  | `bitwise`     | `&` ↔ `\|`, `^`/`&^` → `&`, `<<` ↔ `>>`                                                                                                                        |
+  | `negatives`   | unary removal `-x` → `x`, `!x` → `x`                                                                                                                           |
+  | `negation`    | the condition of an `if` or `for` negated                                                                                                                      |
+  | `condition`   | `if cond` → `if true` / `if false`                                                                                                                             |
+  | `incdec`      | `i++` ↔ `i--`                                                                                                                                                  |
+  | `assignop`    | `+=` ↔ `-=` (arithmetic, bitwise, shift tables), and `op=` → `=`                                                                                               |
+  | `voidcall`    | a call statement removed                                                                                                                                       |
+  | `assign`      | the store of `x = y` dropped, y still evaluated                                                                                                                |
+  | `branch`      | the body of an `if`, an `else`, a `case` or a select clause emptied                                                                                            |
+  | `loopctrl`    | `break` ↔ `continue`                                                                                                                                           |
+  | `loopcond`    | `for cond` → `for false`, `for range` → no iteration                                                                                                           |
+  | `constant`    | numeric literal `c` → `c+1`, never where a constant is required                                                                                                |
+  | `boolean`     | `true` ↔ `false`                                                                                                                                               |
+  | `string`      | `"s"` → `""`, `""` → `"mutrim"`; a printf format is ignored as `printf-format`                                                                                 |
+  | `composite`   | a slice or map literal loses its elements                                                                                                                      |
+  | `method`      | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`)                                                                        |
+  | `call`        | a non-void call → the zero value of its result (**opt-in**)                                                                                                    |
+  | `return`      | each result → its zero value and one other value of its type; all results at once                                                                              |
+  | `concurrency` | defer removed / run at once, `go f()` → `f()`, send removed, chan buffer, select case never ready, atomic add/store → plain, `once.Do(f)` → `f()` (**opt-in**) |
 
   These are the PIT operators with a Go counterpart, plus the loop and library-call families
-  of gremlins, go-mutesting and Stryker. Every operator but `call` is in `DefaultOperators`
-  (a non-void call often returns the zero value anyway, so most of its mutants are
-  equivalent); `gen -operators` (the `operators` attribute of `mutation_test`) selects a
-  subset or adds an opt-in one, e.g. `default,-constant` or `default,call`.
+  of gremlins, go-mutesting and Stryker. `concurrency` inverts the fix patterns of real Go
+  concurrency bugs (Tu et al., ASPLOS 2019); dropping a `close`, `Lock`/`Unlock`, WaitGroup
+  call or `cancel()` is already `voidcall`. Every operator but `call` and `concurrency` is in
+  `DefaultOperators` (a non-void call often returns the zero value anyway, so most of its
+  mutants are equivalent; concurrency mutants want a `-race` binary, the `race` attribute of
+  `mutation_test`, and `run -confirm-kills`); `gen -operators` (the `operators` attribute of
+  `mutation_test`) selects a subset or adds an opt-in one, e.g. `default,-constant` or
+  `default,call`.
 - Site selection is separate from operator selection: `gen -match` (function names),
   `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
   (over `func operator: description`) and `-arid` (globs over the callee, which cover the
@@ -176,6 +181,14 @@ run on the result.
   failing on its own is attributed to every row under it; a hung parent to every row of it,
   since the testing package prints subtest results only when the parent finishes. Each row
   carries `parent`. Subtest names must be stable and the subtests order-independent.
+- Cross-package kills: `run -extra-test pkg=bin` (the `extra_tests` attribute of
+  `mutation_test`) adds the test binary of a package importing the mutated one, built
+  against the same schemata sources; its rows are traced and run like the package's own and
+  named `pkg.TestX` (with `tests[].pkg`), the package's own rows stay bare. Under Bazel
+  `mutrim_relink` rebuilds that `go_test` from its `GoArchive`: the library is swapped for
+  the schemata archive and every archive importing it recompiled, as rules_go's go_test does
+  for external tests (the linker rejects mismatched export data). `minimize` takes reports
+  of several packages as one matrix by qualifying bare names with the report's package.
 - A kill read from one run is not trusted blindly: `run -confirm-kills N` reruns only the
   killing tests until each has failed N runs, and a failure that does not reproduce goes to
   `suspicious_by`, not `killed_by` (a mutant whose every killer turned suspicious is LIVED).

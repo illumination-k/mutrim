@@ -18,6 +18,8 @@ mutation_test(
     name = "mutant_calc",
     srcs = ["calc_test.go"],
     embed = [":calc"],
+    # stats imports calc, so its tests can kill calc's mutants too.
+    extra_tests = ["//examples/stats:stats_test"],
     shard_count = 2,
     subtests = True,
 )

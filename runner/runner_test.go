@@ -47,6 +47,15 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 // buildPkg lowers the package in dir and compiles its test binary.
 func buildPkg(t *testing.T, dir string) (bin string, mutants []mutator.Mutant) {
 	t.Helper()
+	bin, mutants, _ = buildPkgOverlay(t, dir)
+	return bin, mutants
+}
+
+// buildPkgOverlay is buildPkg, also returning the go build -overlay file
+// that swaps in the schemata sources, so the test binaries of the
+// packages importing dir can be built against them.
+func buildPkgOverlay(t *testing.T, dir string) (bin string, mutants []mutator.Mutant, overlayPath string) {
+	t.Helper()
 	pkgs, err := mutator.Load(".", dir)
 	if err != nil {
 		t.Fatal(err)
@@ -76,16 +85,22 @@ func buildPkg(t *testing.T, dir string) (bin string, mutants []mutator.Mutant) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overlayPath := filepath.Join(out, "overlay.json")
+	overlayPath = filepath.Join(out, "overlay.json")
 	if err := os.WriteFile(overlayPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	bin = filepath.Join(out, "schemata.test")
-	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", overlayPath, "-o", bin, dir) //nolint:gosec // test-controlled args
+	compileTest(t, overlayPath, bin, dir)
+	return bin, mutants, overlayPath
+}
+
+// compileTest builds the test binary of the package in dir with overlay.
+func compileTest(t *testing.T, overlay, bin, dir string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", overlay, "-o", bin, dir) //nolint:gosec // test-controlled args
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test -c: %v\n%s", err, out)
 	}
-	return bin, mutants
 }
 
 func TestRunReportGolden(t *testing.T) {
@@ -760,6 +775,84 @@ func result(t *testing.T, rep *runner.Report, id string) runner.Result {
 	}
 	t.Fatalf("no result for mutant %s", id)
 	return runner.Result{}
+}
+
+// The tests of a package importing the mutated one kill the mutants its
+// own tests cannot: lib's test checks a value inside the range only, and
+// app's tests, built against the same schemata sources, check the bounds.
+// Their rows are qualified with app's import path, subtests and parents
+// alike.
+func TestRunExtraTests(t *testing.T) {
+	const (
+		libDir = "./testdata/cross/lib"
+		appDir = "./testdata/cross/app"
+		appPkg = "github.com/illumination-k/mutrim/runner/testdata/cross/app"
+	)
+	bin, mutants, overlay := buildPkgOverlay(t, libDir)
+	appBin := filepath.Join(t.TempDir(), "app.test")
+	compileTest(t, overlay, appBin, appDir)
+
+	alone, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: libDir, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// lib's test takes the same path through a boundary mutant, so its
+	// survivors are suspects as much as plain LIVED.
+	survivors := func(t runner.Totals) int { return t.Lived + t.SuspectEquivalent }
+	if survivors(alone.Totals) == 0 {
+		t.Fatalf("lib's own test must leave mutants alive: %+v", alone.Totals)
+	}
+
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: libDir, Timeout: time.Second, Subtests: true,
+		ExtraTests: []runner.Binary{{Path: appBin, Pkg: appPkg, Dir: appDir}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Pkg != "github.com/illumination-k/mutrim/runner/testdata/cross/lib" {
+		t.Errorf("pkg = %q, want the mutated package", report.Pkg)
+	}
+	names := make([]string, 0, len(report.Tests))
+	for _, tt := range report.Tests {
+		names = append(names, tt.Name+"|"+tt.Pkg+"|"+tt.Parent)
+	}
+	want := []string{
+		"TestClampInside||",
+		appPkg + ".TestPercent/below|" + appPkg + "|" + appPkg + ".TestPercent",
+		appPkg + ".TestPercent/above|" + appPkg + "|" + appPkg + ".TestPercent",
+	}
+	slices.Sort(names)
+	slices.Sort(want)
+	if !slices.Equal(names, want) {
+		t.Errorf("tests = %v, want %v", names, want)
+	}
+	if report.Totals.Killed <= alone.Totals.Killed || survivors(report.Totals) >= survivors(alone.Totals) {
+		t.Errorf("app's tests must kill more: alone %+v, with app %+v", alone.Totals, report.Totals)
+	}
+	var byApp int
+	for _, r := range report.Results {
+		for _, k := range r.KilledBy {
+			if strings.HasPrefix(k, appPkg+".TestPercent/") {
+				byApp++
+			} else if k != "TestClampInside" {
+				t.Errorf("%s killed by unknown row %q", r.MutantID, k)
+			}
+		}
+	}
+	if byApp == 0 {
+		t.Error("no mutant was killed by app's tests")
+	}
+
+	for name, extra := range map[string][]runner.Binary{
+		"no pkg":       {{Path: appBin}},
+		"no path":      {{Pkg: appPkg}},
+		"same package": {{Path: appBin, Pkg: appPkg}, {Path: appBin, Pkg: appPkg}},
+	} {
+		if _, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: libDir, ExtraTests: extra}); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
 }
 
 // A mutant a static rule proves equivalent is never executed and counts

@@ -35,10 +35,31 @@ const MinTimeout = 10 * time.Second
 // baseline for the cap, when Options.TimeoutFactor is zero.
 const DefaultTimeoutFactor = 3
 
+// Binary is the test binary of a package other than the mutated one,
+// linked against the mutated package's schemata sources, so its tests can
+// kill the mutants too (Options.ExtraTests).
+type Binary struct {
+	// Path of the test binary.
+	Path string
+	// Pkg is the import path of the package the binary tests. Its rows are
+	// named Pkg.TestX in the report, so they never collide with the
+	// mutated package's own tests or another package's.
+	Pkg string
+	// Dir is the working directory of the test binary; empty means the
+	// current directory.
+	Dir string
+}
+
 // Options configures Run.
 type Options struct {
 	// TestBin is a test binary built from schemata sources (`go test -c`).
 	TestBin string
+	// ExtraTests are the test binaries of other packages that import the
+	// mutated one, built against the same schemata sources. Their tests are
+	// traced and run against the mutants like TestBin's, so a mutant only a
+	// downstream package's tests catch is KILLED rather than LIVED or
+	// NO_COVERAGE. Their rows are qualified with Binary.Pkg.
+	ExtraTests []Binary
 	// Mutants is the content of mutants.json for that package.
 	Mutants []mutator.Mutant
 	// Dir is the working directory of the test binary; empty means the
@@ -46,8 +67,8 @@ type Options struct {
 	Dir string
 	// Args are passed to the binary after the runner's own test flags.
 	Args []string
-	// Tests restricts the run to these top-level tests; nil means every
-	// test the binary has.
+	// Tests restricts the run to these top-level tests of TestBin; nil
+	// means every test the binary has. ExtraTests always run all theirs.
 	Tests []string
 	// Subtests makes every subtest (`TestX/case`) a row of the report: it is
 	// traced on its own and named in killed_by, so the minimizer can call a
@@ -90,6 +111,34 @@ type Options struct {
 	Previous *Report
 	// Log receives one line per mutant; nil discards them.
 	Log io.Writer
+
+	// bins is TestBin (with Dir) followed by ExtraTests, set by Run.
+	bins []Binary
+}
+
+// row is a row of the report: a test of one of Options.bins, by its name
+// in that binary.
+type row struct {
+	bin  int
+	name string
+}
+
+// qualify is the row's name in the report: bare for the mutated package's
+// own tests, Pkg.TestX for another package's.
+func (o Options) qualify(r row) string {
+	if r.bin == 0 {
+		return r.name
+	}
+	return o.bins[r.bin].Pkg + "." + r.name
+}
+
+// qualifyAll is the rows' names in the report.
+func (o Options) qualifyAll(rows []row) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = o.qualify(r)
+	}
+	return out
 }
 
 // Run executes every viable mutant of the shard against the tests that
@@ -118,36 +167,60 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			return nil, fmt.Errorf("runner: %q is a subtest; Tests names top-level tests", t)
 		}
 	}
-
-	base, err := o.exec(ctx, "", "", testPattern(o.Tests), 0)
-	if err != nil {
-		return nil, err
+	o.bins = []Binary{{Path: o.TestBin, Dir: o.Dir}}
+	pkgs := map[string]bool{}
+	for _, b := range o.ExtraTests {
+		if b.Path == "" || b.Pkg == "" {
+			return nil, fmt.Errorf("runner: extra test binary %q of package %q: both are required", b.Path, b.Pkg)
+		}
+		if pkgs[b.Pkg] {
+			return nil, fmt.Errorf("runner: two extra test binaries of package %q", b.Pkg)
+		}
+		pkgs[b.Pkg] = true
+		o.bins = append(o.bins, b)
 	}
-	if base.Status != Lived {
-		return nil, fmt.Errorf("runner: baseline run failed (%s); the tests must pass without a mutant\n%s", base.Status, base.output)
+
+	// The baseline runs every binary; its output names the rows.
+	var baseMS int64
+	var names []row
+	for i, b := range o.bins {
+		pattern := ""
+		if i == 0 {
+			pattern = testPattern(o.Tests)
+		}
+		base, err := o.exec(ctx, b, "", "", pattern, 0)
+		if err != nil {
+			return nil, err
+		}
+		if base.Status != Lived {
+			return nil, fmt.Errorf("runner: baseline run of %s failed (%s); the tests must pass without a mutant\n%s", b.Path, base.Status, base.output)
+		}
+		baseMS += base.DurationMS
+		for _, name := range rows(started(base.output), o.Subtests) {
+			names = append(names, row{bin: i, name: name})
+		}
 	}
 	if o.TimeoutFactor == 0 {
 		o.TimeoutFactor = DefaultTimeoutFactor
 	}
 	maxTimeout := o.Timeout
 	if maxTimeout == 0 {
-		maxTimeout = max(o.scale(base.DurationMS), MinTimeout)
+		maxTimeout = max(o.scale(baseMS), MinTimeout)
 	}
-	names := rows(started(base.output), o.Subtests)
-	logger.Printf("baseline %dms, timeout at most %s, %d tests", base.DurationMS, maxTimeout, len(names))
+	logger.Printf("baseline %dms, timeout at most %s, %d tests", baseMS, maxTimeout, len(names))
 
 	tests, err := o.traceTests(ctx, names)
 	if err != nil {
 		return nil, err
 	}
-	reachers := map[string][]string{}
+	reachers := map[string][]row{}
 	durations := map[string]int64{}
 	ref := baseline{flaky: map[string]bool{}, sites: map[string][]string{}}
-	for _, t := range tests {
+	for i, t := range tests {
 		durations[t.Name] = t.DurationMS
 		ref.sites[t.Name] = t.Sites
 		for _, id := range t.Sites {
-			reachers[id] = append(reachers[id], t.Name)
+			reachers[id] = append(reachers[id], names[i])
 		}
 		if t.Flaky {
 			ref.flaky[t.Name] = true
@@ -167,7 +240,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 
-	report := &Report{BaselineMS: base.DurationMS, TimeoutMS: maxTimeout.Milliseconds(), CountSuspect: o.CountSuspect, Tests: tests, Results: []Result{}}
+	report := &Report{BaselineMS: baseMS, TimeoutMS: maxTimeout.Milliseconds(), CountSuspect: o.CountSuspect, Tests: tests, Results: []Result{}}
 	if len(o.Mutants) > 0 {
 		report.Pkg = o.Mutants[0].Pkg
 	}
@@ -192,7 +265,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
-			timeout := o.mutantTimeout(reachers[m.ID], durations, maxTimeout)
+			timeout := o.mutantTimeout(o.qualifyAll(reachers[m.ID]), durations, maxTimeout)
 			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, ref); err != nil {
 				return nil, err
 			}
@@ -232,7 +305,7 @@ func (o Options) scale(ms int64) time.Duration {
 
 // runMutant runs the rows reaching mutant id against it and merges the
 // outcomes. A -test.run pattern selects the subtests of one parent, so the
-// rows run in one process per parent; KILLED wins over TIMEOUT, which wins
+// rows run in one process per binary and parent; KILLED wins over TIMEOUT, which wins
 // over RUN_ERROR, which wins over LIVED, and every process's killers are
 // recorded, so killed_by is the complete kill matrix.
 //
@@ -250,51 +323,25 @@ func (o Options) scale(ms int64) time.Duration {
 // Every process is traced, and a LIVED mutant no row failed against, not
 // even suspiciously, and whose processes reached exactly the sites their
 // rows reach without it is SUSPECT_EQUIVALENT: it changed neither an
-// outcome nor the path taken. The trace is the
-// union over a process's rows, compared with the union of their own.
-func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration, ref baseline) (Result, error) {
+// outcome nor the path taken. The trace is the union over a process's
+// rows, compared with the union of their own.
+func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout time.Duration, ref baseline) (Result, error) {
 	r := Result{MutantID: id, Status: Lived, TimeoutMS: timeout.Milliseconds()}
 	differed := false
-	for i, group := range groupByParent(rows) {
-		trace := filepath.Join(ref.traceDir, fmt.Sprintf("%s-%d.trace", id, i))
-		res, err := o.exec(ctx, id, trace, testPattern(group), timeout)
-		if err != nil {
-			return Result{}, err
-		}
-		reached, err := readTrace(trace)
-		if err != nil {
-			return Result{}, err
-		}
-		differed = differed || !maps.Equal(reached, ref.reached(group))
-		ran, failed := parseOutput(res.output, res.Status == Timeout, group)
-		differed = differed || len(failed) > 0
-		r.TestsRun += ran
-		r.DurationMS += res.DurationMS
-
-		candidates := []string{}
-		for _, name := range failed {
-			if ref.flaky[name] {
-				r.SuspiciousBy = append(r.SuspiciousBy, name)
-			} else {
-				candidates = append(candidates, name)
+	byBin := make([][]string, len(o.bins))
+	for _, rw := range rows {
+		byBin[rw.bin] = append(byBin[rw.bin], rw.name)
+	}
+	for bin, names := range byBin {
+		for _, group := range groupByParent(names) {
+			status, changed, err := o.runGroup(ctx, &r, bin, group, timeout, ref)
+			if err != nil {
+				return Result{}, err
 			}
-		}
-		killed, suspicious, ms, err := o.confirmKills(ctx, id, candidates, timeout)
-		if err != nil {
-			return Result{}, err
-		}
-		r.KilledBy = append(r.KilledBy, killed...)
-		r.SuspiciousBy = append(r.SuspiciousBy, suspicious...)
-		r.DurationMS += ms
-
-		status := res.Status
-		if len(failed) > 0 && len(killed) == 0 {
-			// Every failure of this group is suspicious, so nothing here
-			// tells the mutant from the original.
-			status = Lived
-		}
-		if rank[status] > rank[r.Status] {
-			r.Status = status
+			differed = differed || changed
+			if rank[status] > rank[r.Status] {
+				r.Status = status
+			}
 		}
 	}
 	if r.Status == Lived && !differed {
@@ -306,9 +353,10 @@ func (o Options) runMutant(ctx context.Context, id string, rows []string, timeou
 // baseline is what the trace runs observed without a mutant, which a
 // mutant's runs are judged against.
 type baseline struct {
-	// flaky holds the rows Test.Flaky marks.
+	// flaky holds the rows Test.Flaky marks, by their name in the report.
 	flaky map[string]bool
-	// sites holds the sites each row reaches (Test.Sites).
+	// sites holds the sites each row reaches (Test.Sites), by its name in
+	// the report.
 	sites map[string][]string
 	// traceDir receives the traces of the mutants' runs.
 	traceDir string
@@ -325,16 +373,67 @@ func (b baseline) reached(rows []string) map[string]bool {
 	return out
 }
 
+// runGroup runs the rows of one binary and parent against mutant r,
+// records its kills in r and returns the group's status, and whether the
+// mutant made a row fail or changed the sites the rows reach.
+func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []string, timeout time.Duration, ref baseline) (status Status, changed bool, err error) {
+	b := o.bins[bin]
+	trace := filepath.Join(ref.traceDir, r.MutantID+".trace")
+	res, err := o.exec(ctx, b, r.MutantID, trace, testPattern(group), timeout)
+	if err != nil {
+		return "", false, err
+	}
+	reached, err := readTrace(trace)
+	if err != nil {
+		return "", false, err
+	}
+	qualified := make([]string, len(group))
+	for i, name := range group {
+		qualified[i] = o.qualify(row{bin, name})
+	}
+	ran, failed := parseOutput(res.output, res.Status == Timeout, group)
+	changed = len(failed) > 0 || !maps.Equal(reached, ref.reached(qualified))
+	r.TestsRun += ran
+	r.DurationMS += res.DurationMS
+
+	candidates := []string{}
+	for _, name := range failed {
+		if q := o.qualify(row{bin, name}); ref.flaky[q] {
+			r.SuspiciousBy = append(r.SuspiciousBy, q)
+		} else {
+			candidates = append(candidates, name)
+		}
+	}
+	killed, suspicious, ms, err := o.confirmKills(ctx, b, r.MutantID, candidates, timeout)
+	if err != nil {
+		return "", false, err
+	}
+	for _, name := range killed {
+		r.KilledBy = append(r.KilledBy, o.qualify(row{bin, name}))
+	}
+	for _, name := range suspicious {
+		r.SuspiciousBy = append(r.SuspiciousBy, o.qualify(row{bin, name}))
+	}
+	r.DurationMS += ms
+
+	if len(failed) > 0 && len(killed) == 0 {
+		// Every failure of this group is suspicious, so nothing here
+		// tells the mutant from the original.
+		return Lived, changed, nil
+	}
+	return res.Status, changed, nil
+}
+
 // rank orders the statuses of a group's run, weakest first: the run's own
 // verdicts count more than what it could not observe.
 var rank = map[Status]int{Lived: 0, RunError: 1, Timeout: 2, Killed: 3}
 
-// confirmKills reruns the rows that failed against mutant id, which share
-// a parent, until each of them has failed Options.ConfirmKills runs in
+// confirmKills reruns the rows of binary b that failed against mutant id,
+// which share a parent, until each of them has failed Options.ConfirmKills runs in
 // total or has passed once. It returns the rows whose failure reproduced
 // every time, in the order given, the rest as suspicious, and the time the
 // reruns took. Fewer than two runs confirms nothing and reruns nothing.
-func (o Options) confirmKills(ctx context.Context, id string, killers []string, timeout time.Duration) (killed, suspicious []string, ms int64, err error) {
+func (o Options) confirmKills(ctx context.Context, b Binary, id string, killers []string, timeout time.Duration) (killed, suspicious []string, ms int64, err error) {
 	if o.ConfirmKills < 2 || len(killers) == 0 {
 		return killers, nil, 0, nil
 	}
@@ -343,7 +442,7 @@ func (o Options) confirmKills(ctx context.Context, id string, killers []string, 
 		if len(still) == 0 {
 			break
 		}
-		res, err := o.exec(ctx, id, "", testPattern(still), timeout)
+		res, err := o.exec(ctx, b, id, "", testPattern(still), timeout)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -376,7 +475,7 @@ func suspicion(names []string) string {
 // failing baseline. A row whose run dies from infrastructure is an
 // error too: nothing was observed, so flakiness cannot be told from a
 // broken trace and the run stops.
-func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error) {
+func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 	dir, err := os.MkdirTemp("", "mutrim-trace-")
 	if err != nil {
 		return nil, err
@@ -384,15 +483,19 @@ func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error)
 	defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
 
 	runs := max(o.ConfirmBaseline, 1)
-	tests := make([]Test, 0, len(names))
-	for i, name := range names {
-		t := Test{Name: name, Parent: parent(name)}
+	tests := make([]Test, 0, len(rows))
+	for i, rw := range rows {
+		name := o.qualify(rw)
+		t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg}
+		if p := parent(rw.name); p != "" {
+			t.Parent = o.qualify(row{rw.bin, p})
+		}
 		sites := map[string]bool{}
 		var failures int
 		var failed *execResult
 		for run := range runs {
 			trace := filepath.Join(dir, fmt.Sprintf("%d-%d.trace", i, run))
-			res, err := o.exec(ctx, "", trace, testPattern([]string{name}), 0)
+			res, err := o.exec(ctx, o.bins[rw.bin], "", trace, testPattern([]string{rw.name}), 0)
 			if err != nil {
 				return nil, err
 			}
@@ -535,10 +638,10 @@ var (
 	fatalError = []byte("fatal error:")
 )
 
-// exec runs the tests the -test.run pattern selects (all when empty) with
-// mutant id active (none when empty), tracing to the trace file when
-// given, and classifies the exit. A zero timeout means none.
-func (o Options) exec(ctx context.Context, id, trace, pattern string, timeout time.Duration) (*execResult, error) {
+// exec runs the tests of binary b the -test.run pattern selects (all when
+// empty) with mutant id active (none when empty), tracing to the trace
+// file when given, and classifies the exit. A zero timeout means none.
+func (o Options) exec(ctx context.Context, b Binary, id, trace, pattern string, timeout time.Duration) (*execResult, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -550,8 +653,8 @@ func (o Options) exec(ctx context.Context, id, trace, pattern string, timeout ti
 	}
 	args = append(args, o.Args...)
 
-	cmd := exec.CommandContext(ctx, o.TestBin, args...) //nolint:gosec // running the user's test binary is the point
-	cmd.Dir = o.Dir
+	cmd := exec.CommandContext(ctx, b.Path, args...) //nolint:gosec // running the user's test binary is the point
+	cmd.Dir = b.Dir
 	cmd.Env = childEnv(os.Environ(), id, trace)
 	cmd.WaitDelay = time.Second
 
@@ -570,7 +673,7 @@ func (o Options) exec(ctx context.Context, id, trace, pattern string, timeout ti
 	case errors.As(err, &exitErr):
 		res.Status = classifyExit(res.output, exitErr.ExitCode())
 	default:
-		return nil, fmt.Errorf("runner: exec %s: %w", o.TestBin, err)
+		return nil, fmt.Errorf("runner: exec %s: %w", b.Path, err)
 	}
 	return res, nil
 }
