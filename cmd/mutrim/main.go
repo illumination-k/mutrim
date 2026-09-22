@@ -56,10 +56,11 @@ commands:
             tests that reach it, and report the per-test kill matrix;
             -subtests makes each subtest a row of it; -in-diff scopes the
             run to the lines a unified diff adds; -confirm-kills and
-            -confirm-baseline rerun to keep flaky tests out of the matrix
-  minimize  from the report.json of one package (all of its shards),
-            list the tests a greedy set cover finds redundant, the
-            functions whose mutants survive, and the tests found flaky
+            -confirm-baseline rerun to keep flaky tests out of the matrix;
+            -extra-test adds the tests of a package importing it
+  minimize  from report.json files (the shards of a package, or several
+            packages), list the tests a greedy set cover finds redundant,
+            the functions whose mutants survive, and the tests found flaky
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations
@@ -275,6 +276,16 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
 	confirmBaseline := fs.Int("confirm-baseline", 1, "run each test this many times while tracing; one that fails in some runs and passes in others is marked flaky, and its failures are never kills")
 	dir := fs.String("dir", "", "working directory for the test binary")
+	var extra []runner.Binary
+	fs.Func("extra-test", "`pkg=bin[,dir]`: the test binary of package pkg, which imports the mutated one, built against the same schemata sources; its tests run against the mutants too, named pkg.TestX (repeatable)", func(v string) error {
+		pkg, rest, ok := strings.Cut(v, "=")
+		if !ok || pkg == "" || rest == "" {
+			return fmt.Errorf("want pkg=bin[,dir], got %q", v)
+		}
+		bin, binDir, _ := strings.Cut(rest, ",")
+		extra = append(extra, runner.Binary{Path: bin, Pkg: pkg, Dir: binDir})
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -283,7 +294,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 
 	opts := runner.Options{
-		TestBin: *testBin, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
+		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
 		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline,
 		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, Log: stderr,
 	}
@@ -333,17 +344,18 @@ type minimizeOutput struct {
 }
 
 // runMinimize is `mutrim minimize`: it composes the site-coverage and
-// kill matrices of the given reports (the shards of one package), runs
-// the weighted greedy set cover, and reports. Nothing is deleted. Reports
-// of several packages are refused: their test names would collide, and
-// no test of one package can cover a requirement of another, so nothing
-// is gained by minimizing them together.
+// kill matrices of the given reports, runs the weighted greedy set cover,
+// and reports. Nothing is deleted. A row is one test wherever it appears:
+// the shards of a package share their rows, and so do the reports of
+// several packages once each row is qualified by its package (see
+// rowNames), so a test of package b that `run -extra-test` ran against
+// package a's mutants is one row with the sites and kills of both.
 func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("minimize", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	out := fs.String("o", "", "write the result here instead of stdout")
 	mutantsPath := fs.String("mutants", "", "mutants.json of the reports; enables the weak_spots listing")
-	keep := fs.String("keep", `^TestRegression_`, "regexp of test names (TestX/case for a subtest) that are always kept")
+	keep := fs.String("keep", `^TestRegression_`, "regexp of test names (TestX/case for a subtest, without the package) that are always kept")
 	tag := fs.String("tag", "mutrim:keep", "tests whose doc comment contains this are always kept, with their subtests (needs -srcs)")
 	srcs := fs.String("srcs", "", "comma-separated _test.go files or directories to scan for -tag")
 	wSite := fs.Float64("w-site", 1, "weight of a reached mutant site")
@@ -372,8 +384,12 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 			pkgs[r.Pkg] = true
 		}
 	}
-	if len(pkgs) > 1 {
-		return fmt.Errorf("minimize: the reports span several packages (%s); pass one package's shards at a time", strings.Join(slices.Sorted(maps.Keys(pkgs)), ", "))
+	names := rowNames(reports, len(pkgs) > 1)
+	row := func(i int, test string) rowName {
+		if n, ok := names[i][test]; ok {
+			return n
+		}
+		return rowName{name: test, local: test}
 	}
 	// A flaky test's observations are not trustworthy, so it is left out
 	// of the matrix entirely: it covers nothing, is never selected and is
@@ -383,30 +399,43 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	// failed, so it keeps no test alive, and its function is a weak spot
 	// only through its other mutants.
 	flaky := map[string]bool{}
-	for _, r := range reports {
+	for i, r := range reports {
 		for _, t := range r.Tests {
 			if t.Flaky {
-				flaky[t.Name] = true
+				flaky[row(i, t.Name).name] = true
 			}
 		}
 	}
 	durations := map[string]int64{}
-	sites, kills := criteria.SiteCoverage{}, criteria.Mutation{}
-	for _, r := range reports {
+	reached := map[string]map[string]bool{}
+	local := map[string]string{}
+	kills := criteria.Mutation{}
+	for i, r := range reports {
 		for _, t := range r.Tests {
-			if flaky[t.Name] {
+			n := row(i, t.Name)
+			if flaky[n.name] {
 				continue
 			}
-			durations[t.Name] = t.DurationMS
-			sites[t.Name] = t.Sites // identical across the shards of one package
+			local[n.name] = n.local
+			durations[n.name] = max(durations[n.name], t.DurationMS)
+			if reached[n.name] == nil {
+				reached[n.name] = map[string]bool{}
+			}
+			for _, id := range t.Sites {
+				reached[n.name][id] = true
+			}
 		}
 		for _, res := range r.Results {
 			for _, t := range res.KilledBy {
-				if !flaky[t] {
-					kills[t] = append(kills[t], res.MutantID)
+				if n := row(i, t).name; !flaky[n] {
+					kills[n] = append(kills[n], res.MutantID)
 				}
 			}
 		}
+	}
+	sites := criteria.SiteCoverage{}
+	for name, ids := range reached {
+		sites[name] = slices.Sorted(maps.Keys(ids))
 	}
 	matrix := criteria.Compose(durations,
 		criteria.Weighted{Criterion: sites, Weight: *wSite},
@@ -429,8 +458,10 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	// A tag sits on the top-level test and protects its subtests; the
-	// regexp sees the full name, so ^TestRegression_ matches those too.
+	// regexp sees the full name within its package, so ^TestRegression_
+	// matches those too.
 	protected := func(name string) bool {
+		name = local[name]
 		top, _, _ := strings.Cut(name, "/")
 		return tagged[top] || keepRE.MatchString(name)
 	}
@@ -447,6 +478,34 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		result.WeakSpots = runner.WeakSpots(mutants, reports...)
 	}
 	return writeJSON(*out, stdout, result)
+}
+
+// rowName is a row of the minimize matrix: its name there, and its name
+// within its package, which the protection rules match.
+type rowName struct{ name, local string }
+
+// rowNames maps, per report, the test names the report uses (in tests and
+// killed_by) to the rows of the matrix. A report names the mutated
+// package's own tests bare and another package's as pkg.TestX; with
+// qualify (the reports span several packages) the bare names are
+// qualified with the report's package too, so the same test gets the same
+// row in every report and two packages' TestX never collide.
+func rowNames(reports []*runner.Report, qualify bool) []map[string]rowName {
+	out := make([]map[string]rowName, len(reports))
+	for i, r := range reports {
+		out[i] = map[string]rowName{}
+		for _, t := range r.Tests {
+			n := rowName{name: t.Name, local: t.Name}
+			switch {
+			case t.Pkg != "":
+				n.local = strings.TrimPrefix(t.Name, t.Pkg+".")
+			case qualify && r.Pkg != "":
+				n.name = r.Pkg + "." + t.Name
+			}
+			out[i][t.Name] = n
+		}
+	}
+	return out
 }
 
 // runReport is `mutrim report`: it renders the reports of a run (the
@@ -523,6 +582,11 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		testSrcs = append(testSrcs, s)
 		return nil
 	})
+	var extraTests []string
+	fs.Func("extra-test", "runfiles path of a mutrim_relink manifest: another package's test binary and test sources (repeatable)", func(s string) error {
+		extraTests = append(extraTests, s)
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -553,9 +617,18 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if libSrcs, err = rlocations(rf, libSrcs); err != nil {
 		return err
 	}
+	var extraFlags []string
+	for _, path := range extraTests {
+		extra, srcs, err := readRelink(rf, path)
+		if err != nil {
+			return err
+		}
+		extraFlags = append(extraFlags, "-extra-test", extra)
+		testSrcs = append(testSrcs, srcs...)
+	}
 
 	rep := filepath.Join(out, "report.json")
-	runArgs := slices.Concat([]string{"run"}, runFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
+	runArgs := slices.Concat([]string{"run"}, runFlags, extraFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
 	if diff := os.Getenv("MUTRIM_IN_DIFF"); diff != "" {
 		runArgs = append(runArgs, "-in-diff", diff)
 	}
@@ -570,6 +643,36 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		run(ctx, []string{"report", "-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
 		run(ctx, []string{"report", "-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
 	)
+}
+
+// relink is the manifest mutrim_relink writes for an extra test: the
+// package its binary tests, and the binary and the package's test sources
+// as runfiles paths.
+type relink struct {
+	Pkg  string   `json:"pkg"`
+	Bin  string   `json:"bin"`
+	Srcs []string `json:"srcs"`
+}
+
+// readRelink reads the manifest at runfiles path path and returns the
+// `run -extra-test` value of its binary and its resolved test sources.
+func readRelink(rf *runfiles.Runfiles, path string) (extraTest string, srcs []string, err error) {
+	files, err := rlocations(rf, []string{path})
+	if err != nil {
+		return "", nil, err
+	}
+	var m relink
+	if err = readJSON(files[0], &m); err != nil {
+		return "", nil, err
+	}
+	if m.Pkg == "" || m.Bin == "" {
+		return "", nil, fmt.Errorf("bazel-test: %s: pkg and bin are required", path)
+	}
+	resolved, err := rlocations(rf, append([]string{m.Bin}, m.Srcs...))
+	if err != nil {
+		return "", nil, err
+	}
+	return m.Pkg + "=" + resolved[0], resolved[1:], nil
 }
 
 // rlocations resolves runfiles paths to paths on disk.
