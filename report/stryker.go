@@ -90,14 +90,16 @@ type Test struct {
 // Status is a mutation-testing-report-schema mutant status.
 type Status string
 
-// The statuses mutrim produces; Stryker also defines RuntimeError, which
-// mutrim reports as Timeout or Killed instead.
+// The statuses mutrim produces, in the schema's vocabulary: a mutant
+// whose run died from infrastructure is a RuntimeError, which the
+// schema keeps out of the score.
 const (
 	Killed       Status = "Killed"
 	Survived     Status = "Survived"
 	NoCoverage   Status = "NoCoverage"
 	Timeout      Status = "Timeout"
 	CompileError Status = "CompileError"
+	RuntimeError Status = "RuntimeError"
 	Ignored      Status = "Ignored"
 )
 
@@ -116,6 +118,8 @@ func status(s runner.Status) Status {
 		return Timeout
 	case runner.NoCoverage:
 		return NoCoverage
+	case runner.RunError:
+		return RuntimeError
 	case runner.Ignored, runner.Skipped:
 		return Ignored
 	default:

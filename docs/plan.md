@@ -123,11 +123,15 @@ Goal: one build per package; the test binary re-executed per mutant.
    whose `id % TEST_TOTAL_SHARDS == TEST_SHARD_INDEX`: exec the binary with `GOMUTANT_ID=id`,
    `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 10s: tests that
    spawn the Go toolchain can miss the build cache under a mutant), classify
-   KILLED / LIVED / TIMEOUT. `-tests` is an allowlist for `-test.run`; without it the whole
+   KILLED / LIVED / TIMEOUT / RUN_ERROR (issue #27: a run that dies from outside the tests —
+   no `--- FAIL:` line, a `fatal error:`, a signal, an exit code the testing package never
+   uses — is never a kill; a `--- FAIL:` or `panic:` line overrides it). `-tests` is an
+   allowlist for `-test.run`; without it the whole
    binary runs (Phase 4 narrows by per-test coverage and drops failfast).
 3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
    `{mutant_id, status, tests_run, killed_by, duration_ms}` plus totals and the baseline /
-   timeout used. TIMEOUT counts as KILLED in the score.
+   timeout used. TIMEOUT counts as KILLED in the score; RUN_ERROR counts towards no score
+   (`totals.run_error`) and is never copied forward.
 4. **Incremental re-runs.** `-previous report.json`: mutants whose ID is present are copied
    forward; new IDs are executed; `NOT_VIABLE` is always recomputed from `mutants.json`. IDs
    are content hashes, so an untouched function keeps its result.
@@ -187,8 +191,12 @@ Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
 2. **Narrowed runner.** Each mutant runs only against the tests that reach its site, without
    failfast, so `killed_by` is the complete kill matrix (a timed-out mutant is attributed to the
    tests that started and never finished). A mutant no test reaches is `NO_COVERAGE`, never
-   executed, and counts as surviving in the score. `-previous` copies forward KILLED / LIVED /
-   TIMEOUT only; NOT_VIABLE and NO_COVERAGE are recomputed, both being free.
+   executed, and counts as surviving in the score. A run that dies from outside the tests —
+   no `--- FAIL:` line, the runtime's `fatal error:`, a signal, or an exit code the testing
+   package never uses — is a `RUN_ERROR` (issue #27): no test failed, so the exit says
+   nothing about the mutant. It counts towards no score, `-previous` never copies it forward,
+   and `minimize` ignores it. `-previous` copies forward KILLED / LIVED / TIMEOUT only;
+   NOT_VIABLE and NO_COVERAGE are recomputed, both being free.
 3. **`criteria`.** `Criterion` (`Name`, `Rows`: test → labels) with `SiteCoverage` and
    `Mutation`; `Compose` unions weighted criteria into a `Matrix` of `Requirement{Label,
    Weight}` columns and `Test{Name, DurationMS, Covers bitset}` rows, sorted so the output is

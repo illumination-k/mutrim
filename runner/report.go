@@ -22,6 +22,13 @@ const (
 	// Timeout means the test binary exceeded the per-mutant timeout; it
 	// counts as killed in the totals, since the original suite passed.
 	Timeout Status = "TIMEOUT"
+	// RunError means the test binary died from outside the tests — the
+	// runtime hit a fatal error, the process was killed by a signal, or
+	// the binary exited with a code the testing package never uses — so
+	// nothing the run observed says anything about the mutant. It is no
+	// kill (nothing failed) and no survivor (nothing passed either): it
+	// counts towards no score and is executed again on the next run.
+	RunError Status = "RUN_ERROR"
 	// NoCoverage means no test reaches the mutant's site, so it was not
 	// executed; it counts as surviving in the totals.
 	NoCoverage Status = "NO_COVERAGE"
@@ -40,7 +47,10 @@ const (
 )
 
 // Executed reports whether the status came from running the tests, and
-// so is worth copying forward from a previous report.
+// so is worth copying forward from a previous report. A RUN_ERROR came
+// from outside the tests, so it says nothing about the mutant: copying
+// it forward would hide a mutant whose runs keep dying from
+// infrastructure, so it is executed again instead.
 func (s Status) Executed() bool {
 	return s == Killed || s == Lived || s == Timeout
 }
@@ -85,10 +95,14 @@ type Result struct {
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
 // timeout + lived + no_coverage), or zero when nothing is viable.
 type Totals struct {
-	Mutants    int `json:"mutants"`
-	Killed     int `json:"killed"`
-	Lived      int `json:"lived"`
-	Timeout    int `json:"timeout"`
+	Mutants int `json:"mutants"`
+	Killed  int `json:"killed"`
+	Lived   int `json:"lived"`
+	Timeout int `json:"timeout"`
+	// RunError counts the mutants whose run died from infrastructure: no
+	// test failed, so nothing the run observed says anything about them.
+	// They count towards no score and are never copied forward.
+	RunError   int `json:"run_error"`
 	NoCoverage int `json:"no_coverage"`
 	NotViable  int `json:"not_viable"`
 	Ignored    int `json:"ignored"`
@@ -139,6 +153,8 @@ func (r *Report) total() {
 			t.Lived++
 		case Timeout:
 			t.Timeout++
+		case RunError:
+			t.RunError++
 		case NoCoverage:
 			t.NoCoverage++
 		case NotViable:
@@ -170,6 +186,10 @@ type Spot struct {
 // WeakSpots lists the functions of mutants that have a surviving mutant
 // in reports, most survivors first. Mutants absent from every report are
 // ignored, so shard reports can be passed together.
+//
+// A RUN_ERROR mutant is no survivor — the run died from infrastructure,
+// so nothing was observed about the mutant — and counts towards nothing:
+// the function it is in is a weak spot only through its other mutants.
 func WeakSpots(mutants []mutator.Mutant, reports ...*Report) []Spot {
 	status := map[string]Status{}
 	for _, r := range reports {

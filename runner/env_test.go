@@ -131,9 +131,10 @@ func TestTestPattern(t *testing.T) {
 }
 
 // Only statuses that came from running the tests are copied forward from a
-// previous report.
+// previous report; a RUN_ERROR came from outside them, so it is executed
+// again instead.
 func TestStatusExecuted(t *testing.T) {
-	for s, want := range map[Status]bool{Killed: true, Lived: true, Timeout: true, NoCoverage: false, NotViable: false, "": false} {
+	for s, want := range map[Status]bool{Killed: true, Lived: true, Timeout: true, RunError: false, NoCoverage: false, NotViable: false, "": false} {
 		if got := s.Executed(); got != want {
 			t.Errorf("%q.Executed() = %v, want %v", s, got, want)
 		}
@@ -141,19 +142,22 @@ func TestStatusExecuted(t *testing.T) {
 }
 
 // Totals count every status; the score counts timeouts as kills and
-// unreached mutants as survivors, and is zero when nothing is viable.
+// unreached mutants as survivors, and is zero when nothing is viable. A
+// RUN_ERROR counts towards no score, so it is not in the denominator
+// either.
 func TestTotals(t *testing.T) {
 	r := &Report{Results: []Result{
 		{Status: Killed},
 		{Status: Killed},
 		{Status: Timeout},
 		{Status: Lived},
+		{Status: RunError},
 		{Status: NoCoverage},
 		{Status: NotViable},
 		{Status: NotViable},
 	}}
 	r.total()
-	want := Totals{Mutants: 7, Killed: 2, Lived: 1, Timeout: 1, NoCoverage: 1, NotViable: 2, Score: 0.6}
+	want := Totals{Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6}
 	if r.Totals != want {
 		t.Errorf("totals = %+v, want %+v", r.Totals, want)
 	}

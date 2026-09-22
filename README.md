@@ -107,6 +107,14 @@ the tests reaching it, and `report.json` holds the per-test kill matrix: `tests`
 duration, reached sites) and, per mutant, every test that killed it. A mutant no test reaches
 is `NO_COVERAGE` and never executed.
 
+A run that dies from outside the tests — the test binary exits without any `--- FAIL:` line
+after the runtime hit a `fatal error:`, the process was killed by a signal, or the binary
+exited with a code the testing package never uses — is a `RUN_ERROR`, never a kill: no test
+failed, so the exit says nothing about the mutant. It counts towards no score (`run -previous`
+never copies it forward, so the mutant is executed again), and `minimize` ignores it: it keeps
+no test alive and is no weak spot. A `--- FAIL:` or `panic:` line overrides it, since the
+failure then came from inside a test: the mutant is at fault and the run is a regular kill.
+
 `run -subtests` makes each subtest a row of that matrix instead of its parent: the baseline
 run names them (`=== RUN TestParse/empty_input`), each is traced on its own with
 `-test.run '^TestParse$/^empty_input$'`, and per mutant the reaching subtests of one parent
@@ -207,7 +215,8 @@ mutrim report -format github -mutants mutants.json report.json
 ```
 
 `KILLED`, `LIVED`, `TIMEOUT` and `NO_COVERAGE` map onto the schema's `Killed`, `Survived`,
-`Timeout` and `NoCoverage`; `NOT_VIABLE` is a `CompileError`, since the mutant never built,
+`Timeout` and `NoCoverage`; `RUN_ERROR` is a `RuntimeError`, which the schema keeps out of the
+score; `NOT_VIABLE` is a `CompileError`, since the mutant never built,
 and `IGNORED` and `SKIPPED` are `Ignored`, with the directive or filter that suppressed it,
 or `not in the diff`, as its `statusReason`. Each mutant carries the tests that reach it (`coveredBy`) and the ones that
 killed it (`killedBy`), so the viewer shows the kill matrix per mutant. A mutant no report

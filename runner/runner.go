@@ -5,6 +5,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -183,14 +184,19 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 // runMutant runs the rows reaching mutant id against it and merges the
 // outcomes. A -test.run pattern selects the subtests of one parent, so the
 // rows run in one process per parent; KILLED wins over TIMEOUT, which wins
-// over LIVED, and every process's killers are recorded, so killed_by is
-// the complete kill matrix.
+// over RUN_ERROR, which wins over LIVED, and every process's killers are
+// recorded, so killed_by is the complete kill matrix.
 //
 // A failure is a kill only when it is trustworthy: a row flaky marks fails
 // on its own, so its failure says nothing about the mutant, and with
 // Options.ConfirmKills the other failures must reproduce in every rerun.
 // The rest are recorded in suspicious_by, and a group whose every killer
 // turned suspicious counts as LIVED.
+//
+// A group that dies from infrastructure is a RUN_ERROR: no test failed, so
+// nothing can be said of the mutant. It never overrides a kill of another
+// group — that kill is a real observation — but it does override LIVED:
+// nothing was observed to pass either.
 func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration, flaky map[string]bool) (Result, error) {
 	r := Result{MutantID: id, Status: Lived}
 	for _, group := range groupByParent(rows) {
@@ -224,12 +230,16 @@ func (o Options) runMutant(ctx context.Context, id string, rows []string, timeou
 			// tells the mutant from the original.
 			status = Lived
 		}
-		if status == Killed || r.Status == Lived {
+		if rank[status] > rank[r.Status] {
 			r.Status = status
 		}
 	}
 	return r, nil
 }
+
+// rank orders the statuses of a group's run, weakest first: the run's own
+// verdicts count more than what it could not observe.
+var rank = map[Status]int{Lived: 0, RunError: 1, Timeout: 2, Killed: 3}
 
 // confirmKills reruns the rows that failed against mutant id, which share
 // a parent, until each of them has failed Options.ConfirmKills runs in
@@ -275,7 +285,9 @@ func suspicion(names []string) string {
 // ConfirmBaseline repeats each row, and the results are merged: the sites
 // of every run, the longest duration, and Flaky when the row failed in
 // some runs but not all. A row that fails every run is an error, like a
-// failing baseline.
+// failing baseline. A row whose run dies from infrastructure is an
+// error too: nothing was observed, so flakiness cannot be told from a
+// broken trace and the run stops.
 func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error) {
 	dir, err := os.MkdirTemp("", "mutrim-trace-")
 	if err != nil {
@@ -295,6 +307,9 @@ func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error)
 			res, err := o.exec(ctx, "", trace, testPattern([]string{name}), 0)
 			if err != nil {
 				return nil, err
+			}
+			if res.Status == RunError {
+				return nil, fmt.Errorf("runner: %s: infrastructure failure while run on its own; the tests must pass without a mutant\n%s", name, res.output)
 			}
 			if res.Status != Lived {
 				failures++
@@ -405,6 +420,16 @@ var (
 	runLine  = regexp.MustCompile(`(?m)^=== RUN\s+(\S+)$`)
 	doneLine = regexp.MustCompile(`(?m)^\s*--- (?:PASS|FAIL|SKIP): (\S+)`)
 	failLine = regexp.MustCompile(`(?m)^\s*--- FAIL: (\S+)`)
+	// panicLine matches the runtime's panic header, which a test's
+	// failure prints before any --- FAIL: line the run would show.
+	panicLine = regexp.MustCompile(`(?m)^panic:`)
+	// runtimeStack matches a goroutine dump, which the runtime prints
+	// around a fatal error or a panic it could not recover.
+	runtimeStack = regexp.MustCompile(`(?m)^goroutine \d+ \[`)
+	// fatalErrors are the runtime's fatal errors that never come from a
+	// test: out of memory, deadlocks, concurrent map misuse. The runtime
+	// prints them with a stack and exits 2.
+	fatalError = []byte("fatal error:")
 )
 
 // exec runs the tests the -test.run pattern selects (all when empty) with
@@ -440,11 +465,41 @@ func (o Options) exec(ctx context.Context, id, trace, pattern string, timeout ti
 	case err == nil:
 		res.Status = Lived
 	case errors.As(err, &exitErr):
-		res.Status = Killed
+		res.Status = classifyExit(res.output, exitErr.ExitCode())
 	default:
 		return nil, fmt.Errorf("runner: exec %s: %w", o.TestBin, err)
 	}
 	return res, nil
+}
+
+// classifyExit reclassifies the non-zero exit of the test binary. A ---
+// FAIL: or panic: line in the output means the failure came from inside
+// a test, so the tests' verdict stands: a kill, whatever else the run
+// printed (the gomutants rule). Otherwise anything that says the process
+// died from outside the tests is a RUN_ERROR — the infrastructure
+// failed, not the tests:
+//
+//   - the runtime hit a fatal error (out of memory, a deadlock), which
+//     looks the same from a mutant that deadlocks,
+//   - the process was killed by a signal (a sandbox kill): os.ExitCode
+//     reports -1, the parent's "signal: killed",
+//   - exit status 2 with a runtime stack (the runtime could not recover
+//     a signal, so it dumped the goroutines and exited), or
+//   - an exit code the testing package never uses, which only an os.Exit
+//     of the tests themselves or a mutant flipping the condition
+//     guarding one produces.
+//
+// Anything else — a bare exit 1 or 2 without a test failing — is a
+// kill: the testing package exits 1 when a test fails and 2 is left to
+// the binary itself, and no pattern tells those apart.
+func classifyExit(out []byte, exitCode int) Status {
+	if failLine.Match(out) || panicLine.Match(out) {
+		return Killed
+	}
+	if bytes.Contains(out, fatalError) || exitCode == -1 || (exitCode == 2 && runtimeStack.Match(out)) || exitCode >= 3 {
+		return RunError
+	}
+	return Killed
 }
 
 // started lists the tests a -test.v output started, in order, once each.

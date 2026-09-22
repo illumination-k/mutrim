@@ -29,6 +29,10 @@ const (
 	// flakyDir holds a fixture whose tests fail on the first process of a
 	// phase and pass afterwards; see its package comment.
 	flakyDir = "./testdata/flaky"
+	// runerrorDir holds a fixture whose library dies from outside its
+	// tests: a run of the branch mutant of Die exits the process instead
+	// of failing a test.
+	runerrorDir = "./testdata/runerror"
 )
 
 // buildFixture lowers the schemata fixture and compiles its test binary.
@@ -672,6 +676,71 @@ func TestRunConfirmsKillsAndBaseline(t *testing.T) {
 			t.Errorf("the mutant of Compared = %+v, want KILLED by TestStable with nothing suspicious", got)
 		}
 	})
+}
+
+// A run that dies from outside the tests is a RUN_ERROR, not a kill: no
+// test failed, so nothing the run observed says anything about the
+// mutant. It counts towards no score, is no weak spot, and a -previous
+// report never copies it forward: the next run executes the mutant
+// again, and since its first execution claimed the exit, this one
+// returns 0, the test fails, and the run is a regular kill instead.
+func TestRunInfraError(t *testing.T) {
+	bin, mutants := buildPkg(t, runerrorDir)
+	var target mutator.Mutant
+	for _, m := range mutants {
+		if m.Viable && m.Func == "Die" && m.Operator == "branch" && target.ID == "" {
+			target = m // the branch mutant of Die's first if, in source order
+		}
+	}
+	if target.ID == "" {
+		t.Fatal("fixture has no viable branch mutant of Die")
+	}
+	t.Setenv("MUTRIM_RUNERROR_STATE", t.TempDir())
+
+	first, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: runerrorDir, Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := result(t, first, target.ID)
+	if res.Status != runner.RunError || res.TestsRun != 1 || len(res.KilledBy) != 0 {
+		t.Fatalf("the branch mutant = %+v, want RUN_ERROR by no test", res)
+	}
+	if first.Totals.RunError == 0 {
+		t.Errorf("totals.run_error = %d, want at least the branch mutant", first.Totals.RunError)
+	}
+	// The score counts nothing the run died from: RUN_ERROR is not in
+	// its denominator.
+	if want := float64(first.Totals.Killed+first.Totals.Timeout) /
+		float64(first.Totals.Killed+first.Totals.Timeout+first.Totals.Lived+first.Totals.NoCoverage); first.Totals.Score != want {
+		t.Errorf("score = %v, want %v (RUN_ERROR excluded)", first.Totals.Score, want)
+	}
+
+	second, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: runerrorDir, Timeout: time.Second,
+		Previous: first, // the RUN_ERROR must not be copied forward
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res = result(t, second, target.ID); res.Status != runner.Killed || !slices.Equal(res.KilledBy, []string{"TestDie"}) {
+		t.Errorf("the branch mutant = %+v, want KILLED by TestDie (the previous RUN_ERROR executed again)", res)
+	}
+	if second.Totals.RunError != 0 {
+		t.Errorf("totals.run_error = %d, want 0 (the re-executed mutants no longer die)", second.Totals.RunError)
+	}
+}
+
+// A RUN_ERROR is not a survivor — the run died from infrastructure, so
+// nothing was observed about the mutant — and does not make its function
+// a weak spot either.
+func TestWeakSpotsIgnoresRunError(t *testing.T) {
+	mutant := mutator.Mutant{ID: "1", Pkg: "p", File: "p/a.go", Line: 4, Func: "Die", Operator: "branch"}
+	report := &runner.Report{Results: []runner.Result{{MutantID: "1", Status: runner.RunError}}}
+	if spots := runner.WeakSpots([]mutator.Mutant{mutant}, report); len(spots) != 0 {
+		t.Errorf("weak spots = %+v, want none (a RUN_ERROR is not a survivor)", spots)
+	}
 }
 
 // result is the report entry of one mutant.
