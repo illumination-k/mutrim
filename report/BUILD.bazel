@@ -1,0 +1,27 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "report",
+    srcs = [
+        "github.go",
+        "html.go",
+        "sources.go",
+        "stryker.go",
+    ],
+    importpath = "github.com/illumination-k/mutrim/report",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mutator",
+        "//runner",
+    ],
+)
+
+go_test(
+    name = "report_test",
+    srcs = ["report_test.go"],
+    deps = [
+        ":report",
+        "//mutator",
+        "//runner",
+    ],
+)

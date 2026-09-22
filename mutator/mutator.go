@@ -20,11 +20,16 @@ import (
 
 // Mutant is one entry of mutants.json.
 type Mutant struct {
-	ID          string `json:"id"`
-	Pkg         string `json:"pkg"`
-	File        string `json:"file"`
-	Line        int    `json:"line"`
-	Col         int    `json:"col"`
+	ID   string `json:"id"`
+	Pkg  string `json:"pkg"`
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Col  int    `json:"col"`
+	// EndLine and EndCol are one past the last character of the mutated
+	// span: the operator token of a binary expression, the whole node
+	// otherwise. Reports that highlight the source need them.
+	EndLine     int    `json:"end_line"`
+	EndCol      int    `json:"end_col"`
 	Func        string `json:"func"`
 	Operator    string `json:"operator"`
 	Description string `json:"description"`
@@ -54,6 +59,13 @@ func (s site) position() token.Pos {
 		return s.Pos
 	}
 	return s.Node.Pos()
+}
+
+func (s site) end() token.Pos {
+	if s.End.IsValid() {
+		return s.End
+	}
+	return s.Node.End()
 }
 
 // Options controls Generate.
@@ -88,13 +100,15 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 
 	mutants := make([]Mutant, 0, len(sites))
 	for _, s := range sites {
-		pos := pkg.Fset.Position(s.position())
+		pos, end := pkg.Fset.Position(s.position()), pkg.Fset.Position(s.end())
 		m := Mutant{
 			ID:          mutantID(pkg.PkgPath, s),
 			Pkg:         pkg.PkgPath,
 			File:        pos.Filename,
 			Line:        pos.Line,
 			Col:         pos.Column,
+			EndLine:     end.Line,
+			EndCol:      end.Column,
 			Func:        s.funcName,
 			Operator:    s.Operator,
 			Description: s.Description,

@@ -122,7 +122,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		case len(reachers[m.ID]) == 0:
 			r = Result{MutantID: m.ID, Status: NoCoverage}
 			logger.Printf("%s %s %s:%d %s %q", m.ID, r.Status, m.File, m.Line, m.Func, m.Description)
-		case cached && prev.Status.executed():
+		case cached && prev.Status.Executed():
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:

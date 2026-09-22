@@ -12,6 +12,7 @@ import (
 
 	"github.com/illumination-k/mutrim/criteria"
 	"github.com/illumination-k/mutrim/mutator"
+	"github.com/illumination-k/mutrim/report"
 	"github.com/illumination-k/mutrim/runner"
 )
 
@@ -323,12 +324,16 @@ func TestCommandErrors(t *testing.T) {
 	if err := os.WriteFile(malformed, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	report := filepath.Join(dir, "report.json")
-	if err := writeJSON(report, nil, runner.Report{Pkg: "example.com/a"}); err != nil {
+	reportFile := filepath.Join(dir, "report.json")
+	if err := writeJSON(reportFile, nil, runner.Report{Pkg: "example.com/a"}); err != nil {
 		t.Fatal(err)
 	}
 	other := filepath.Join(dir, "other.json")
 	if err := writeJSON(other, nil, runner.Report{Pkg: "example.com/b"}); err != nil {
+		t.Fatal(err)
+	}
+	mutantsFile := filepath.Join(dir, "mutants.json")
+	if err := writeJSON(mutantsFile, nil, []mutator.Mutant{}); err != nil {
 		t.Fatal(err)
 	}
 	const notADir = "/dev/null/x"
@@ -357,11 +362,21 @@ func TestCommandErrors(t *testing.T) {
 		"minimize no report":         {"minimize"},
 		"minimize missing report":    {"minimize", missing},
 		"minimize bad keep":          {"minimize", "-keep", "(", missing},
-		"minimize missing srcs":      {"minimize", "-srcs", missing, report},
-		"minimize several packages":  {"minimize", report, other},
-		"minimize missing mutants":   {"minimize", "-mutants", missing, report},
-		"minimize unwritable":        {"minimize", "-o", notADir, report},
-		"minimize unwritable matrix": {"minimize", "-matrix", notADir, report},
+		"minimize missing srcs":      {"minimize", "-srcs", missing, reportFile},
+		"minimize several packages":  {"minimize", reportFile, other},
+		"minimize missing mutants":   {"minimize", "-mutants", missing, reportFile},
+		"minimize unwritable":        {"minimize", "-o", notADir, reportFile},
+		"minimize unwritable matrix": {"minimize", "-matrix", notADir, reportFile},
+		"report bad flag":            {"report", "-bogus"},
+		"report without mutants":     {"report", reportFile},
+		"report no report":           {"report", "-mutants", missing},
+		"report missing mutants":     {"report", "-mutants", missing, reportFile},
+		"report malformed mutants":   {"report", "-mutants", malformed, reportFile},
+		"report missing report":      {"report", "-mutants", mutantsFile, missing},
+		"report missing srcs":        {"report", "-mutants", mutantsFile, "-srcs", missing, reportFile},
+		"report unknown format":      {"report", "-format", "sarif", "-mutants", mutantsFile, reportFile},
+		"report unwritable":          {"report", "-o", notADir, "-mutants", mutantsFile, reportFile},
+		"report unwritable html":     {"report", "-format", "html", "-o", notADir, "-mutants", mutantsFile, reportFile},
 	}
 	for name, args := range cases {
 		var stdout bytes.Buffer
@@ -481,5 +496,89 @@ func TestMinimize(t *testing.T) {
 	}
 	if len(unprotected.Redundant) != 3 || len(unprotected.WeakSpots) != 0 {
 		t.Errorf("without protection the by-name and tagged tests are redundant too: %+v, %+v", unprotected.Redundant, unprotected.WeakSpots)
+	}
+}
+
+// `report` renders a real run in each of its formats: the Stryker JSON
+// with the source text of the mutated files, that JSON inside the HTML
+// viewer, and an annotation per surviving mutant.
+func TestReport(t *testing.T) {
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
+	}
+	bin := filepath.Join(dir, "schemata.test")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, schemataFixture) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	reportPath := filepath.Join(dir, "report.json")
+	if err := run(t.Context(), []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-timeout", "1s", "-out", reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+	var ran runner.Report
+	if err := readJSON(reportPath, &ran); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	if err := run(t.Context(), []string{"report", "-mutants", mutantsPath, "-srcs", schemataFixture, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("report: %v\n%s", err, stderr.String())
+	}
+	var stryker report.Stryker
+	if err := json.Unmarshal(stdout.Bytes(), &stryker); err != nil {
+		t.Fatalf("report output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if stryker.SchemaVersion != "2" || len(stryker.Files) != 1 {
+		t.Fatalf("stryker report = %+v", stryker)
+	}
+	mutants := 0
+	for name, f := range stryker.Files {
+		if !strings.HasSuffix(name, "schemata.go") {
+			t.Errorf("unexpected file %q", name)
+		}
+		if !strings.Contains(f.Source, "package schemata") {
+			t.Errorf("%s: source not read from -srcs: %q", name, f.Source)
+		}
+		mutants += len(f.Mutants)
+	}
+	if mutants != len(ran.Results) {
+		t.Errorf("stryker has %d mutants, the run reported %d", mutants, len(ran.Results))
+	}
+	if got := len(stryker.TestFiles[""].Tests); got != len(ran.Tests) {
+		t.Errorf("stryker has %d tests, the run reported %d", got, len(ran.Tests))
+	}
+
+	htmlPath := filepath.Join(dir, "mutation-report.html")
+	stdout.Reset()
+	if err := run(t.Context(), []string{"report", "-format", "html", "-mutants", mutantsPath, "-srcs", schemataFixture, "-o", htmlPath, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("report -format html: %v\n%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("-o must not write to stdout: %s", stdout.String())
+	}
+	html, err := os.ReadFile(htmlPath) //nolint:gosec // test-controlled path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(html, []byte("<mutation-test-report-app")) || !bytes.Contains(html, []byte(`"schemaVersion":"2"`)) {
+		t.Errorf("HTML view does not embed the report:\n%s", html)
+	}
+
+	stdout.Reset()
+	if err := run(t.Context(), []string{"report", "-format", "github", "-mutants", mutantsPath, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("report -format github: %v\n%s", err, stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	survivors := ran.Totals.Lived + ran.Totals.NoCoverage
+	if survivors == 0 || len(lines) != survivors {
+		t.Fatalf("%d annotations for %d survivors:\n%s", len(lines), survivors, stdout.String())
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "::warning file=") || !strings.Contains(line, "::") {
+			t.Errorf("not a workflow command: %q", line)
+		}
 	}
 }
