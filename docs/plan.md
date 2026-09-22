@@ -121,16 +121,18 @@ Goal: one build per package; the test binary re-executed per mutant.
    and pins the generated file with a golden.
 2. **Runner** (`mutrim run -test-bin <path> -mutants mutants.json`). For each viable mutant
    whose `id % TEST_TOTAL_SHARDS == TEST_SHARD_INDEX`: exec the binary with `GOMUTANT_ID=id`,
-   `-test.v -test.failfast` and a timeout (default 3× the baseline run, at least 10s: tests that
-   spawn the Go toolchain can miss the build cache under a mutant), classify
+   `-test.v -test.failfast` and a timeout (issue #31: `-timeout-factor` (3) × the traced
+   durations of the tests reaching the mutant + `-timeout-const` (2s), at least 10s — tests that
+   spawn the Go toolchain can miss the build cache under a mutant — and at most
+   `-timeout-factor` × the baseline run; `-timeout` overrides it), classify
    KILLED / LIVED / TIMEOUT / RUN_ERROR (issue #27: a run that dies from outside the tests —
    no `--- FAIL:` line, a `fatal error:`, a signal, an exit code the testing package never
    uses — is never a kill; a `--- FAIL:` or `panic:` line overrides it). `-tests` is an
    allowlist for `-test.run`; without it the whole
    binary runs (Phase 4 narrows by per-test coverage and drops failfast).
 3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
-   `{mutant_id, status, tests_run, killed_by, duration_ms}` plus totals and the baseline /
-   timeout used. TIMEOUT counts as KILLED in the score; RUN_ERROR counts towards no score
+   `{mutant_id, status, tests_run, killed_by, duration_ms, timeout_ms}` plus totals, the
+   baseline and the timeout cap. TIMEOUT counts as KILLED in the score; RUN_ERROR counts towards no score
    (`totals.run_error`) and is never copied forward.
 4. **Incremental re-runs.** `-previous report.json`: mutants whose ID is present are copied
    forward; new IDs are executed; `NOT_VIABLE` is always recomputed from `mutants.json`. IDs

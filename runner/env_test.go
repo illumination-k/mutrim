@@ -3,6 +3,7 @@ package runner
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 // The test binary sees the mutant and nothing of Bazel's test protocol,
@@ -165,5 +166,30 @@ func TestTotals(t *testing.T) {
 	r.total()
 	if r.Totals.Score != 0 || r.Totals.Mutants != 1 {
 		t.Errorf("totals of nothing viable = %+v", r.Totals)
+	}
+}
+
+// The derived timeout follows the durations of the rows reaching the
+// mutant, between MinTimeout and the cap; Options.Timeout overrides it.
+func TestMutantTimeout(t *testing.T) {
+	durations := map[string]int64{"TestFast": 5, "TestSlow": 20_000, "TestMid": 4_000}
+	maxTimeout := 60 * time.Second
+	o := Options{TimeoutFactor: 3, TimeoutConst: 2 * time.Second}
+	for _, tc := range []struct {
+		rows []string
+		want time.Duration
+	}{
+		{[]string{"TestFast"}, MinTimeout},
+		{[]string{"TestMid"}, 14 * time.Second},
+		{[]string{"TestFast", "TestMid"}, 14015 * time.Millisecond},
+		{[]string{"TestSlow", "TestMid"}, maxTimeout},
+	} {
+		if got := o.mutantTimeout(tc.rows, durations, maxTimeout); got != tc.want {
+			t.Errorf("mutantTimeout(%v) = %s, want %s", tc.rows, got, tc.want)
+		}
+	}
+	o.Timeout = time.Second
+	if got := o.mutantTimeout([]string{"TestSlow"}, durations, maxTimeout); got != time.Second {
+		t.Errorf("Options.Timeout must override: got %s", got)
 	}
 }
