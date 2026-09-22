@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/illumination-k/mutrim/criteria"
@@ -60,7 +61,11 @@ commands:
             functions whose mutants survive, and the tests found flaky
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
-            or GitHub Actions annotations`
+            or GitHub Actions annotations
+  bazel-test
+            the test executable of the mutation_test macro: run, then
+            minimize and report into TEST_UNDECLARED_OUTPUTS_DIR, with
+            every path a runfiles path`
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -84,6 +89,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runMinimize(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "bazel-test":
+		return runBazelTest(ctx, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
@@ -494,6 +501,84 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("report: unknown -format %q", *format)
 	}
+}
+
+// runBazelTest is `mutrim bazel-test`, the test executable of the
+// mutation_test macro. Its flags and arguments are runfiles paths: the
+// arguments are the library sources, which the reports quote; flags after
+// "--" go to `mutrim run`. It runs the mutants, then writes report.json,
+// minimize.json and mutation-report.json / .html to
+// TEST_UNDECLARED_OUTPUTS_DIR. MUTRIM_IN_DIFF, when set, is the diff the
+// run is scoped to (`run -in-diff`).
+func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("bazel-test", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	testBin := fs.String("test-bin", "", "runfiles path of the schemata test binary (required)")
+	mutantsPath := fs.String("mutants", "", "runfiles path of mutants.json (required)")
+	var testSrcs []string
+	fs.Func("test-src", "runfiles path of a test source, scanned for the mutrim:keep tag (repeatable)", func(s string) error {
+		testSrcs = append(testSrcs, s)
+		return nil
+	})
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *testBin == "" || *mutantsPath == "" {
+		return errors.New("bazel-test: -test-bin and -mutants are required")
+	}
+	out := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if out == "" {
+		return errors.New("bazel-test: TEST_UNDECLARED_OUTPUTS_DIR is not set; run it under bazel test")
+	}
+	libSrcs, runFlags := fs.Args(), []string(nil)
+	if i := slices.Index(libSrcs, "--"); i >= 0 {
+		libSrcs, runFlags = libSrcs[:i], libSrcs[i+1:]
+	}
+
+	rf, err := runfiles.New()
+	if err != nil {
+		return err
+	}
+	files, err := rlocations(rf, []string{*testBin, *mutantsPath})
+	if err != nil {
+		return err
+	}
+	bin, mutants := files[0], files[1]
+	if testSrcs, err = rlocations(rf, testSrcs); err != nil {
+		return err
+	}
+	if libSrcs, err = rlocations(rf, libSrcs); err != nil {
+		return err
+	}
+
+	rep := filepath.Join(out, "report.json")
+	runArgs := slices.Concat([]string{"run"}, runFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
+	if diff := os.Getenv("MUTRIM_IN_DIFF"); diff != "" {
+		runArgs = append(runArgs, "-in-diff", diff)
+	}
+	if err := run(ctx, runArgs, stdout, stderr); err != nil {
+		return err
+	}
+	// Each output reads only report.json, so one failing leaves the others
+	// written.
+	srcs := strings.Join(libSrcs, ",")
+	return errors.Join(
+		run(ctx, []string{"minimize", "-mutants", mutants, "-srcs", strings.Join(testSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
+		run(ctx, []string{"report", "-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
+		run(ctx, []string{"report", "-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
+	)
+}
+
+// rlocations resolves runfiles paths to paths on disk.
+func rlocations(rf *runfiles.Runfiles, paths []string) ([]string, error) {
+	resolved := make([]string, len(paths))
+	for i, p := range paths {
+		var err error
+		if resolved[i], err = rf.Rlocation(p); err != nil {
+			return nil, err
+		}
+	}
+	return resolved, nil
 }
 
 // shardEnv reads Bazel's sharding protocol and acknowledges it by touching
