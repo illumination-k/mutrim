@@ -136,3 +136,6 @@ schemata.go:143 NoSiteArrayKey "3 -> 4" KILLED by TestConstants
 schemata.go:146 Untested "return -> zero values" NO_COVERAGE
 schemata.go:146 Untested "+ -> -" NO_COVERAGE
 schemata.go:146 Untested "1 -> 2" NO_COVERAGE
+schemata.go:152 Disabled "return -> zero values" IGNORED
+schemata.go:152 Disabled "+ -> -" IGNORED
+schemata.go:152 Disabled "1 -> 2" IGNORED

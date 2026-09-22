@@ -108,7 +108,8 @@ mutrim_schemata = go_rule(
         ),
         "operators": attr.string_list(
             doc = """Operators to apply, as `mutrim gen -operators` takes them: names,
-"default", and "-name" to remove one. Empty applies every operator.""",
+"default", and "-name" to remove one. Empty applies every operator. Single sites and
+functions are suppressed in the source instead, with a `//mutrim:disable` directive.""",
         ),
         "_mutrim": attr.label(
             default = Label("//cmd/mutrim"),

@@ -29,6 +29,11 @@ type Mutant struct {
 	Operator    string `json:"operator"`
 	Description string `json:"description"`
 	Viable      bool   `json:"viable"`
+	// Ignored means an inline //mutrim:disable directive suppressed the
+	// site: the mutant is reported but never built or executed.
+	Ignored bool `json:"ignored,omitempty"`
+	// Reason is the text the directive gave for ignoring the mutant.
+	Reason string `json:"reason,omitempty"`
 
 	site site
 }
@@ -66,10 +71,12 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 
 	ctx := &Context{Fset: pkg.Fset, Pkg: pkg.Types, Info: pkg.TypesInfo}
 	var sites []site
+	dis := map[*ast.File]disables{}
 	for _, f := range pkg.Syntax {
 		if excluded(pkg, f) {
 			continue
 		}
+		dis[f] = parseDisables(pkg.Fset, f)
 		sites = append(sites, collectSites(f, ctx, ops)...)
 	}
 
@@ -88,7 +95,10 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			Viable:      true,
 			site:        s,
 		}
-		if opts.TypeCheck && s.Check != nil {
+		switch reason, ignored := dis[s.file].find(pos.Line, s.Operator); {
+		case ignored:
+			m.Ignored, m.Reason = true, reason
+		case opts.TypeCheck && s.Check != nil:
 			s.Apply()
 			m.Viable = s.Check() == nil
 			s.Undo()

@@ -38,7 +38,9 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 		t.Fatal(err)
 	}
 	for i := range mutants {
-		mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
+		if !mutants[i].Ignored {
+			mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
+		}
 	}
 
 	dir := t.TempDir()
@@ -155,16 +157,17 @@ func TestRunReportGolden(t *testing.T) {
 	}
 
 	tot := report.Totals
-	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable != tot.Mutants {
+	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored != tot.Mutants {
 		t.Errorf("totals do not add up: %+v", tot)
 	}
-	if tot.Timeout != 1 || tot.Lived != 0 || tot.NoCoverage != 3 || tot.NotViable != 18 {
+	if tot.Timeout != 1 || tot.Lived != 0 || tot.NoCoverage != 3 || tot.NotViable != 18 || tot.Ignored != 3 {
 		t.Errorf("unexpected totals: %+v", tot)
 	}
 	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
 		t.Errorf("score = %v, want %v", tot.Score, want)
 	}
 
+	// Disabled is not a weak spot: its mutants were suppressed, not survivors.
 	spots := runner.WeakSpots(mutants, report)
 	if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 3 || spots[0].Killed != 0 || spots[0].Line != 146 {
 		t.Errorf("weak spots = %+v, want Untested with three unreached mutants", spots)

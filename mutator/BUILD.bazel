@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library")
 go_library(
     name = "mutator",
     srcs = [
+        "directive.go",
         "load.go",
         "loadfiles.go",
         "mutator.go",

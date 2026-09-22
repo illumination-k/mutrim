@@ -35,8 +35,12 @@ func render(t *testing.T, pkg *packages.Package, ms []mutator.Mutant) string {
 	t.Helper()
 	var b strings.Builder
 	for _, m := range ms {
-		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v | %s\n",
-			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable,
+		ignored := ""
+		if m.Ignored {
+			ignored = fmt.Sprintf(" ignored=%q", m.Reason)
+		}
+		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v%s | %s\n",
+			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable, ignored,
 			mutatedLine(t, pkg, m))
 	}
 	return b.String()
@@ -56,7 +60,7 @@ func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
 }
 
 func TestGenerateGolden(t *testing.T) {
-	for _, name := range []string{"relational", "arith", "logical", "bitwise", "constant", "control", "stmt", "ret", "excluded"} {
+	for _, name := range []string{"relational", "arith", "logical", "bitwise", "constant", "control", "stmt", "ret", "excluded", "disable"} {
 		t.Run(name, func(t *testing.T) {
 			pkg := load(t, name)
 			mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})

@@ -19,6 +19,32 @@ go test -overlay overlay.json ./path/to/pkg
 
 A failing `go test` means the mutant was killed.
 
+## Inline directives
+
+`gen -operators` is the global switch; comments are the local one. A suppressed site still
+appears in `mutants.json` (`"ignored": true` with the directive's `reason`) and is reported
+`IGNORED`: it is never built, never executed and never scored, so the count stays visible.
+
+```go
+//mutrim:disable [op,...] [reason]            // until //mutrim:enable
+//mutrim:disable-next-line [op,...] [reason]  // the line below
+//mutrim:disable-func [op,...] [reason]       // in a function's doc comment
+//mutrim:enable                               // closes every open disable
+```
+
+```go
+func Retry(attempts int) error {
+	//mutrim:disable-next-line relational,constant the bound is arbitrary
+	for i := 0; i < 3; i++ {
+	}
+	return nil
+}
+```
+
+The operator list is optional and defaults to every operator, which `all` spells explicitly.
+A first word that does not name operators starts the reason instead, so a reason never needs
+quoting. A `//mutrim:disable` that nothing closes runs to the end of the file.
+
 ## Usage (schemata: one build, all mutants)
 
 ```bash

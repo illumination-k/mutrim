@@ -28,6 +28,10 @@ const (
 	// NotViable means the mutant was never executed: it did not
 	// type-check or could not be embedded as schemata.
 	NotViable Status = "NOT_VIABLE"
+	// Ignored means an inline //mutrim:disable directive suppressed the
+	// mutant, so it was never built; like a not-viable one it is not
+	// scored, but the count keeps the suppression visible.
+	Ignored Status = "IGNORED"
 )
 
 // executed reports whether the status came from running the tests, and
@@ -68,6 +72,7 @@ type Totals struct {
 	Timeout    int     `json:"timeout"`
 	NoCoverage int     `json:"no_coverage"`
 	NotViable  int     `json:"not_viable"`
+	Ignored    int     `json:"ignored"`
 	Score      float64 `json:"score"`
 }
 
@@ -111,6 +116,8 @@ func (r *Report) total() {
 			t.NoCoverage++
 		case NotViable:
 			t.NotViable++
+		case Ignored:
+			t.Ignored++
 		}
 	}
 	if viable := t.Killed + t.Timeout + t.Lived + t.NoCoverage; viable > 0 {

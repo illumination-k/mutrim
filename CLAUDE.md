@@ -73,13 +73,13 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                                              | Depends on                          |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output, schemata lowering. Bazel-independent   | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites | stdlib only                         |
-| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental    | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`    | `bits-and-blooms/bitset`            |
-| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)              | `criteria`, `bitset`, `go/parser`   |
+| Package    | Responsibility                                                                                                                                                  | Depends on                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                     | stdlib only                         |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental                                        | `mutator` (for `Mutant`)            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                        | `bits-and-blooms/bitset`            |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                  | `criteria`, `bitset`, `go/parser`   |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -115,6 +115,12 @@ run on the result.
   mutant cannot kill it, reported `NO_COVERAGE`) and build-agnostic; its blind spot is code
   with no mutant site at all.
 - Exclude: `_test.go`, `.pb.go`, `mock_*.go`, `//go:generate` outputs, cgo.
+- Inline directives are the local switch next to `gen -operators`: `//mutrim:disable
+  [op,...] [reason]` (until `//mutrim:enable`), `-next-line`, and `-func` in a function's
+  doc comment. They are read from the raw comment lines, like `//mutrim:keep`, and an
+  unknown verb is left alone since the namespace is shared. A suppressed site keeps its
+  entry in `mutants.json` (`ignored`, `reason`), is not embedded as schemata and is
+  reported `IGNORED`: never built, never executed, never scored (Stryker semantics).
 
 ### Bazel integration: mutant schemata
 

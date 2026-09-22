@@ -115,6 +115,8 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 		var r Result
 		switch prev, cached := previous[m.ID]; {
+		case m.Ignored:
+			r = Result{MutantID: m.ID, Status: Ignored}
 		case !m.Viable:
 			r = Result{MutantID: m.ID, Status: NotViable}
 		case len(reachers[m.ID]) == 0:
