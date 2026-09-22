@@ -10,6 +10,7 @@ go_library(
         "ops_binary.go",
         "ops_return.go",
         "ops_stmt.go",
+        "ops_unary.go",
         "overlay.go",
         "schemata.go",
     ],
