@@ -187,9 +187,11 @@ loading/analysis.
 
 - `mutation_test(name, srcs, embed, deps, shard_count)` mirrors the package's `go_test`:
   `mutrim_schemata` lowers the embedded library (one `MutrimGen` action) and provides it as a
-  `GoInfo` with the same import path; a `go_test` embeds it (the identity check); an `sh_test`
-  re-execs that binary per mutant with `GOMUTANT_ID=k` and writes `report.json`
-  (KILLED / LIVED / TIMEOUT) to the undeclared outputs. TIMEOUT counts as KILLED. The runner
+  `GoInfo` with the same import path; a `go_test` embeds it (the identity check); a test rule
+  whose executable is `mutrim` itself (`mutrim bazel-test`, no shell) re-execs that binary per
+  mutant with `GOMUTANT_ID=k` and writes `report.json` (KILLED / LIVED / TIMEOUT), then
+  `minimize.json` and the Stryker reports, to the undeclared outputs; its arguments are
+  runfiles paths, resolved with rules_go's `go/runfiles`. TIMEOUT counts as KILLED. The runner
   drops Bazel's test-protocol variables from the child environment, since the rules_go test
   main would otherwise shard, filter and report a second time.
 - Sharding via `shard_count` + `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` (`id % TOTAL == INDEX`).
