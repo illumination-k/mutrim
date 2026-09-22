@@ -95,8 +95,8 @@ func SkipRecover(f func()) (caught bool) {
 	return false
 }
 
-func SkipMapPost(m map[int]int) {
-	for ; m[0] < 3; m[0]++ {
+func SkipMapPost(m map[int]int, k int) {
+	for ; m[k] < 3; m[k]++ {
 	}
 }
 
@@ -129,6 +129,18 @@ func SkipNamedBoolCond(f Flag) int {
 	}
 	return 0
 }
+
+// Numeric literals: a typed basic literal goes through the runtime with
+// its type spelled out (go/types gives a literal its converted type even
+// in an interface context); a defined type and an operand of a constant
+// shift are declined; where Go requires a constant there is no site.
+func Offset(x int64) int64                         { return x + 1 }
+func Quarter(x float64) float64                    { return x * 0.25 }
+func SkipNamedConst(d time.Duration) time.Duration { return d + 1 }
+func Boxed() any                                   { return 7 }
+func SkipShiftConst(x float64) float64             { return 1<<2 + x }
+func NoSiteArrayLen() int                          { var a [2]int; return len(a) }
+func NoSiteArrayKey() int                          { return []int{3: 9}[3] }
 
 // Untested has no test, so its mutants live.
 func Untested(x int) int { return x + 1 }

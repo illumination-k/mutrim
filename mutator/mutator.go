@@ -154,6 +154,7 @@ func (w *walker) visit(n ast.Node) bool {
 
 	ctx := *w.ctx
 	ctx.Sig = w.sigs[len(w.sigs)-1]
+	ctx.Path = w.nodes[:len(w.nodes)-1]
 	astPath := strings.Join(w.path, "/")
 	for _, op := range w.ops {
 		for _, s := range op.Sites(&ctx, n) {

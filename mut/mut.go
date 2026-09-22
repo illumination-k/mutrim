@@ -183,6 +183,16 @@ func Cond(id string, c, forced bool) bool {
 	return c
 }
 
+// Const returns orig, or mutant when id is active. Schemata spell a
+// literal's type on orig (`mut.Const(id, int64(5), 6)`), so the mutant
+// converts to it as the literal did.
+func Const[T Number](id string, orig, mutant T) T {
+	if Active(id) {
+		return mutant
+	}
+	return orig
+}
+
 // Not returns c, or !c when id is active. It lowers condition negation and
 // the == <-> != swap, which is exactly a negation for every Go type.
 func Not(id string, c bool) bool {

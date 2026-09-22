@@ -8,3 +8,4 @@ ret.go:21:48 Named return "return -> zero values" viable=true | func Named(x ID)
 ret.go:22:48 Multi return "return -> zero values" viable=true | func Multi(x int) (int, error)               { return 0, nil }
 ret.go:23:48 Fn return "return -> zero values" viable=true | func Fn() func()                             { return nil }
 ret.go:24:48 Unsafe return "return -> zero values" viable=true | func Unsafe(p unsafe.Pointer) unsafe.Pointer { return nil }
+ret.go:30:43 AlreadyZero constant "0 -> 1" viable=true | func AlreadyZero() (int, error)  { return 1, nil }

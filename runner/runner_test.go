@@ -85,7 +85,7 @@ func TestRunReportGolden(t *testing.T) {
 	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 3000 {
 		t.Errorf("unexpected report metadata: %+v", report)
 	}
-	if !strings.Contains(logs.String(), "timeout 3s, 10 tests\n") {
+	if !strings.Contains(logs.String(), "timeout 3s, 11 tests\n") {
 		t.Errorf("the baseline must run every test:\n%s", logs.String())
 	}
 	// Every top-level test ran on its own and reached some sites.
@@ -99,8 +99,8 @@ func TestRunReportGolden(t *testing.T) {
 			t.Errorf("test row %+v", tt)
 		}
 	}
-	if len(reached) != 10 {
-		t.Errorf("tests = %d rows, want 10", len(reached))
+	if len(reached) != 11 {
+		t.Errorf("tests = %d rows, want 11", len(reached))
 	}
 	for _, r := range report.Results {
 		switch r.Status {
@@ -158,7 +158,7 @@ func TestRunReportGolden(t *testing.T) {
 	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable != tot.Mutants {
 		t.Errorf("totals do not add up: %+v", tot)
 	}
-	if tot.Timeout != 1 || tot.Lived != 0 || tot.NoCoverage != 2 || tot.NotViable != 12 {
+	if tot.Timeout != 1 || tot.Lived != 0 || tot.NoCoverage != 3 || tot.NotViable != 18 {
 		t.Errorf("unexpected totals: %+v", tot)
 	}
 	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
@@ -166,8 +166,8 @@ func TestRunReportGolden(t *testing.T) {
 	}
 
 	spots := runner.WeakSpots(mutants, report)
-	if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 2 || spots[0].Killed != 0 || spots[0].Line != 134 {
-		t.Errorf("weak spots = %+v, want Untested with two unreached mutants", spots)
+	if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 3 || spots[0].Killed != 0 || spots[0].Line != 146 {
+		t.Errorf("weak spots = %+v, want Untested with three unreached mutants", spots)
 	}
 	if none := runner.WeakSpots(nil, report); none == nil || len(none) != 0 {
 		t.Errorf("weak spots of nothing = %#v, want an empty list (JSON [])", none)

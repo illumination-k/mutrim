@@ -114,6 +114,18 @@ func TestCalls(t *testing.T) {
 	}
 }
 
+func TestConstants(t *testing.T) {
+	if Offset(1) != 2 || Quarter(8) != 2 {
+		t.Error("Offset/Quarter")
+	}
+	if SkipNamedConst(1) != 2 || Boxed() != 7 {
+		t.Error("SkipNamedConst/Boxed")
+	}
+	if SkipShiftConst(1) != 5 || NoSiteArrayLen() != 2 || NoSiteArrayKey() != 9 {
+		t.Error("SkipShiftConst/NoSite*")
+	}
+}
+
 func TestStatements(t *testing.T) {
 	if Sign(1) != 1 || Sign(0) != -1 || Sign(-1) != -1 {
 		t.Error("Sign")
@@ -159,7 +171,7 @@ func TestSkipped(t *testing.T) {
 		t.Error("SkipRecover")
 	}
 	m := map[int]int{}
-	SkipMapPost(m)
+	SkipMapPost(m, 0)
 	if m[0] != 3 {
 		t.Error("SkipMapPost")
 	}

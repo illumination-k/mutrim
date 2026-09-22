@@ -355,13 +355,13 @@ func TestMinimize(t *testing.T) {
 	if len(protected) != 2 || !protected["TestRegression_Sign"] || !protected["TestTagged"] {
 		t.Errorf("protected = %v, want TestRegression_Sign (by name) and TestTagged (by tag)", protected)
 	}
-	if len(result.Selected) != 9 {
-		t.Errorf("selected = %+v, want the 9 non-redundant tests", result.Selected)
+	if len(result.Selected) != 10 {
+		t.Errorf("selected = %+v, want the 10 non-redundant tests", result.Selected)
 	}
 	if len(result.Redundant) != 1 || result.Redundant[0].Name != "TestLessRedundant" || strings.Join(result.Redundant[0].SubsumedBy, ",") != "TestComparisons" {
 		t.Errorf("redundant = %+v, want TestLessRedundant subsumed by TestComparisons", result.Redundant)
 	}
-	if len(result.WeakSpots) != 1 || result.WeakSpots[0].Func != "Untested" || result.WeakSpots[0].NoCoverage != 2 {
+	if len(result.WeakSpots) != 1 || result.WeakSpots[0].Func != "Untested" || result.WeakSpots[0].NoCoverage != 3 {
 		t.Errorf("weak_spots = %+v, want Untested", result.WeakSpots)
 	}
 
@@ -369,7 +369,7 @@ func TestMinimize(t *testing.T) {
 	if err := readJSON(matrixPath, &matrix); err != nil {
 		t.Fatal(err)
 	}
-	if len(matrix.Tests) != 10 || len(matrix.Requirements) == 0 {
+	if len(matrix.Tests) != 11 || len(matrix.Requirements) == 0 {
 		t.Errorf("matrix has %d tests and %d requirements", len(matrix.Tests), len(matrix.Requirements))
 	}
 	kills, sites := 0, 0

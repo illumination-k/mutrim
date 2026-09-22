@@ -51,7 +51,7 @@ func ConstLeft(x int) bool {
 		if mut.Active("c07b3fb172260e5c") {
 			return false
 		}
-		return mut.Cmp("6ad270dfb1805fd8", 10, x, "<", "<=")
+		return mut.Cmp("6ad270dfb1805fd8", mut.Const("6f9a52869d353dc4", int(10), 11), x, "<", "<=")
 	}
 }
 func IsNil(p *int) bool {
@@ -140,7 +140,7 @@ func Half(x float64) float64 {
 		if mut.Active("69dba3e15eed47db") {
 			return 0
 		}
-		return mut.Arith("17715f3be77a5f3e", x, 0.5, "*", "/")
+		return mut.Arith("17715f3be77a5f3e", x, mut.Const("e960fdea501e37d4", float64(0.5), 1.5), "*", "/")
 	}
 }
 func Sum[T int | float64](a, b T) T { return mut.Arith("8300bc4c99bc1d49", a, b, "+", "-") }
@@ -149,7 +149,7 @@ func Shift(n uint) int {
 		if mut.Active("c1669c46a27a8f7f") {
 			return 0
 		}
-		return mut.Arith("1f743c242248ec92", 1<<n, 1, "+", "-")
+		return mut.Arith("1f743c242248ec92", mut.Const("c1f239c651c5b2a4", int(1), 2)<<n, mut.Const("65abc0ce6114c5c1", int(1), 2), "+", "-")
 	}
 }
 
@@ -187,25 +187,25 @@ func Between(a, b, c int) bool {
 }
 
 func Sign(x int) int {
-	if mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, 0, ">", ">=")), true), false) {
+	if mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, mut.Const("8fdd8f886b9db127", int(0), 1), ">", ">=")), true), false) {
 		{
 			if mut.Active("66dde5f45f2543a6") {
 				return 0
 			}
-			return 1
+			return mut.Const("7e462188e672fa27", int(1), 2)
 		}
 	}
 	{
 		if mut.Active("39774c0950282d59") {
 			return 0
 		}
-		return -1
+		return -mut.Const("ec9b6bc5d69073cb", int(1), 2)
 	}
 }
 
 func CountTo(n int) int {
-	c := 0
-	for i := 0; mut.Not("5adc5ee4ed84265b", mut.Cmp("10bc891894f8cba2", i, n, "<", "<=")); mut.Inc("ee70f52e628e38ee", &i) {
+	c := mut.Const("36766ecd38bd6931", int(0), 1)
+	for i := mut.Const("84a2c361b94b85ea", int(0), 1); mut.Not("5adc5ee4ed84265b", mut.Cmp("10bc891894f8cba2", i, n, "<", "<=")); mut.Inc("ee70f52e628e38ee", &i) {
 		mut.Inc("fa46b33096c8373e", &c)
 	}
 	{
@@ -232,7 +232,7 @@ func (c *Counter) Inc() { mut.Inc("1cda4f2b33620015", &c.n) }
 
 func Classify(x int) string {
 	switch {
-	case mut.Cmp("cd9dbacb2034e5e3", x, 0, "<", "<="):
+	case mut.Cmp("cd9dbacb2034e5e3", x, mut.Const("5f5a3eed71e5ba20", int(0), 1), "<", "<="):
 		{
 			if mut.Active("399ca6ea6976fdfc") {
 				return ""
@@ -295,8 +295,8 @@ func SkipRecover(f func()) (caught bool) {
 	return false
 }
 
-func SkipMapPost(m map[int]int) {
-	for ; mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[0], 3, "<", "<=")); m[0]++ {
+func SkipMapPost(m map[int]int, k int) {
+	for ; mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[k], mut.Const("5cb4e302d80ccb19", int(3), 4), "<", "<=")); m[k]++ {
 	}
 }
 
@@ -345,9 +345,9 @@ func Twice(log *[]string) {
 }
 
 func SkipInitCall(log *[]string) int {
-	n := 0
-	for Record(log, "init"); mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, 2, "<", "<=")); Record(log, "post") {
-		n += 2
+	n := mut.Const("8bf3562f116152b2", int(0), 1)
+	for Record(log, "init"); mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, mut.Const("85a965bcd51470c8", int(2), 3), "<", "<=")); Record(log, "post") {
+		n += mut.Const("6b3fe656d86a720a", int(2), 3)
 	}
 	{
 		if mut.Active("d98e8d1af4404ff4") {
@@ -363,10 +363,68 @@ func SkipNamedBoolCond(f Flag) int {
 			if mut.Active("7a0108058a77e4ef") {
 				return 0
 			}
-			return 1
+			return mut.Const("fbbe3f655218b887", int(1), 2)
 		}
 	}
-	return 0
+	return mut.Const("ce8a4eb79c4b1476", int(0), 1)
+}
+
+func Offset(x int64) int64 {
+	{
+		if mut.Active("e9d34c55a4e6befe") {
+			return 0
+		}
+		return mut.Arith("294570c070803888", x, mut.Const("c1afcb1c68f77752", int64(1), 2), "+", "-")
+	}
+}
+func Quarter(x float64) float64 {
+	{
+		if mut.Active("80452295ed7f00df") {
+			return 0
+		}
+		return mut.Arith("b46148cb1fde63e5", x, mut.Const("10a72b0a872c4299", float64(0.25), 1.25), "*", "/")
+	}
+}
+func SkipNamedConst(d time.Duration) time.Duration {
+	{
+		if mut.Active("9b77e79bf3f160b8") {
+			return 0
+		}
+		return mut.Arith("f03d29a1832de755", d, 1, "+", "-")
+	}
+}
+func Boxed() any {
+	{
+		if mut.Active("8184a8ed47420132") {
+			return nil
+		}
+		return mut.Const("dd494c3e4d792423", int(7), 8)
+	}
+}
+func SkipShiftConst(x float64) float64 {
+	{
+		if mut.Active("77ff131f695d7f46") {
+			return 0
+		}
+		return mut.Arith("cb5def764dc7bc03", 1<<2, x, "+", "-")
+	}
+}
+func NoSiteArrayLen() int {
+	var a [2]int
+	{
+		if mut.Active("c2d2361ee2dffe17") {
+			return 0
+		}
+		return len(a)
+	}
+}
+func NoSiteArrayKey() int {
+	{
+		if mut.Active("a97b617339e2027e") {
+			return 0
+		}
+		return []int{3: mut.Const("c7f38552939d1bec", int(9), 10)}[mut.Const("ca0be1a5faf21986", int(3), 4)]
+	}
 }
 
 func Untested(x int) int {
@@ -374,6 +432,6 @@ func Untested(x int) int {
 		if mut.Active("4c66d1a87b220957") {
 			return 0
 		}
-		return mut.Arith("cca49fd2ab27512a", x, 1, "+", "-")
+		return mut.Arith("cca49fd2ab27512a", x, mut.Const("6a18b0a5efe7e475", int(1), 2), "+", "-")
 	}
 }

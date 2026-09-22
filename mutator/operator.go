@@ -20,6 +20,17 @@ type Context struct {
 	Info *types.Info
 	// Sig is the signature of the innermost enclosing function or literal.
 	Sig *types.Signature
+	// Path holds the nodes enclosing the one being visited, outermost
+	// first: the function body down to the parent.
+	Path []ast.Node
+}
+
+// parent returns the n-th enclosing node (1 is the direct parent), or nil.
+func (c *Context) parent(n int) ast.Node {
+	if n > len(c.Path) {
+		return nil
+	}
+	return c.Path[len(c.Path)-n]
 }
 
 // CheckExpr type-checks e in the scope it appears in, using the package's
@@ -112,5 +123,6 @@ var DefaultOperators = []Operator{
 	Condition{},
 	IncDec{},
 	VoidCall{},
+	Constant{},
 	Return{},
 }
