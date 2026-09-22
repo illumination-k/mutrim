@@ -28,9 +28,10 @@ const (
 	// NotViable means the mutant was never executed: it did not
 	// type-check or could not be embedded as schemata.
 	NotViable Status = "NOT_VIABLE"
-	// Ignored means a gen filter excluded the mutant, so it was never
-	// built or executed; like NotViable it counts towards no score, but
-	// it says the suppression was asked for.
+	// Ignored means a gen filter or an inline //mutrim:disable directive
+	// excluded the mutant, so it was never built or executed; like
+	// NotViable it counts towards no score, but it says the suppression
+	// was asked for.
 	Ignored Status = "IGNORED"
 )
 

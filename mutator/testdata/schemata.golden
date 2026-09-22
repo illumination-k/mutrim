@@ -435,3 +435,5 @@ func Untested(x int) int {
 		return mut.Arith("cca49fd2ab27512a", x, mut.Const("6a18b0a5efe7e475", int(1), 2), "+", "-")
 	}
 }
+
+func Disabled(x int) int { return x + 1 }

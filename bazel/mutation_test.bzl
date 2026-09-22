@@ -182,7 +182,9 @@ def mutation_test(
 
     `match`, `files`, `exclude_files` and `exclude_re` narrow the sites that
     are mutated; a mutant they reject is still listed in `mutants.json` and
-    reported `IGNORED`, so the counts stay comparable across runs.
+    reported `IGNORED`, so the counts stay comparable across runs. A single
+    site or function is suppressed in the source instead, with a
+    `//mutrim:disable` directive, which is reported the same way.
 
     Args:
         name: name of the runner test.

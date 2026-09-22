@@ -73,13 +73,13 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                                              | Depends on                          |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, `mutants.json` output, schemata lowering. Bazel-independent   | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites | stdlib only                         |
-| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental    | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`    | `bits-and-blooms/bitset`            |
-| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)              | `criteria`, `bitset`, `go/parser`   |
+| Package    | Responsibility                                                                                                                                                  | Depends on                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                     | stdlib only                         |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental                                        | `mutator` (for `Mutant`)            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                        | `bits-and-blooms/bitset`            |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                  | `criteria`, `bitset`, `go/parser`   |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -103,6 +103,12 @@ run on the result.
   (over `func operator: description`), each with a `mutation_test` attribute. A filtered
   site still yields a mutant, marked `Ignored` in `mutants.json` and reported `IGNORED`,
   so the counts of a filtered run stay comparable with an unfiltered one.
+- Inline directives are those flags' in-source counterpart, for a single site or function:
+  `//mutrim:disable [op,...] [reason]` (until `//mutrim:enable`), `//mutrim:disable-next-line`
+  and `//mutrim:disable-func` in a doc comment. They are read from the raw comment lines,
+  like `//mutrim:keep`, and an unknown verb is left alone since the namespace is shared. A
+  site they cover is ignored exactly as a filtered one, with `ignored` naming the directive
+  and `reason` keeping its text (Stryker semantics); a directive is read before the filters.
 - **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
   (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
   locally with `types.CheckExpr` in their original scope, so the cost is microseconds per

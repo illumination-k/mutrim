@@ -54,9 +54,9 @@ type Schemata struct {
 	// Files maps each rewritten file's original path to its new contents.
 	// Files without an embedded mutant are absent and used as they are.
 	Files map[string][]byte
-	// Embedded holds the IDs of the mutants present in Files. Viable
-	// mutants that are missing here cannot be expressed as schemata (see
-	// the operator docs) and must not be executed.
+	// Embedded holds the IDs of the mutants present in Files. Viable,
+	// non-ignored mutants that are missing here cannot be expressed as
+	// schemata (see the operator docs) and must not be executed.
 	Embedded map[string]bool
 }
 

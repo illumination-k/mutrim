@@ -135,7 +135,8 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // files with an embedded mutant are lowered, the rest (including files
 // excluded by build constraints) are copied as they are, so the directory
 // can replace the package. Mutants the lowering declined are marked not
-// viable, so the runner never selects them.
+// viable, so the runner never selects them; ignored mutants are not
+// embedded either, but keep their status.
 func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
 	sch, err := mutator.Lower(pkg, ms)
 	if err != nil {

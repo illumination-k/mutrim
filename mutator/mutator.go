@@ -29,10 +29,14 @@ type Mutant struct {
 	Operator    string `json:"operator"`
 	Description string `json:"description"`
 	Viable      bool   `json:"viable"`
-	// Ignored names the Filter rule that excluded the mutant from the
-	// run, empty when it was kept. An ignored mutant is neither embedded
-	// nor executed, and counts towards no score.
+	// Ignored names the rule that excluded the mutant from the run, a
+	// Filter rule or the inline directive that disabled the site, and is
+	// empty when the mutant was kept. An ignored mutant is neither
+	// embedded nor executed, and counts towards no score.
 	Ignored string `json:"ignored,omitempty"`
+	// Reason is the text an inline directive gave for ignoring the
+	// mutant; filters give none.
+	Reason string `json:"reason,omitempty"`
 
 	site site
 }
@@ -73,10 +77,12 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 
 	ctx := &Context{Fset: pkg.Fset, Pkg: pkg.Types, Info: pkg.TypesInfo}
 	var sites []site
+	dis := map[*ast.File]disables{}
 	for _, f := range pkg.Syntax {
 		if excluded(pkg, f) {
 			continue
 		}
+		dis[f] = parseDisables(pkg.Fset, f)
 		sites = append(sites, collectSites(f, ctx, ops)...)
 	}
 
@@ -95,7 +101,11 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			Viable:      true,
 			site:        s,
 		}
-		m.Ignored = opts.Filter.ignore(&m)
+		// A directive states the author's intent at the site, so it is
+		// read before the run-wide filter.
+		if m.Ignored, m.Reason = dis[s.file].find(pos.Line, s.Operator); m.Ignored == "" {
+			m.Ignored = opts.Filter.ignore(&m)
+		}
 		if m.Ignored == "" && opts.TypeCheck && s.Check != nil {
 			s.Apply()
 			m.Viable = s.Check() == nil
