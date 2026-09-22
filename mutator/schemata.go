@@ -60,9 +60,9 @@ type Schemata struct {
 	Embedded map[string]bool
 }
 
-// Lower rewrites pkg so that every viable mutant in mutants is embedded and
-// selected by GOMUTANT_ID. The package's syntax trees are rewritten in
-// place and must not be reused afterwards.
+// Lower rewrites pkg so that every viable, non-ignored mutant in mutants
+// is embedded and selected by GOMUTANT_ID. The package's syntax trees are
+// rewritten in place and must not be reused afterwards.
 func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 	out := &Schemata{Files: map[string][]byte{}, Embedded: map[string]bool{}}
 	if pkg.PkgPath == RuntimePath {
@@ -72,7 +72,7 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 	byNode := map[ast.Node][]Mutant{}
 	byFile := map[*ast.File][]Mutant{}
 	for _, m := range mutants {
-		if !m.Viable || m.site.Schemata == nil {
+		if m.Ignored != "" || !m.Viable || m.site.Schemata == nil {
 			continue
 		}
 		byNode[m.site.Node] = append(byNode[m.site.Node], m)

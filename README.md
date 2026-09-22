@@ -12,12 +12,26 @@ go run ./cmd/mutrim gen ./path/to/pkg > mutants.json
 # Select operators: names, "default", and "-name" to remove one.
 go run ./cmd/mutrim gen -operators default,-constant ./path/to/pkg
 
+# Narrow the sites: by function name, by file, or by the mutant itself.
+go run ./cmd/mutrim gen -match '^\(\*Tree\)\.' -exclude-files '_gen\.go$' \
+  -exclude-re 'constant: 0 -> 1' ./path/to/pkg
+
 # Apply one mutant through go build -overlay and run the package's tests.
 go run ./cmd/mutrim overlay -id <mutant id> -o overlay.json ./path/to/pkg
 go test -overlay overlay.json ./path/to/pkg
 ```
 
 A failing `go test` means the mutant was killed.
+
+`-match <re>` keeps only the functions whose name matches, in the `(*T).Name` form of the
+`func` field; `-files <glob,...>` keeps only the files matching one of the globs and
+`-exclude-files <re,...>` drops the files matching one of the regexps (both are tried
+against the path as reported, its path relative to the working directory, and its base
+name); `-exclude-re <re>` drops the mutants whose `func operator: description` matches, so
+a rewrite can be excluded wherever it occurs. A filtered mutant is still listed, with
+`"ignored"` naming the rule that rejected it, and `run` reports it `IGNORED` without
+building or executing it — the counts of a filtered run stay comparable with an unfiltered
+one, and `IGNORED` mutants count towards no score.
 
 ## Usage (schemata: one build, all mutants)
 
@@ -74,6 +88,8 @@ mutation_test(
     srcs = ["calc_test.go"],
     embed = [":calc"],
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
+    match = "^Compute",                    # optional; the gen filters, per attribute
+    exclude_files = ["_gen\\.go$"],
     shard_count = 4,
 )
 ```

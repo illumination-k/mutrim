@@ -98,6 +98,11 @@ run on the result.
   operators with a Go counterpart; non-void call replacement is not implemented. All of them
   are on by default; `gen -operators` (the `operators` attribute of `mutation_test`) selects
   a subset, e.g. `default,-constant`.
+- Site selection is separate from operator selection: `gen -match` (function names),
+  `-files` / `-exclude-files` (globs and regexps over the file path) and `-exclude-re`
+  (over `func operator: description`), each with a `mutation_test` attribute. A filtered
+  site still yields a mutant, marked `Ignored` in `mutants.json` and reported `IGNORED`,
+  so the counts of a filtered run stay comparable with an unfiltered one.
 - **Type-check pre-filter is the key differentiator.** Load once with `go/packages`
   (`NeedTypes|NeedTypesInfo|NeedSyntax`). Expression mutants (binary operators) are checked
   locally with `types.CheckExpr` in their original scope, so the cost is microseconds per

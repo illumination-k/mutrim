@@ -355,3 +355,43 @@ func TestRunAbortsOnContextAndListFailure(t *testing.T) {
 		t.Errorf("failing -test.list: got %v, want a list error", err)
 	}
 }
+
+// A mutant a gen filter ignored is reported IGNORED without being run,
+// even when it is viable and reached by a test.
+func TestRunIgnoredMutants(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	var ignored string
+	for i, m := range mutants {
+		if m.Viable && m.Func == "Less" && m.Operator == "relational" {
+			mutants[i].Ignored = "match"
+			ignored = m.ID
+			break
+		}
+	}
+	if ignored == "" {
+		t.Fatal("no viable relational mutant of Less in the fixture")
+	}
+
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second,
+		Tests: []string{"TestComparisons"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, res := range report.Results {
+		if res.MutantID == ignored {
+			if res.Status != runner.Ignored {
+				t.Errorf("status = %s, want %s", res.Status, runner.Ignored)
+			}
+			if res.TestsRun != 0 {
+				t.Errorf("an ignored mutant ran %d tests", res.TestsRun)
+			}
+		} else if res.Status == runner.Ignored {
+			t.Errorf("%s: unexpected %s", res.MutantID, res.Status)
+		}
+	}
+	if report.Totals.Ignored != 1 {
+		t.Errorf("totals.ignored = %d, want 1", report.Totals.Ignored)
+	}
+}
