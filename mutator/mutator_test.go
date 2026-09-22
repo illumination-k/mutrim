@@ -249,3 +249,35 @@ func TestCustomOperatorSchemata(t *testing.T) {
 		}
 	}
 }
+
+// -operators: names add, "default" adds every operator, "-name" removes;
+// the order is DefaultOperators', whatever the spelling.
+func TestOperators(t *testing.T) {
+	names := func(ops []mutator.Operator) string {
+		out := make([]string, len(ops))
+		for i, op := range ops {
+			out[i] = op.Name()
+		}
+		return strings.Join(out, ",")
+	}
+	cases := map[string]string{
+		"":                              names(mutator.DefaultOperators),
+		"default":                       names(mutator.DefaultOperators),
+		"default,-constant,-voidcall":   "relational,arithmetic,logical,bitwise,negatives,negation,condition,incdec,return",
+		"return, relational":            "relational,return",
+		"constant,-constant,arithmetic": "arithmetic",
+	}
+	for spec, want := range cases {
+		ops, err := mutator.Operators(spec)
+		if err != nil {
+			t.Errorf("%q: %v", spec, err)
+		} else if got := names(ops); got != want {
+			t.Errorf("%q = %s, want %s", spec, got, want)
+		}
+	}
+	for _, spec := range []string{"bogus", "-default", "default,-relational,-x", "-constant"} {
+		if _, err := mutator.Operators(spec); err == nil {
+			t.Errorf("%q: expected an error", spec)
+		}
+	}
+}

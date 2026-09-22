@@ -1,9 +1,13 @@
 package mutator
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
+	"slices"
+	"strings"
 )
 
 // Operator is one mutation family. Sites is called for every node under
@@ -110,6 +114,45 @@ type Site struct {
 	// the children of Node have been lowered and may return nil to decline.
 	// A nil Schemata means the site can only be applied through Apply.
 	Schemata func(l *Lowering) ast.Node
+}
+
+// Operators selects operators by name from a comma-separated spec: a name
+// adds that operator, "default" adds DefaultOperators, and a name with a
+// leading "-" removes one, so "default,-constant" is every default but
+// constant. An empty spec is DefaultOperators. The result keeps the order
+// of DefaultOperators, so mutant listings do not depend on the spelling.
+func Operators(spec string) ([]Operator, error) {
+	if spec == "" {
+		return DefaultOperators, nil
+	}
+	byName := map[string]Operator{}
+	for _, op := range DefaultOperators {
+		byName[op.Name()] = op
+	}
+	selected := map[string]bool{}
+	for entry := range strings.SplitSeq(spec, ",") {
+		name, remove := strings.CutPrefix(strings.TrimSpace(entry), "-")
+		switch {
+		case name == "default" && !remove:
+			for n := range byName {
+				selected[n] = true
+			}
+		case byName[name] != nil:
+			selected[name] = !remove
+		default:
+			return nil, fmt.Errorf("mutator: unknown operator %q (known: %s, default)", name, strings.Join(slices.Sorted(maps.Keys(byName)), ", "))
+		}
+	}
+	var ops []Operator
+	for _, op := range DefaultOperators {
+		if selected[op.Name()] {
+			ops = append(ops, op)
+		}
+	}
+	if len(ops) == 0 {
+		return nil, fmt.Errorf("mutator: %q selects no operator", spec)
+	}
+	return ops, nil
 }
 
 // DefaultOperators is the operator set used when Options.Operators is nil.

@@ -19,4 +19,8 @@ mutation_test(
     name = "mutant_stats",
     srcs = ["stats_test.go"],
     embed = [":stats"],
+    operators = [
+        "default",
+        "-constant",
+    ],
 )
