@@ -1,4 +1,4 @@
-stmt.go:5:29 record assign "store -> dropped" viable=true | func record(s string) { _ = append(log, s) }
+stmt.go:5:25 record assign "store -> dropped" viable=true | func record(s string) { _ = append(log, s) }
 stmt.go:7:20 count return "result 1 -> 0" viable=true | func count() int { return 0 }
 stmt.go:7:20 count return "result 1 -> 1" viable=true | func count() int { return 1 }
 stmt.go:10:2 Step voidcall "call -> removed" viable=true | func() {

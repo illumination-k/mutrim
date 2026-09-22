@@ -63,6 +63,7 @@ func (AssignOp) Sites(ctx *Context, n ast.Node) []Site {
 		sites = append(sites, Site{
 			Node:        s,
 			Pos:         s.TokPos,
+			End:         s.TokPos + token.Pos(len(tok.String())),
 			Description: tok.String() + " -> " + swap.String(),
 			Apply:       func() { s.Tok = swap },
 			Undo:        func() { s.Tok = tok },
@@ -76,6 +77,7 @@ func (AssignOp) Sites(ctx *Context, n ast.Node) []Site {
 	sites = append(sites, Site{
 		Node:        s,
 		Pos:         s.TokPos,
+		End:         s.TokPos + token.Pos(len(tok.String())),
 		Description: tok.String() + " -> =",
 		Apply:       func() { s.Tok = token.ASSIGN },
 		Undo:        func() { s.Tok = tok },
@@ -161,7 +163,6 @@ func (Assign) Sites(ctx *Context, n ast.Node) []Site {
 	orig := s.Lhs
 	return []Site{{
 		Node:        s,
-		Pos:         s.TokPos,
 		Description: "store -> dropped",
 		Apply:       func() { s.Lhs = blanks },
 		Undo:        func() { s.Lhs = orig },

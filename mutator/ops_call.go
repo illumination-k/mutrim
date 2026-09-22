@@ -94,8 +94,10 @@ func (Method) Sites(ctx *Context, n ast.Node) []Site {
 	}
 	from := sel.Sel.Name
 	s := Site{
-		Node:        call,
+		Node: call,
+		// Only the selected name changes, so the site is that name.
 		Pos:         sel.Sel.Pos(),
+		End:         sel.Sel.End(),
 		Description: from + " -> " + to,
 		Apply:       func() { sel.Sel.Name = to },
 		Undo:        func() { sel.Sel.Name = from },

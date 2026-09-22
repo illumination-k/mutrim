@@ -30,7 +30,7 @@ assign.go:33:4 Join assignop "+= -> -=" viable=false | s -= t
 assign.go:33:4 Join assignop "+= -> =" viable=true | s = t
 assign.go:34:2 Join return "result 1 -> \"\"" viable=true | return ""
 assign.go:34:2 Join return "result 1 -> \"mutrim\"" viable=true | return "mutrim"
-assign.go:41:7 Store assign "store -> dropped" viable=true | _ = n
+assign.go:41:2 Store assign "store -> dropped" viable=true | _ = n
 assign.go:46:2 Store return "result 1 -> 0" viable=true | return 0
 assign.go:46:2 Store return "result 1 -> 1" viable=true | return 1
 assign.go:52:11 Sum constant "0 -> 1" viable=true | total := 1
