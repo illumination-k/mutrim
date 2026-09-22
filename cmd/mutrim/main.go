@@ -35,9 +35,11 @@ const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
   gen       list mutants of the packages as JSON; -operators selects the
-            operators; -schemata also writes sources with every mutant
-            embedded; -importpath type-checks the given files from export
-            data (Bazel mode)
+            operators and -match / -files / -exclude-files / -exclude-re
+            narrow the sites (a filtered mutant is reported, and ignored);
+            -schemata also writes sources with every mutant embedded;
+            -importpath type-checks the given files from export data
+            (Bazel mode)
   overlay   write one mutant and print a go build -overlay file for it;
             -operators must match the gen run the mutant comes from
   run       execute a schemata test binary once per mutant, against the
@@ -77,6 +79,10 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	out := fs.String("o", "", "write mutants.json here instead of stdout")
 	noCheck := fs.Bool("no-check", false, "skip the go/types pre-filter")
 	operators := fs.String("operators", "", operatorsUsage)
+	match := fs.String("match", "", "keep only the mutants of functions whose name matches this regexp, in the \"(*T).Name\" form")
+	files := fs.String("files", "", "keep only the mutants in files matching one of these comma-separated globs")
+	excludeFiles := fs.String("exclude-files", "", "drop the mutants in files matching one of these comma-separated regexps")
+	excludeRE := fs.String("exclude-re", "", "drop the mutants whose \"func operator: description\" matches this regexp")
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
@@ -86,6 +92,10 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	ops, err := mutator.Operators(*operators)
+	if err != nil {
+		return err
+	}
+	filter, err := mutator.FilterSpec{Match: *match, Files: *files, ExcludeFiles: *excludeFiles, ExcludeRE: *excludeRE}.Compile()
 	if err != nil {
 		return err
 	}
@@ -110,7 +120,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	mutants := []mutator.Mutant{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
 	for _, pkg := range pkgs {
-		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck})
+		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter})
 		if *schemata != "" {
 			if err := writeSchemata(*schemata, pkg, ms, &overlay); err != nil {
 				return err
@@ -130,14 +140,17 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // files with an embedded mutant are lowered, the rest (including files
 // excluded by build constraints) are copied as they are, so the directory
 // can replace the package. Mutants the lowering declined are marked not
-// viable, so the runner never selects them.
+// viable, so the runner never selects them; ignored mutants are not
+// embedded either, but keep their status.
 func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
 	sch, err := mutator.Lower(pkg, ms)
 	if err != nil {
 		return err
 	}
 	for i := range ms {
-		ms[i].Viable = ms[i].Viable && sch.Embedded[ms[i].ID]
+		if ms[i].Ignored == "" {
+			ms[i].Viable = ms[i].Viable && sch.Embedded[ms[i].ID]
+		}
 	}
 	pkgDir := filepath.Join(dir, filepath.FromSlash(pkg.PkgPath))
 	if err := os.MkdirAll(pkgDir, 0o750); err != nil {

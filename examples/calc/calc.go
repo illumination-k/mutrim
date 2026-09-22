@@ -32,3 +32,9 @@ func Sum(xs ...int) int {
 
 // Untested has no test, so its mutants live and show up in report.json.
 func Untested(x int) int { return x * 2 }
+
+// PoolSize is suppressed by an inline directive, so its mutants are
+// reported IGNORED instead of being built and run.
+//
+//mutrim:disable-func the pool size is tuned by hand
+func PoolSize(cpus int) int { return cpus*2 + 1 }

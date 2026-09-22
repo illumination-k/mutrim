@@ -240,3 +240,9 @@ func NewConfig(extra []string) Config {
 
 // Untested has no test, so its mutants live.
 func Untested(x int) int { return x + 1 }
+
+// Disabled is suppressed by an inline directive: none of its mutants is
+// embedded and all of them are reported IGNORED.
+//
+//mutrim:disable-func the callers never pass a negative x
+func Disabled(x int) int { return x + 1 }

@@ -313,3 +313,7 @@ schemata.go:242 Untested "result 1 -> 0" NO_COVERAGE
 schemata.go:242 Untested "result 1 -> 1" NO_COVERAGE
 schemata.go:242 Untested "+ -> -" NO_COVERAGE
 schemata.go:242 Untested "1 -> 2" NO_COVERAGE
+schemata.go:248 Disabled "result 1 -> 0" IGNORED
+schemata.go:248 Disabled "result 1 -> 1" IGNORED
+schemata.go:248 Disabled "+ -> -" IGNORED
+schemata.go:248 Disabled "1 -> 2" IGNORED

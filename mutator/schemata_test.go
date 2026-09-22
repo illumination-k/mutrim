@@ -53,7 +53,7 @@ func TestSchemataIdentity(t *testing.T) {
 
 	for _, m := range mutants {
 		key := m.Func + " " + m.Description
-		if want := m.Viable && !notEmbedded[key]; sch.Embedded[m.ID] != want {
+		if want := m.Viable && m.Ignored == "" && !notEmbedded[key]; sch.Embedded[m.ID] != want {
 			t.Errorf("%s: embedded=%v, want %v", key, sch.Embedded[m.ID], want)
 		}
 	}

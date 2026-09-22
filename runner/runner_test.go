@@ -38,7 +38,9 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 		t.Fatal(err)
 	}
 	for i := range mutants {
-		mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
+		if mutants[i].Ignored == "" {
+			mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
+		}
 	}
 
 	dir := t.TempDir()
@@ -155,16 +157,17 @@ func TestRunReportGolden(t *testing.T) {
 	}
 
 	tot := report.Totals
-	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable != tot.Mutants {
+	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored != tot.Mutants {
 		t.Errorf("totals do not add up: %+v", tot)
 	}
-	if tot.Timeout != 3 || tot.Lived != 0 || tot.NoCoverage != 4 || tot.NotViable != 24 {
+	if tot.Timeout != 3 || tot.Lived != 0 || tot.NoCoverage != 4 || tot.NotViable != 24 || tot.Ignored != 4 {
 		t.Errorf("unexpected totals: %+v", tot)
 	}
 	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
 		t.Errorf("score = %v, want %v", tot.Score, want)
 	}
 
+	// Disabled is not a weak spot: its mutants were suppressed, not survivors.
 	var untested int // the line WeakSpots must report for Untested
 	for _, m := range mutants {
 		if m.Func == "Untested" {
@@ -361,5 +364,54 @@ func TestRunAbortsOnContextAndListFailure(t *testing.T) {
 	}
 	if _, err := runner.Run(t.Context(), runner.Options{TestBin: script}); err == nil || !strings.Contains(err.Error(), "list tests") {
 		t.Errorf("failing -test.list: got %v, want a list error", err)
+	}
+}
+
+// A mutant a gen filter ignored is reported IGNORED without being run,
+// even when it is viable and reached by a test.
+func TestRunIgnoredMutants(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	// The fixture disables one function with an inline directive, so those
+	// mutants are ignored before the filter adds one of its own.
+	byDirective := map[string]bool{}
+	var ignored string
+	for i, m := range mutants {
+		if m.Ignored != "" {
+			byDirective[m.ID] = true
+			continue
+		}
+		if ignored == "" && m.Viable && m.Func == "Less" && m.Operator == "relational" {
+			mutants[i].Ignored = "match"
+			ignored = m.ID
+		}
+	}
+	if ignored == "" {
+		t.Fatal("no viable relational mutant of Less in the fixture")
+	}
+	if len(byDirective) == 0 {
+		t.Fatal("no mutant ignored by a directive in the fixture")
+	}
+
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second,
+		Tests: []string{"TestComparisons"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, res := range report.Results {
+		if res.MutantID == ignored {
+			if res.Status != runner.Ignored {
+				t.Errorf("status = %s, want %s", res.Status, runner.Ignored)
+			}
+			if res.TestsRun != 0 {
+				t.Errorf("an ignored mutant ran %d tests", res.TestsRun)
+			}
+		} else if res.Status == runner.Ignored && !byDirective[res.MutantID] {
+			t.Errorf("%s: unexpected %s", res.MutantID, res.Status)
+		}
+	}
+	if want := len(byDirective) + 1; report.Totals.Ignored != want {
+		t.Errorf("totals.ignored = %d, want %d", report.Totals.Ignored, want)
 	}
 }
