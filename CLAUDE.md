@@ -77,7 +77,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent | `go/ast`, `go/types`, `go/packages` |
 | `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                     | stdlib only                         |
-| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, sharding, `report.json`, incremental                                        | `mutator` (for `Mutant`)            |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, subtest rows (`-subtests`), sharding, `report.json`, incremental            | `mutator` (for `Mutant`)            |
 | `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                        | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                  | `criteria`, `bitset`, `go/parser`   |
 | `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                      | `mutator`, `runner`                 |
@@ -152,6 +152,14 @@ run on the result.
   `bazel coverage`. Site coverage is exact for narrowing (a test that reaches no site of a
   mutant cannot kill it, reported `NO_COVERAGE`) and build-agnostic; its blind spot is code
   with no mutant site at all.
+- The rows of the matrix are the top-level tests, or with `run -subtests` (the `subtests`
+  attribute of `mutation_test`) every subtest, so `minimize` can judge a table row. The
+  baseline's `-test.v` output names the rows; a row is traced with an element-wise
+  `-test.run` pattern (`^TestX$/^case$`), and per mutant the reaching rows of one parent
+  run in one process (`^TestX$/^(a|b)$`), whose `--- FAIL:` lines are the kills. A parent
+  failing on its own is attributed to every row under it; a hung parent to every row of it,
+  since the testing package prints subtest results only when the parent finishes. Each row
+  carries `parent`. Subtest names must be stable and the subtests order-independent.
 - Exclude: `_test.go`, `.pb.go`, `mock_*.go`, `//go:generate` outputs, cgo.
 
 ### Bazel integration: mutant schemata
@@ -187,7 +195,8 @@ Coverage is the cheap first pass (it narrows which tests run per mutant); kills 
 objective. The tool never deletes tests; `mutrim minimize` reports each redundant test with
 the selected tests that subsume it, and the functions whose mutants survive (weak spots), and
 leaves the decision to a human or LLM. Tests matching `-keep` (default `^TestRegression_`) or
-carrying `//mutrim:keep` in their doc comment are always kept. Exact solutions go through the
+carrying `//mutrim:keep` in their doc comment are always kept; a subtest row is protected
+through its full name or its parent's tag. Exact solutions go through the
 exported JSON matrix (`-matrix`) + an external MIP solver.
 
 ### Build: go.mod is primary, Bazel is secondary

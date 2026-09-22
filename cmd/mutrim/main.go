@@ -44,7 +44,8 @@ commands:
   overlay   write one mutant and print a go build -overlay file for it;
             -operators must match the gen run the mutant comes from
   run       execute a schemata test binary once per mutant, against the
-            tests that reach it, and report the per-test kill matrix
+            tests that reach it, and report the per-test kill matrix;
+            -subtests makes each subtest a row of it
   minimize  from the report.json of one package (all of its shards),
             list the tests a greedy set cover finds redundant and the
             functions whose mutants survive
@@ -241,6 +242,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	previous := fs.String("previous", "", "report.json of an earlier run; its results are copied forward")
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout (default: 3× the baseline run)")
 	tests := fs.String("tests", "", "comma-separated top-level tests to run (default: all)")
+	subtests := fs.Bool("subtests", false, "make each subtest (TestX/case) a row of the kill matrix: traced on its own and named in killed_by; subtest names must be stable across runs")
 	dir := fs.String("dir", "", "working directory for the test binary")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -249,7 +251,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return errors.New("run: -test-bin and -mutants are required")
 	}
 
-	opts := runner.Options{TestBin: *testBin, Dir: *dir, Args: fs.Args(), Timeout: *timeout, Log: stderr}
+	opts := runner.Options{TestBin: *testBin, Dir: *dir, Args: fs.Args(), Subtests: *subtests, Timeout: *timeout, Log: stderr}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {
 		return err
 	}
@@ -296,8 +298,8 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	out := fs.String("o", "", "write the result here instead of stdout")
 	mutantsPath := fs.String("mutants", "", "mutants.json of the reports; enables the weak_spots listing")
-	keep := fs.String("keep", `^TestRegression_`, "regexp of test names that are always kept")
-	tag := fs.String("tag", "mutrim:keep", "tests whose doc comment contains this are always kept (needs -srcs)")
+	keep := fs.String("keep", `^TestRegression_`, "regexp of test names (TestX/case for a subtest) that are always kept")
+	tag := fs.String("tag", "mutrim:keep", "tests whose doc comment contains this are always kept, with their subtests (needs -srcs)")
 	srcs := fs.String("srcs", "", "comma-separated _test.go files or directories to scan for -tag")
 	wSite := fs.Float64("w-site", 1, "weight of a reached mutant site")
 	wKill := fs.Float64("w-kill", 5, "weight of a killed mutant")
@@ -361,8 +363,14 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 			tagged[n] = true
 		}
 	}
+	// A tag sits on the top-level test and protects its subtests; the
+	// regexp sees the full name, so ^TestRegression_ matches those too.
+	protected := func(name string) bool {
+		top, _, _ := strings.Cut(name, "/")
+		return tagged[top] || keepRE.MatchString(name)
+	}
 	result := minimizeOutput{
-		Result:    minimize.Greedy(matrix, minimize.Options{Protected: func(name string) bool { return tagged[name] || keepRE.MatchString(name) }}),
+		Result:    minimize.Greedy(matrix, minimize.Options{Protected: protected}),
 		WeakSpots: []runner.Spot{},
 	}
 	if *mutantsPath != "" {

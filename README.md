@@ -93,13 +93,25 @@ the tests reaching it, and `report.json` holds the per-test kill matrix: `tests`
 duration, reached sites) and, per mutant, every test that killed it. A mutant no test reaches
 is `NO_COVERAGE` and never executed.
 
+`run -subtests` makes each subtest a row of that matrix instead of its parent: the baseline
+run names them (`=== RUN TestParse/empty_input`), each is traced on its own with
+`-test.run '^TestParse$/^empty_input$'`, and per mutant the reaching subtests of one parent
+run in a single process, whose `--- FAIL:` lines give the kill per subtest. A test without
+subtests stays a row, and each row carries its `parent`. Table-driven suites become
+minimizable per case this way, at the cost of one trace process per subtest. Subtest names
+must be stable across runs (a name derived from random data is not), and subtests must be
+order-independent, as with Stryker's per-test coverage: a case relying on the state a
+sibling left behind can fail on its own, which `run` reports as an error.
+
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
 of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
 test whose requirements the other selected tests satisfy between them. `selected` lists the
 tests kept in order with their gain, `redundant` the rest with the selected tests that subsume
 each of them, and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
 matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their doc comment
-(`-srcs` names the `_test.go` files or directories to scan) are always kept. `-matrix` exports
+(`-srcs` names the `_test.go` files or directories to scan) are always kept; `-keep` sees the
+full `TestX/case` name of a subtest row, and a tag on the parent keeps every one of its
+subtests. `-matrix` exports
 the composed test × requirement matrix as JSON for an exact solver. The shards of one package
 can be passed together; reports of different packages are refused, since their test names would
 collide and no test of one package covers a requirement of another.
@@ -151,6 +163,7 @@ mutation_test(
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
     match = "^Compute",                    # optional; the gen filters, per attribute
     exclude_files = ["_gen\\.go$"],
+    subtests = True,                       # optional; `mutrim run -subtests`
     shard_count = 4,
 )
 ```

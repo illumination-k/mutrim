@@ -348,22 +348,88 @@ func writeJSON(t *testing.T, path string, v any) error {
 }
 
 // A canceled context stops the run with its error instead of a verdict,
-// and a binary that cannot list its tests is an error too.
-func TestRunAbortsOnContextAndListFailure(t *testing.T) {
+// and a Tests entry naming a subtest is refused.
+func TestRunAbortsOnContextAndSubtestName(t *testing.T) {
 	bin, mutants := buildFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := runner.Run(ctx, runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir}); !errors.Is(err, context.Canceled) {
 		t.Errorf("canceled context: got %v, want context.Canceled", err)
 	}
+	if _, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Dir: fixtureDir, Tests: []string{"TestLoops/FirstEven"}}); err == nil {
+		t.Error("a subtest in Tests: expected an error")
+	}
+}
 
-	// The script passes as a test run but fails -test.list.
-	script := filepath.Join(t.TempDir(), "nolist.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ncase \"$1\" in -test.list) exit 1;; esac\nexit 0\n"), 0o700); err != nil { //nolint:gosec // it must be executable
+// With Subtests every subtest is a row of its own, traced and named in
+// killed_by, while a test without subtests stays a row; the rows reaching
+// a mutant run in one process per parent.
+func TestRunSubtests(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	var logs bytes.Buffer
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: 3 * time.Second, Log: &logs,
+		Subtests: true,
+		Tests:    []string{"TestComparisons", "TestLessRedundant", "TestLoops"},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runner.Run(t.Context(), runner.Options{TestBin: script}); err == nil || !strings.Contains(err.Error(), "list tests") {
-		t.Errorf("failing -test.list: got %v, want a list error", err)
+	if !strings.Contains(logs.String(), ", 5 tests\n") {
+		t.Errorf("the baseline must count the rows:\n%s", logs.String())
+	}
+	names := make([]string, 0, len(report.Tests))
+	parents := make([]string, 0, len(report.Tests))
+	for _, tt := range report.Tests {
+		names = append(names, tt.Name)
+		parents = append(parents, tt.Parent)
+		if len(tt.Sites) == 0 {
+			t.Errorf("%s reached no site", tt.Name)
+		}
+	}
+	// Rows come in the order the baseline started them: source order.
+	wantNames := []string{"TestComparisons", "TestLoops/FirstEven", "TestLoops/CountUntil", "TestLessRedundant/less", "TestLessRedundant/equal"}
+	wantParents := []string{"", "TestLoops", "TestLoops", "TestLessRedundant", "TestLessRedundant"}
+	if !slices.Equal(names, wantNames) || !slices.Equal(parents, wantParents) {
+		t.Errorf("tests = %v with parents %v, want %v with %v", names, parents, wantNames, wantParents)
+	}
+
+	byID := map[string]mutator.Mutant{}
+	for _, m := range mutants {
+		byID[m.ID] = m
+	}
+	for _, r := range report.Results {
+		m := byID[r.MutantID]
+		switch {
+		case m.Func == "Less" && r.Status == runner.Killed:
+			// Both subtests of TestLessRedundant reach Less, so three rows
+			// run in two processes (one per parent); which subtest kills
+			// depends on the mutant, and TestComparisons kills them all.
+			if r.TestsRun != 3 || r.KilledBy[0] != "TestComparisons" || len(r.KilledBy) < 2 {
+				t.Errorf("Less %q: tests_run=%d killed_by=%v", m.Description, r.TestsRun, r.KilledBy)
+			}
+			for _, k := range r.KilledBy[1:] {
+				if k != "TestLessRedundant/less" && k != "TestLessRedundant/equal" {
+					t.Errorf("Less %q: killed by %s", m.Description, k)
+				}
+			}
+		case m.Func == "FirstEven" && r.Status.Executed():
+			if r.TestsRun != 1 || !slices.Equal(r.KilledBy, []string{"TestLoops/FirstEven"}) {
+				t.Errorf("FirstEven %q: %s tests_run=%d killed_by=%v, want the one subtest", m.Description, r.Status, r.TestsRun, r.KilledBy)
+			}
+		case m.Func == "CountUntil" && r.Status.Executed():
+			if r.TestsRun != 1 || !slices.Equal(r.KilledBy, []string{"TestLoops/CountUntil"}) {
+				t.Errorf("CountUntil %q: %s tests_run=%d killed_by=%v, want the one subtest", m.Description, r.Status, r.TestsRun, r.KilledBy)
+			}
+		}
+	}
+	var less, equal bool
+	for _, r := range report.Results {
+		less = less || slices.Contains(r.KilledBy, "TestLessRedundant/less")
+		equal = equal || slices.Contains(r.KilledBy, "TestLessRedundant/equal")
+	}
+	if !less || !equal {
+		t.Errorf("each subtest of TestLessRedundant kills some mutant of Less: less=%v equal=%v", less, equal)
 	}
 }
 

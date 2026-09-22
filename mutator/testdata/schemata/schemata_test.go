@@ -1,6 +1,7 @@
 package schemata
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -169,13 +170,19 @@ func TestStatements(t *testing.T) {
 	}
 }
 
+// TestLoops has one subtest per function, so that with `run -subtests`
+// each row kills the mutants of its own function only.
 func TestLoops(t *testing.T) {
-	if FirstEven([]int{1, 2}) != 2 || FirstEven([]int{1}) != -1 {
-		t.Error("FirstEven")
-	}
-	if CountUntil([]int{1, 2, 3}, 2) != 1 || CountUntil([]int{1, 2, 3}, 9) != 3 {
-		t.Error("CountUntil")
-	}
+	t.Run("FirstEven", func(t *testing.T) {
+		if FirstEven([]int{1, 2}) != 2 || FirstEven([]int{1}) != -1 {
+			t.Error("FirstEven")
+		}
+	})
+	t.Run("CountUntil", func(t *testing.T) {
+		if CountUntil([]int{1, 2, 3}, 2) != 1 || CountUntil([]int{1, 2, 3}, 9) != 3 {
+			t.Error("CountUntil")
+		}
+	})
 }
 
 func TestBranches(t *testing.T) {
@@ -227,11 +234,18 @@ func TestSkipped(t *testing.T) {
 }
 
 // TestLessRedundant repeats part of TestComparisons, so the minimizer
-// reports it as subsumed.
+// reports it as subsumed; with `run -subtests`, each of its cases is.
 func TestLessRedundant(t *testing.T) {
-	if !Less(1, 2) || Less(2, 2) {
-		t.Error("Less")
-	}
+	t.Run("less", func(t *testing.T) {
+		if !Less(1, 2) {
+			t.Error("Less")
+		}
+	})
+	t.Run("equal", func(t *testing.T) {
+		if Less(2, 2) {
+			t.Error("Less")
+		}
+	})
 }
 
 // TestRegression_Sign repeats part of TestStatements but is kept by name.
@@ -241,11 +255,16 @@ func TestRegression_Sign(t *testing.T) {
 	}
 }
 
-// TestTagged repeats part of TestArithmetic but is kept by its tag.
+// TestTagged repeats part of TestArithmetic but is kept by its tag, which
+// protects its subtests too (their names need quoting in -test.run).
 //
 //mutrim:keep
 func TestTagged(t *testing.T) {
-	if Add(2, 3) != 5 {
-		t.Error("Add")
+	for _, tc := range []struct{ a, b, want int }{{2, 3, 5}, {0, 0, 0}} {
+		t.Run(fmt.Sprintf("%d+%d", tc.a, tc.b), func(t *testing.T) {
+			if Add(tc.a, tc.b) != tc.want {
+				t.Error("Add")
+			}
+		})
 	}
 }

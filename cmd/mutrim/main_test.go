@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -496,6 +497,70 @@ func TestMinimize(t *testing.T) {
 	}
 	if len(unprotected.Redundant) != 3 || len(unprotected.WeakSpots) != 0 {
 		t.Errorf("without protection the by-name and tagged tests are redundant too: %+v, %+v", unprotected.Redundant, unprotected.WeakSpots)
+	}
+}
+
+// `run -subtests` makes the subtests the rows: minimize then calls each
+// case of TestLessRedundant redundant on its own, and the tag on TestTagged
+// protects its cases. The run is narrowed to the tests involved.
+func TestRunSubtestsThenMinimize(t *testing.T) {
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
+	}
+	bin := filepath.Join(dir, "schemata.test")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, schemataFixture) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	reportPath := filepath.Join(dir, "report.json")
+	args := []string{"run", "-subtests", "-tests", "TestComparisons,TestArithmetic,TestLessRedundant,TestTagged", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-timeout", "1s", "-out", reportPath}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run -subtests: %v\n%s", err, stderr.String())
+	}
+	var ran runner.Report
+	if err := readJSON(reportPath, &ran); err != nil {
+		t.Fatal(err)
+	}
+	rows := map[string]string{}
+	for _, tt := range ran.Tests {
+		rows[tt.Name] = tt.Parent
+	}
+	want := map[string]string{"TestComparisons": "", "TestArithmetic": "", "TestLessRedundant/less": "TestLessRedundant", "TestLessRedundant/equal": "TestLessRedundant", "TestTagged/2+3": "TestTagged", "TestTagged/0+0": "TestTagged"}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %v, want %v", rows, want)
+	}
+	for name, parent := range want {
+		if p, ok := rows[name]; !ok || p != parent {
+			t.Errorf("row %s: parent %q, %v; want %q", name, p, ok, parent)
+		}
+	}
+
+	stdout.Reset()
+	if err := run(t.Context(), []string{"minimize", "-srcs", schemataFixture, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize: %v\n%s", err, stderr.String())
+	}
+	var result minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("minimize output is not JSON: %v\n%s", err, stdout.String())
+	}
+	protected := map[string]bool{}
+	for _, s := range result.Selected {
+		protected[s.Name] = s.Protected
+	}
+	wantProtected := map[string]bool{"TestTagged/2+3": true, "TestTagged/0+0": true, "TestComparisons": false, "TestArithmetic": false}
+	if !maps.Equal(protected, wantProtected) {
+		t.Errorf("selected = %v, want %v (the subtests of TestTagged protected by their parent's tag)", protected, wantProtected)
+	}
+	if len(result.Redundant) != 2 {
+		t.Fatalf("redundant = %+v, want the two subtests of TestLessRedundant", result.Redundant)
+	}
+	for i, name := range []string{"TestLessRedundant/equal", "TestLessRedundant/less"} {
+		if r := result.Redundant[i]; r.Name != name || strings.Join(r.SubsumedBy, ",") != "TestComparisons" {
+			t.Errorf("redundant[%d] = %+v, want %s subsumed by TestComparisons", i, r, name)
+		}
 	}
 }
 
