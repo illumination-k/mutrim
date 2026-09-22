@@ -19,4 +19,5 @@ mutation_test(
     srcs = ["calc_test.go"],
     embed = [":calc"],
     shard_count = 2,
+    subtests = True,
 )

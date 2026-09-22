@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Test script of mutation_test: runs `mutrim run` on the schemata test binary,
 # then `mutrim minimize` and `mutrim report` on its report. Arguments are the
-# rlocationpaths of mutrim, the test binary and mutants.json, then the test
-# sources (scanned for the mutrim:keep tag), "--", and the library sources
-# (quoted by the Stryker report). MUTRIM_IN_DIFF, when set, is the unified diff
-# the run is scoped to.
+# flags of `mutrim run` (such as -subtests), the rlocationpaths of mutrim, the
+# test binary and mutants.json, then the test sources (scanned for the
+# mutrim:keep tag), "--", and the library sources (quoted by the Stryker
+# report). MUTRIM_IN_DIFF, when set, is the unified diff the run is scoped to.
 
 # --- begin runfiles.bash initialization v3 ---
 # Copy-pasted from the Bazel Bash runfiles library v3.
@@ -25,6 +25,11 @@ f=
 set -e
 # --- end runfiles.bash initialization v3 ---
 
+run_flags=()
+while [[ $# -gt 0 && "$1" == -* ]]; do
+	run_flags+=("$1")
+	shift
+done
 mutrim="$(rlocation "$1")"
 test_bin="$(rlocation "$2")"
 mutants="$(rlocation "$3")"
@@ -50,7 +55,7 @@ if [[ -n "${MUTRIM_IN_DIFF:-}" ]]; then
 	in_diff=(-in-diff "$MUTRIM_IN_DIFF")
 fi
 
-"$mutrim" run -test-bin "$test_bin" -mutants "$mutants" -out "$out/report.json" \
+"$mutrim" run ${run_flags[@]+"${run_flags[@]}"} -test-bin "$test_bin" -mutants "$mutants" -out "$out/report.json" \
 	${in_diff[@]+"${in_diff[@]}"}
 "$mutrim" minimize -mutants "$mutants" -srcs "$test_srcs" -o "$out/minimize.json" "$out/report.json"
 "$mutrim" report -format stryker -mutants "$mutants" -srcs "$lib_srcs" \

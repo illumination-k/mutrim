@@ -172,6 +172,7 @@ def mutation_test(
         exclude_files = [],
         exclude_re = "",
         exclude_calls = [],
+        subtests = False,
         shard_count = None,
         env = {},
         **kwargs):
@@ -192,6 +193,11 @@ def mutation_test(
       run in the Stryker mutation-testing-elements schema, and its
       single-file viewer). Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
+
+    With `subtests`, every subtest (`TestX/case`) is a row of the kill
+    matrix instead of its parent, so `minimize.json` can call a table row
+    redundant; a tag on the parent protects every row. Subtest names must be
+    stable across runs.
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
@@ -224,6 +230,8 @@ def mutation_test(
             these globs, and of its arguments (`mutrim gen -exclude-calls`);
             empty applies the built-in list of logging calls, which the entry
             `"default"` also names, and `["none"]` excludes no call.
+        subtests: makes each subtest a row of the kill matrix
+            (`mutrim run -subtests`).
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -267,9 +275,11 @@ def mutation_test(
     sh_test(
         name = name,
         srcs = [Label("//bazel:run.sh")],
-        # "--" separates the test sources, scanned for the mutrim:keep tag,
-        # from the library sources, which the Stryker report quotes.
-        args = ["$(rlocationpath {})".format(t) for t in inputs] +
+        # Flags of `mutrim run` come first; "--" separates the test sources,
+        # scanned for the mutrim:keep tag, from the library sources, which
+        # the Stryker report quotes.
+        args = (["-subtests"] if subtests else []) +
+               ["$(rlocationpath {})".format(t) for t in inputs] +
                ["--", "$(rlocationpaths :{})".format(lib_srcs)],
         data = inputs + [":" + lib_srcs],
         deps = ["@bazel_tools//tools/bash/runfiles"],

@@ -45,10 +45,14 @@ func (s Status) Executed() bool {
 	return s == Killed || s == Lived || s == Timeout
 }
 
-// Test is one entry of the report's tests: a top-level test run on its
-// own against the unmutated package.
+// Test is one entry of the report's tests, a row of the kill matrix: a
+// top-level test, or with Options.Subtests a subtest, run on its own
+// against the unmutated package.
 type Test struct {
-	Name       string `json:"name"`
+	Name string `json:"name"`
+	// Parent is the test that runs this one as a subtest (`TestX` for
+	// `TestX/case`); empty for a top-level test.
+	Parent     string `json:"parent,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
 	// Sites lists the IDs of the mutants whose site the test reaches; only
 	// these can be killed by it.
@@ -59,11 +63,11 @@ type Test struct {
 type Result struct {
 	MutantID string `json:"mutant_id"`
 	Status   Status `json:"status"`
-	// TestsRun counts the top-level tests that ran: those reaching the
+	// TestsRun counts the rows (see Test) that ran: those reaching the
 	// mutant's site, fewer when a panic stopped the run early.
 	TestsRun int `json:"tests_run"`
-	// KilledBy lists the top-level tests that failed, or on a timeout the
-	// ones that never finished.
+	// KilledBy lists the rows that failed, or on a timeout the ones that
+	// never finished.
 	KilledBy   []string `json:"killed_by,omitempty"`
 	DurationMS int64    `json:"duration_ms"`
 }

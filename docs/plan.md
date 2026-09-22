@@ -205,6 +205,14 @@ Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
    `bazel/run.sh` runs it after `mutrim run`, with the macro's `srcs` as data, so every
    `mutation_test` leaves `report.json` and `minimize.json` in its undeclared outputs.
 
+6. **Subtest rows** (`run -subtests`, `mutation_test(subtests = True)`). Go suites are
+   mostly table-driven, so the unit a person deletes is `TestParse/empty_input`, not
+   `TestParse`. The baseline's `-test.v` output enumerates the subtests (there is no
+   `-test.list` for them); each is traced with `-test.run '^TestX$/^case$'`, and per mutant
+   the reaching subtests of one parent run in one process, attributed by their `--- FAIL:`
+   lines. Rows carry `parent`; `-keep` matches the full name and a tag on the parent protects
+   every row. Known hazard, as in Stryker's per-test mode: subtests must be order-independent.
+
 Done: the schemata fixture has a redundant test, a `TestRegression_*` test and a tagged test;
 the runner golden shows complete `killed_by` lists and `NO_COVERAGE` for the untested
 function, and the CLI test checks the minimize verdict end to end. `criteria` and `minimize`

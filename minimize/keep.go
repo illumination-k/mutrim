@@ -13,7 +13,8 @@ import (
 // Tagged returns the top-level tests whose doc comment contains tag, in
 // the given _test.go files and directories (other files are skipped).
 // It is the comment-tag protection rule: a test the tool must never call
-// redundant, whatever the matrix says.
+// redundant, whatever the matrix says. Subtests have no doc comment, so a
+// tag on their parent is meant to protect every one of them.
 func Tagged(paths []string, tag string) ([]string, error) {
 	var files []string
 	for _, p := range paths {

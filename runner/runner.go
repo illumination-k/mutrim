@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,9 +42,17 @@ type Options struct {
 	// Args are passed to the binary after the runner's own test flags.
 	Args []string
 	// Tests restricts the run to these top-level tests; nil means every
-	// test the binary lists.
+	// test the binary has.
 	Tests []string
-	// Timeout per mutant; zero derives 3× the baseline run, at least MinTimeout.
+	// Subtests makes every subtest (`TestX/case`) a row of the report: it is
+	// traced on its own and named in killed_by, so the minimizer can call a
+	// table row redundant. A test without subtests stays a row of its own.
+	// Subtest names must be stable across runs, so a name generated from
+	// random data is not supported.
+	Subtests bool
+	// Timeout per test process (one per mutant, or with Subtests one per
+	// parent of the rows reaching it); zero derives 3× the baseline run, at
+	// least MinTimeout.
 	Timeout time.Duration
 	// Shard selects mutants whose ID % Shards == Shard. Shards <= 1 runs all.
 	Shard, Shards int
@@ -59,10 +68,12 @@ type Options struct {
 
 // Run executes every viable mutant of the shard against the tests that
 // reach it and returns the report. The baseline (no mutant) must pass
-// first, or Run fails; then every test runs once on its own with
-// GOMUTANT_TRACE set to learn which sites it reaches, so a mutant only
-// runs the tests that can kill it and the report holds a per-test kill
-// matrix. Options.InDiff scopes the run to the lines of a diff.
+// first, or Run fails; its output names the tests, which are the rows of
+// the report (the subtests too with o.Subtests). Then every row runs once
+// on its own with GOMUTANT_TRACE set to learn which sites it reaches, so a
+// mutant only runs the tests that can kill it and the report holds a
+// per-test kill matrix. Options.InDiff scopes the run to the lines of a
+// diff.
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.TestBin == "" {
 		return nil, errors.New("runner: test binary is required")
@@ -76,8 +87,13 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			return nil, fmt.Errorf("runner: mutant ID %q is not a hex hash", m.ID)
 		}
 	}
+	for _, t := range o.Tests {
+		if strings.Contains(t, "/") {
+			return nil, fmt.Errorf("runner: %q is a subtest; Tests names top-level tests", t)
+		}
+	}
 
-	base, err := o.exec(ctx, "", "", o.Tests, 0)
+	base, err := o.exec(ctx, "", "", testPattern(o.Tests), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +104,10 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if timeout == 0 {
 		timeout = max(3*time.Duration(base.DurationMS)*time.Millisecond, MinTimeout)
 	}
-	logger.Printf("baseline %dms, timeout %s, %d tests", base.DurationMS, timeout, base.TestsRun)
+	names := rows(started(base.output), o.Subtests)
+	logger.Printf("baseline %dms, timeout %s, %d tests", base.DurationMS, timeout, len(names))
 
-	tests, err := o.traceTests(ctx)
+	tests, err := o.traceTests(ctx, names)
 	if err != nil {
 		return nil, err
 	}
@@ -131,11 +148,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
-			res, err := o.exec(ctx, m.ID, "", reachers[m.ID], timeout)
-			if err != nil {
+			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout); err != nil {
 				return nil, err
 			}
-			r = res.Result
 			logger.Printf("%s %s %s:%d %s %q (%dms)", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS)
 		}
 		report.Results = append(report.Results, r)
@@ -147,17 +162,33 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	return report, nil
 }
 
-// traceTests runs every top-level test on its own with GOMUTANT_TRACE set
-// and returns, per test, its duration and the sites it reached. A test
-// that fails on its own is an error, like a failing baseline.
-func (o Options) traceTests(ctx context.Context) ([]Test, error) {
-	names := o.Tests
-	if names == nil {
-		var err error
-		if names, err = o.list(ctx); err != nil {
-			return nil, err
+// runMutant runs the rows reaching mutant id against it and merges the
+// outcomes. A -test.run pattern selects the subtests of one parent, so the
+// rows run in one process per parent; KILLED wins over TIMEOUT, which wins
+// over LIVED, and every process's killers are recorded, so killed_by is
+// the complete kill matrix.
+func (o Options) runMutant(ctx context.Context, id string, rows []string, timeout time.Duration) (Result, error) {
+	r := Result{MutantID: id, Status: Lived}
+	for _, group := range groupByParent(rows) {
+		res, err := o.exec(ctx, id, "", testPattern(group), timeout)
+		if err != nil {
+			return Result{}, err
+		}
+		ran, failed := parseOutput(res.output, res.Status == Timeout, group)
+		r.TestsRun += ran
+		r.KilledBy = append(r.KilledBy, failed...)
+		r.DurationMS += res.DurationMS
+		if res.Status == Killed || r.Status == Lived {
+			r.Status = res.Status
 		}
 	}
+	return r, nil
+}
+
+// traceTests runs every row on its own with GOMUTANT_TRACE set and
+// returns, per row, its duration and the sites it reached. A test that
+// fails on its own is an error, like a failing baseline.
+func (o Options) traceTests(ctx context.Context, names []string) ([]Test, error) {
 	dir, err := os.MkdirTemp("", "mutrim-trace-")
 	if err != nil {
 		return nil, err
@@ -165,9 +196,9 @@ func (o Options) traceTests(ctx context.Context) ([]Test, error) {
 	defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
 
 	tests := make([]Test, 0, len(names))
-	for _, name := range names {
-		trace := filepath.Join(dir, name+".trace")
-		res, err := o.exec(ctx, "", trace, []string{name}, 0)
+	for i, name := range names {
+		trace := filepath.Join(dir, strconv.Itoa(i)+".trace")
+		res, err := o.exec(ctx, "", trace, testPattern([]string{name}), 0)
 		if err != nil {
 			return nil, err
 		}
@@ -180,27 +211,76 @@ func (o Options) traceTests(ctx context.Context) ([]Test, error) {
 		}
 		sites := strings.Fields(string(data))
 		slices.Sort(sites)
-		tests = append(tests, Test{Name: name, DurationMS: res.DurationMS, Sites: sites})
+		tests = append(tests, Test{Name: name, Parent: parent(name), DurationMS: res.DurationMS, Sites: sites})
 	}
 	return tests, nil
 }
 
-// list asks the binary for its top-level tests.
-func (o Options) list(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, o.TestBin, append([]string{"-test.list", "^Test"}, o.Args...)...) //nolint:gosec // running the user's test binary is the point
-	cmd.Dir = o.Dir
-	cmd.Env = childEnv(os.Environ(), "", "")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("runner: list tests of %s: %w", o.TestBin, err)
+// parent is the test that runs name as a subtest; empty for a top-level
+// test.
+func parent(name string) string {
+	i := strings.LastIndex(name, "/")
+	if i < 0 {
+		return ""
 	}
-	var names []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if name := strings.TrimSpace(line); strings.HasPrefix(name, "Test") {
-			names = append(names, name)
+	return name[:i]
+}
+
+// rows picks the rows of the report from the tests a run started: the
+// top-level tests, or with subtests every test that has no subtest of its
+// own, so a top-level test without subtests stays a row. Examples and fuzz
+// targets are no rows.
+func rows(names []string, subtests bool) []string {
+	parents := map[string]bool{}
+	for _, n := range names {
+		parents[parent(n)] = true
+	}
+	out := []string{}
+	for _, n := range names {
+		if !strings.HasPrefix(n, "Test") {
+			continue
+		}
+		if (subtests && !parents[n]) || (!subtests && parent(n) == "") {
+			out = append(out, n)
 		}
 	}
-	return names, nil
+	return out
+}
+
+// groupByParent splits rows by parent, in parent order, keeping the rows'
+// order within a group.
+func groupByParent(rows []string) [][]string {
+	byParent := map[string][]string{}
+	for _, r := range rows {
+		byParent[parent(r)] = append(byParent[parent(r)], r)
+	}
+	groups := make([][]string, 0, len(byParent))
+	for _, p := range slices.Sorted(maps.Keys(byParent)) {
+		groups = append(groups, byParent[p])
+	}
+	return groups
+}
+
+// testPattern is the -test.run pattern that selects exactly tests, which
+// must share a parent: "^TestX$/^(a|b)$" runs the subtests a and b of
+// TestX and nothing else, since the testing package matches the pattern
+// element by element against the name. Empty selects every test.
+func testPattern(tests []string) string {
+	if len(tests) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, elem := range strings.Split(parent(tests[0]), "/") {
+		if elem != "" {
+			b.WriteString("^" + regexp.QuoteMeta(elem) + "$/")
+		}
+	}
+	leaves := make([]string, len(tests))
+	for i, t := range tests {
+		leaves[i] = regexp.QuoteMeta(t[strings.LastIndex(t, "/")+1:])
+	}
+	b.WriteString("^(" + strings.Join(leaves, "|") + ")$")
+	return b.String()
 }
 
 // inShard reports whether id belongs to shard index out of total.
@@ -213,32 +293,29 @@ func inShard(id string, index, total int) bool {
 }
 
 type execResult struct {
-	Result
-	output []byte
+	Status     Status
+	DurationMS int64
+	output     []byte
 }
 
 var (
 	runLine  = regexp.MustCompile(`(?m)^=== RUN\s+(\S+)$`)
-	doneLine = regexp.MustCompile(`(?m)^--- (?:PASS|FAIL|SKIP): (\S+)`)
-	failLine = regexp.MustCompile(`(?m)^--- FAIL: (\S+)`)
+	doneLine = regexp.MustCompile(`(?m)^\s*--- (?:PASS|FAIL|SKIP): (\S+)`)
+	failLine = regexp.MustCompile(`(?m)^\s*--- FAIL: (\S+)`)
 )
 
-// exec runs the tests (all when nil) with mutant id active (none when
-// empty), tracing to the trace file when given, and classifies the exit.
-// A zero timeout means none.
-func (o Options) exec(ctx context.Context, id, trace string, tests []string, timeout time.Duration) (*execResult, error) {
+// exec runs the tests the -test.run pattern selects (all when empty) with
+// mutant id active (none when empty), tracing to the trace file when
+// given, and classifies the exit. A zero timeout means none.
+func (o Options) exec(ctx context.Context, id, trace, pattern string, timeout time.Duration) (*execResult, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 	args := []string{"-test.v"}
-	if len(tests) > 0 {
-		quoted := make([]string, len(tests))
-		for i, t := range tests {
-			quoted[i] = regexp.QuoteMeta(t)
-		}
-		args = append(args, "-test.run", "^("+strings.Join(quoted, "|")+")$")
+	if pattern != "" {
+		args = append(args, "-test.run", pattern)
 	}
 	args = append(args, o.Args...)
 
@@ -249,9 +326,7 @@ func (o Options) exec(ctx context.Context, id, trace string, tests []string, tim
 
 	start := time.Now()
 	out, err := cmd.CombinedOutput()
-	res := &execResult{output: out}
-	res.MutantID = id
-	res.DurationMS = time.Since(start).Milliseconds()
+	res := &execResult{output: out, DurationMS: time.Since(start).Milliseconds()}
 
 	var exitErr *exec.ExitError
 	switch {
@@ -266,32 +341,73 @@ func (o Options) exec(ctx context.Context, id, trace string, tests []string, tim
 	default:
 		return nil, fmt.Errorf("runner: exec %s: %w", o.TestBin, err)
 	}
-	res.TestsRun, res.KilledBy = parseOutput(out, res.Status == Timeout)
 	return res, nil
 }
 
-// parseOutput counts the top-level tests that started and lists those
-// that failed. On a timeout the tests that started but never finished are
-// the ones that hung, so they count as killers too.
-func parseOutput(out []byte, timedOut bool) (started int, failed []string) {
+// started lists the tests a -test.v output started, in order, once each.
+func started(out []byte) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, m := range runLine.FindAllSubmatch(out, -1) {
+		if name := string(m[1]); !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// parseOutput counts the rows that started and lists those that failed.
+// On a timeout the rows that started but never finished are the ones that
+// hung, so they count as killers too; the testing package prints a
+// subtest's result only when its parent finishes, so every subtest of a
+// hung parent is counted. A failure above the rows (the parent's body
+// failing before or after its subtests) that no row of its own explains
+// is attributed to every row under it, since running any one of them
+// runs that body.
+func parseOutput(out []byte, timedOut bool, rows []string) (ran int, failed []string) {
+	isRow := map[string]bool{}
+	for _, r := range rows {
+		isRow[r] = true
+	}
 	done := map[string]bool{}
 	for _, m := range doneLine.FindAllSubmatch(out, -1) {
 		done[string(m[1])] = true
 	}
-	for _, m := range failLine.FindAllSubmatch(out, -1) {
-		failed = append(failed, string(m[1]))
-	}
-	for _, m := range runLine.FindAllSubmatch(out, -1) {
-		name := string(m[1])
-		if strings.Contains(name, "/") {
-			continue
-		}
-		started++
-		if timedOut && !done[name] {
+	add := func(name string) {
+		if !slices.Contains(failed, name) {
 			failed = append(failed, name)
 		}
 	}
-	return started, failed
+	var above []string
+	for _, m := range failLine.FindAllSubmatch(out, -1) {
+		if name := string(m[1]); isRow[name] {
+			add(name)
+		} else {
+			above = append(above, name)
+		}
+	}
+	for _, name := range started(out) {
+		if !isRow[name] {
+			continue
+		}
+		ran++
+		if timedOut && !done[name] {
+			add(name)
+		}
+	}
+	for _, a := range above {
+		under := func(name string) bool { return strings.HasPrefix(name, a+"/") }
+		if slices.ContainsFunc(failed, under) {
+			continue
+		}
+		for _, r := range rows {
+			if under(r) {
+				add(r)
+			}
+		}
+	}
+	return ran, failed
 }
 
 // droppedEnv lists the variables the test binary must not inherit: the

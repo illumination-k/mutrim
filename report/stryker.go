@@ -79,7 +79,9 @@ type TestFile struct {
 	Tests []Test `json:"tests"`
 }
 
-// Test is one top-level test, referenced by CoveredBy and KilledBy.
+// Test is one row of the run's kill matrix (a top-level test, or a
+// subtest under `mutrim run -subtests`), referenced by CoveredBy and
+// KilledBy.
 type Test struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
