@@ -128,6 +128,30 @@ func TestSourceUnknownMutant(t *testing.T) {
 	}
 }
 
+// A mutant's span is the code it replaces: the operator token alone for a
+// binary expression, whose Node is the whole expression, and the whole
+// node for everything else.
+func TestMutantSpan(t *testing.T) {
+	spans := map[string][2]int{}
+	for _, m := range mutator.Generate(load(t, "relational"), mutator.Options{}) {
+		if m.Line != m.EndLine || m.EndCol <= m.Col {
+			t.Errorf("%s %q spans %d:%d-%d:%d", m.Operator, m.Description, m.Line, m.Col, m.EndLine, m.EndCol)
+		}
+		spans[m.Description] = [2]int{m.Col, m.EndCol}
+	}
+	// "return a < b, a <= b, ..." on line 4: the < is one column wide, the
+	// <= two, and the return covers the whole statement.
+	for desc, want := range map[string][2]int{
+		"< -> <=":               {11, 12},
+		"<= -> <":               {18, 20},
+		"return -> zero values": {2, 53},
+	} {
+		if got := spans[desc]; got != want {
+			t.Errorf("%q spans columns %v, want %v", desc, got, want)
+		}
+	}
+}
+
 // Mutant IDs must not depend on source positions: inserting lines above a
 // site keeps its ID.
 func TestMutantIDStableAcrossLineShift(t *testing.T) {

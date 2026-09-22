@@ -24,6 +24,7 @@ import (
 	"github.com/illumination-k/mutrim/criteria"
 	"github.com/illumination-k/mutrim/minimize"
 	"github.com/illumination-k/mutrim/mutator"
+	"github.com/illumination-k/mutrim/report"
 	"github.com/illumination-k/mutrim/runner"
 )
 
@@ -46,7 +47,10 @@ commands:
             tests that reach it, and report the per-test kill matrix
   minimize  from the report.json of one package (all of its shards),
             list the tests a greedy set cover finds redundant and the
-            functions whose mutants survive`
+            functions whose mutants survive
+  report    render report.json in an interchange format: the Stryker
+            mutation-testing-elements JSON, its single-file HTML viewer,
+            or GitHub Actions annotations`
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -68,6 +72,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runRun(ctx, args[1:], stdout, stderr)
 	case "minimize":
 		return runMinimize(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
@@ -261,7 +267,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		return err
 	}
 
-	report, err := runner.Run(ctx, opts)
+	rep, err := runner.Run(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -270,7 +276,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 			*out = filepath.Join(d, "report.json")
 		}
 	}
-	return writeJSON(*out, stdout, report)
+	return writeJSON(*out, stdout, rep)
 }
 
 // minimizeOutput is the JSON of `mutrim minimize`.
@@ -369,6 +375,62 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	return writeJSON(*out, stdout, result)
 }
 
+// runReport is `mutrim report`: it renders the reports of a run (the
+// shards of a package, or several packages) in a format other tools read.
+// Only -format stryker is JSON; html and github are written as they are,
+// since GitHub reads its annotations from the step's stdout.
+func runReport(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("report", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := fs.String("format", "stryker", "output format: \"stryker\" (mutation-testing-elements JSON), \"html\" (that JSON in its single-file viewer) or \"github\" (GitHub Actions annotations)")
+	mutantsPath := fs.String("mutants", "", "mutants.json of the reports (required)")
+	srcs := fs.String("srcs", "", "comma-separated files or directories holding the mutated sources, for the source text of the HTML view")
+	out := fs.String("o", "", "write the report here instead of stdout")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *mutantsPath == "" {
+		return errors.New("report: -mutants is required")
+	}
+	if fs.NArg() == 0 {
+		return errors.New("report: at least one report.json is required")
+	}
+	var mutants []mutator.Mutant
+	if err := readJSON(*mutantsPath, &mutants); err != nil {
+		return err
+	}
+	var reports []*runner.Report
+	for _, path := range fs.Args() {
+		r, err := runner.ReadReport(path)
+		if err != nil {
+			return err
+		}
+		reports = append(reports, r)
+	}
+	var sources *report.Sources
+	if *srcs != "" {
+		var err error
+		if sources, err = report.NewSources(strings.Split(*srcs, ",")); err != nil {
+			return err
+		}
+	}
+
+	switch *format {
+	case "stryker":
+		return writeJSON(*out, stdout, report.ToStryker(mutants, reports, sources))
+	case "html":
+		return writeTo(*out, stdout, func(w io.Writer) error {
+			return report.WriteHTML(w, report.ToStryker(mutants, reports, sources))
+		})
+	case "github":
+		return writeTo(*out, stdout, func(w io.Writer) error {
+			return report.WriteAnnotations(w, mutants, reports)
+		})
+	default:
+		return fmt.Errorf("report: unknown -format %q", *format)
+	}
+}
+
 // shardEnv reads Bazel's sharding protocol and acknowledges it by touching
 // TEST_SHARD_STATUS_FILE.
 func shardEnv() (index, total int, err error) {
@@ -404,6 +466,19 @@ func readJSON(path string, v any) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil
+}
+
+// writeTo runs write against path, or stdout when path is empty.
+func writeTo(path string, stdout io.Writer, write func(io.Writer) error) error {
+	var buf bytes.Buffer
+	if err := write(&buf); err != nil {
+		return err
+	}
+	if path != "" {
+		return os.WriteFile(filepath.Clean(path), buf.Bytes(), 0o600)
+	}
+	_, err := stdout.Write(buf.Bytes())
+	return err
 }
 
 func writeJSON(path string, stdout io.Writer, v any) error {

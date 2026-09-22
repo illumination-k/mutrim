@@ -98,6 +98,9 @@ def _mutrim_schemata_impl(ctx):
         go_info,
         archive,
         DefaultInfo(files = depset(schemata + [archive.data.export_file])),
+        # The reporters need the text of the files the mutants point at,
+        # which is the library's sources, not the lowered ones.
+        OutputGroupInfo(original_srcs = depset(go_srcs)),
     ]
 
 mutrim_schemata = go_rule(
@@ -176,9 +179,11 @@ def mutation_test(
       selected, which must pass like the original tests do,
     - `<name>`: a test that re-executes that binary once per mutant against
       the tests reaching it, writes `report.json` (the per-test kill matrix)
-      to its undeclared outputs, and `minimize.json` next to it: the tests a
+      to its undeclared outputs, and next to it `minimize.json` (the tests a
       greedy set cover over that matrix finds redundant, and the functions
-      whose mutants survive. Tests named `TestRegression_*` or tagged
+      whose mutants survive) and `mutation-report.json` / `.html` (the same
+      run in the Stryker mutation-testing-elements schema, and its
+      single-file viewer). Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
 
     `match`, `files`, `exclude_files` and `exclude_re` narrow the sites that
@@ -232,13 +237,24 @@ def mutation_test(
         env = env,
         **kwargs
     )
+    lib_srcs = schemata + "_srcs"
+    native.filegroup(
+        name = lib_srcs,
+        srcs = [":" + schemata],
+        output_group = "original_srcs",
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
     mutrim = str(Label("//cmd/mutrim"))
     inputs = [mutrim, ":" + schemata + "_test", ":" + mutants] + srcs
     sh_test(
         name = name,
         srcs = [Label("//bazel:run.sh")],
-        args = ["$(rlocationpath {})".format(t) for t in inputs],
-        data = inputs,
+        # "--" separates the test sources, scanned for the mutrim:keep tag,
+        # from the library sources, which the Stryker report quotes.
+        args = ["$(rlocationpath {})".format(t) for t in inputs] +
+               ["--", "$(rlocationpaths :{})".format(lib_srcs)],
+        data = inputs + [":" + lib_srcs],
         deps = ["@bazel_tools//tools/bash/runfiles"],
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.

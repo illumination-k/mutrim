@@ -35,9 +35,9 @@ const (
 	Ignored Status = "IGNORED"
 )
 
-// executed reports whether the status came from running the tests, and
+// Executed reports whether the status came from running the tests, and
 // so is worth copying forward from a previous report.
-func (s Status) executed() bool {
+func (s Status) Executed() bool {
 	return s == Killed || s == Lived || s == Timeout
 }
 

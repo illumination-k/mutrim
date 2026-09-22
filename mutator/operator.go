@@ -114,7 +114,10 @@ type Site struct {
 	Node ast.Node
 	// Pos overrides Node.Pos() for reporting, e.g. the operator token of a
 	// binary expression. Zero means use Node.Pos().
-	Pos         token.Pos
+	Pos token.Pos
+	// End overrides Node.End(), and must be set whenever Pos narrows the
+	// site to part of Node. Zero means use Node.End().
+	End         token.Pos
 	Operator    string // filled in by Generate
 	Description string
 	Apply       func()
