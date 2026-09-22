@@ -132,6 +132,57 @@ func Cmp[T Ordered](id string, a, b T, orig, mutant string) bool {
 	panic("mut: unsupported comparison operator " + orig)
 }
 
+// Bit evaluates `a orig b`, or `a mutant b` when id is active, for the
+// bitwise operators "&", "|", "^", "&^".
+func Bit[T Integer](id string, a, b T, orig, mutant string) T {
+	if Active(id) {
+		orig = mutant
+	}
+	switch orig {
+	case "&":
+		return a & b
+	case "|":
+		return a | b
+	case "^":
+		return a ^ b
+	case "&^":
+		return a &^ b
+	}
+	panic("mut: unsupported bitwise operator " + orig)
+}
+
+// Shift evaluates `a orig n`, or `a mutant n` when id is active, for "<<"
+// and ">>". The count has its own type parameter, as in Go.
+func Shift[T, S Integer](id string, a T, n S, orig, mutant string) T {
+	if Active(id) {
+		orig = mutant
+	}
+	switch orig {
+	case "<<":
+		return a << n
+	case ">>":
+		return a >> n
+	}
+	panic("mut: unsupported shift operator " + orig)
+}
+
+// Neg returns -x, or x when id is active.
+func Neg[T Number](id string, x T) T {
+	if Active(id) {
+		return x
+	}
+	return -x
+}
+
+// Cond returns c, or forced when id is active. c is still evaluated for
+// its side effects.
+func Cond(id string, c, forced bool) bool {
+	if Active(id) {
+		return forced
+	}
+	return c
+}
+
 // Not returns c, or !c when id is active. It lowers condition negation and
 // the == <-> != swap, which is exactly a negation for every Go type.
 func Not(id string, c bool) bool {

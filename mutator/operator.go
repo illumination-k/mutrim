@@ -57,19 +57,23 @@ func (c *Context) isMapIndex(e ast.Expr) bool {
 	return isMap
 }
 
+// isBuiltin reports whether call invokes the named builtin function.
+func (c *Context) isBuiltin(call *ast.CallExpr, name string) bool {
+	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+	if !ok {
+		return false
+	}
+	b, ok := c.Info.Uses[id].(*types.Builtin)
+	return ok && b.Name() == name
+}
+
 // callsRecover reports whether e contains a call to the builtin recover.
 // Moving such a call into a closure would change what it returns.
 func (c *Context) callsRecover(e ast.Expr) bool {
 	found := false
 	ast.Inspect(e, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return !found
-		}
-		if id, ok := call.Fun.(*ast.Ident); ok {
-			if b, ok := c.Info.Uses[id].(*types.Builtin); ok && b.Name() == "recover" {
-				found = true
-			}
+		if call, ok := n.(*ast.CallExpr); ok && c.isBuiltin(call, "recover") {
+			found = true
 		}
 		return !found
 	})
@@ -102,7 +106,11 @@ var DefaultOperators = []Operator{
 	Relational,
 	Arithmetic,
 	Logical,
+	Bitwise,
+	Negatives{},
 	Negation{},
+	Condition{},
 	IncDec{},
+	VoidCall{},
 	Return{},
 }

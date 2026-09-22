@@ -33,6 +33,7 @@ schemata.go:37 Half "* -> /" KILLED by TestArithmetic
 schemata.go:38 Sum "+ -> -" KILLED by TestArithmetic
 schemata.go:39 Shift "return -> zero values" KILLED by TestArithmetic
 schemata.go:39 Shift "+ -> -" KILLED by TestArithmetic
+schemata.go:39 Shift "<< -> >>" NOT_VIABLE
 schemata.go:43 And "return -> zero values" KILLED by TestLogical
 schemata.go:43 And "&& -> ||" KILLED by TestLogical
 schemata.go:44 Or "return -> zero values" KILLED by TestLogical
@@ -44,9 +45,12 @@ schemata.go:45 Between "< -> <=" KILLED by TestLogical
 schemata.go:45 Between "< -> <=" KILLED by TestLogical
 schemata.go:45 Between "== -> !=" KILLED by TestLogical
 schemata.go:49 Sign "cond -> !(cond)" KILLED by TestStatements,TestRegression_Sign
+schemata.go:49 Sign "cond -> true" KILLED by TestStatements,TestRegression_Sign
+schemata.go:49 Sign "cond -> false" KILLED by TestStatements,TestRegression_Sign
 schemata.go:49 Sign "> -> >=" KILLED by TestStatements,TestRegression_Sign
 schemata.go:50 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
 schemata.go:52 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
+schemata.go:52 Sign "-x -> x" NOT_VIABLE
 schemata.go:57 CountTo "cond -> !(cond)" KILLED by TestStatements
 schemata.go:57 CountTo "< -> <=" KILLED by TestStatements
 schemata.go:57 CountTo "++ -> --" TIMEOUT by TestStatements
@@ -68,8 +72,28 @@ schemata.go:90 SkipNamedBoolOperands "&& -> ||" NOT_VIABLE
 schemata.go:93 SkipRecover "&& -> ||" NOT_VIABLE
 schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
 schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
+schemata.go:94 SkipRecover "call -> removed" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "cond -> !(cond)" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "< -> <=" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "++ -> --" NOT_VIABLE
-schemata.go:104 Untested "return -> zero values" NO_COVERAGE
-schemata.go:104 Untested "+ -> -" NO_COVERAGE
+schemata.go:104 Mask "return -> zero values" KILLED by TestBitwise
+schemata.go:104 Mask "& -> |" KILLED by TestBitwise
+schemata.go:105 Either "return -> zero values" KILLED by TestBitwise
+schemata.go:105 Either "| -> &" KILLED by TestBitwise
+schemata.go:106 Shl "return -> zero values" KILLED by TestBitwise
+schemata.go:106 Shl "<< -> >>" KILLED by TestBitwise
+schemata.go:107 Negate "return -> zero values" KILLED by TestBitwise
+schemata.go:107 Negate "-x -> x" KILLED by TestBitwise
+schemata.go:114 Twice "call -> removed" KILLED by TestCalls
+schemata.go:115 Twice "call -> removed" KILLED by TestCalls
+schemata.go:120 SkipInitCall "cond -> !(cond)" KILLED by TestCalls
+schemata.go:120 SkipInitCall "call -> removed" NOT_VIABLE
+schemata.go:120 SkipInitCall "< -> <=" KILLED by TestCalls
+schemata.go:120 SkipInitCall "call -> removed" NOT_VIABLE
+schemata.go:123 SkipInitCall "return -> zero values" KILLED by TestCalls
+schemata.go:127 SkipNamedBoolCond "cond -> !(cond)" NOT_VIABLE
+schemata.go:127 SkipNamedBoolCond "cond -> true" NOT_VIABLE
+schemata.go:127 SkipNamedBoolCond "cond -> false" NOT_VIABLE
+schemata.go:128 SkipNamedBoolCond "return -> zero values" KILLED by TestCalls
+schemata.go:134 Untested "return -> zero values" NO_COVERAGE
+schemata.go:134 Untested "+ -> -" NO_COVERAGE

@@ -16,11 +16,17 @@ import (
 // notEmbedded lists the fixture sites the lowering must decline, as
 // "func description". Everything else viable must be embedded.
 var notEmbedded = map[string]bool{
-	`SkipConst * -> /`:               true, // constant expression
-	`SkipNamedBool < -> <=`:          true, // result is a defined bool type
-	`SkipNamedBoolOperands && -> ||`: true, // operands are a defined bool type
-	`SkipRecover && -> ||`:           true, // recover() in the closure operand
-	`SkipMapPost ++ -> --`:           true, // map element in a for post statement
+	`SkipConst * -> /`:                  true, // constant expression
+	`SkipNamedBool < -> <=`:             true, // result is a defined bool type
+	`SkipNamedBoolOperands && -> ||`:    true, // operands are a defined bool type
+	`SkipRecover && -> ||`:              true, // recover() in the closure operand
+	`SkipMapPost ++ -> --`:              true, // map element in a for post statement
+	`Shift << -> >>`:                    true, // constant left operand of a shift
+	`Sign -x -> x`:                      true, // constant expression
+	`SkipInitCall call -> removed`:      true, // call in a for init or post statement
+	`SkipNamedBoolCond cond -> !(cond)`: true, // condition of a defined bool type
+	`SkipNamedBoolCond cond -> true`:    true,
+	`SkipNamedBoolCond cond -> false`:   true,
 }
 
 // TestSchemataIdentity lowers the schemata fixture, pins the generated

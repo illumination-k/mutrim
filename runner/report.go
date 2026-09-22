@@ -166,7 +166,8 @@ func WeakSpots(mutants []mutator.Mutant, reports ...*Report) []Spot {
 		}
 	}
 	slices.SortFunc(out, func(a, b Spot) int {
-		return cmp.Or(cmp.Compare(b.Lived+b.NoCoverage, a.Lived+a.NoCoverage), cmp.Compare(a.Func, b.Func))
+		// Same-named functions of two packages are told apart by file.
+		return cmp.Or(cmp.Compare(b.Lived+b.NoCoverage, a.Lived+a.NoCoverage), cmp.Compare(a.Func, b.Func), cmp.Compare(a.File, b.File))
 	})
 	return out
 }

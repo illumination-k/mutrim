@@ -39,6 +39,77 @@ func (Negation) Sites(ctx *Context, n ast.Node) []Site {
 	return []Site{s}
 }
 
+// Condition forces the condition of an if statement to true and to false.
+// The condition is still evaluated, so its side effects are kept.
+type Condition struct{}
+
+func (Condition) Name() string { return "condition" }
+
+func (Condition) Sites(ctx *Context, n ast.Node) []Site {
+	s, ok := n.(*ast.IfStmt)
+	if !ok {
+		return nil
+	}
+	cond := &s.Cond
+	orig := *cond
+	sites := make([]Site, 0, 2)
+	for _, value := range []string{"true", "false"} {
+		forced := ast.NewIdent(value)
+		site := Site{
+			Node:        orig,
+			Description: "cond -> " + value,
+			Apply:       func() { *cond = forced },
+			Undo:        func() { *cond = orig },
+		}
+		if ctx.isBool(orig) {
+			// *cond is read at lowering time, like Negation's.
+			site.Schemata = func(l *Lowering) ast.Node { return l.Call("Cond", *cond, forced) }
+		}
+		sites = append(sites, site)
+	}
+	return sites
+}
+
+// VoidCall removes a call statement whose callee returns nothing. A call
+// to panic is kept: removing it could leave a function without a
+// terminating statement, and the schemata source must compile.
+type VoidCall struct{}
+
+func (VoidCall) Name() string { return "voidcall" }
+
+func (VoidCall) Sites(ctx *Context, n ast.Node) []Site {
+	s, ok := n.(*ast.ExprStmt)
+	if !ok {
+		return nil
+	}
+	call, ok := ast.Unparen(s.X).(*ast.CallExpr)
+	if !ok || !ctx.Info.Types[call].IsVoid() || ctx.isBuiltin(call, "panic") {
+		return nil
+	}
+	orig := s.X
+	return []Site{{
+		Node:        s,
+		Description: "call -> removed",
+		// `func() {}()` is a statement that does nothing and is valid
+		// wherever the call was, including a for post statement.
+		Apply: func() {
+			s.X = &ast.CallExpr{Fun: &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}}, Body: &ast.BlockStmt{}}}
+		},
+		Undo: func() { s.X = orig },
+		// `if !mut.Active(id) { f() }` is not a simple statement, so a
+		// call in an if/for/switch init or a for post is declined.
+		Schemata: func(l *Lowering) ast.Node {
+			if name := l.Cursor.Name(); name == "Init" || name == "Post" {
+				return nil
+			}
+			return &ast.IfStmt{
+				Cond: &ast.UnaryExpr{Op: token.NOT, X: l.Active()},
+				Body: &ast.BlockStmt{List: []ast.Stmt{s}},
+			}
+		},
+	}}
+}
+
 // IncDec swaps ++ and --.
 type IncDec struct{}
 
