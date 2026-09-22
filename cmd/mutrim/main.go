@@ -32,19 +32,19 @@ import (
 const operatorsUsage = `comma-separated operators to apply: names, "default", ` +
 	`and "-name" to remove one (default: the default set, which leaves out the opt-in ones)`
 
-// excludeCallsUsage documents the -exclude-calls flag of gen.
-var excludeCallsUsage = `comma-separated globs over the callee ("log.Printf", ` +
-	`"(*slog.Logger).Info"): a matching call and its arguments are ignored. ` +
-	`"default" is the built-in list (` + strings.Join(mutator.DefaultExcludeCalls, " ") +
-	`), which an empty flag applies and "none" turns off`
+// aridUsage documents the -arid flag of gen.
+const aridUsage = `comma-separated globs over the callee ("(*Metrics).Observe", ` +
+	`"(*slog.Logger).Info") extending the built-in arid rules: a matching call ` +
+	`and its arguments are arid, and their mutants ignored`
 
 const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
   gen       list mutants of the packages as JSON; -operators selects the
             operators and -match / -files / -exclude-files / -exclude-re /
-            -exclude-calls narrow the sites (a filtered mutant is
-            reported, and ignored);
+            -arid narrow the sites (a filtered mutant is reported, and
+            ignored); mutants inside arid nodes (logging, sleeps, ...) are
+            ignored unless -no-arid;
             -schemata also writes sources with every mutant embedded;
             -importpath type-checks the given files from export data
             (Bazel mode)
@@ -99,7 +99,8 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	files := fs.String("files", "", "keep only the mutants in files matching one of these comma-separated globs")
 	excludeFiles := fs.String("exclude-files", "", "drop the mutants in files matching one of these comma-separated regexps")
 	excludeRE := fs.String("exclude-re", "", "drop the mutants whose \"func operator: description\" matches this regexp")
-	excludeCalls := fs.String("exclude-calls", "", excludeCallsUsage)
+	arid := fs.String("arid", "", aridUsage)
+	noArid := fs.Bool("no-arid", false, "turn the built-in arid rules off (-arid still applies)")
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
@@ -117,7 +118,8 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		Files:        *files,
 		ExcludeFiles: *excludeFiles,
 		ExcludeRE:    *excludeRE,
-		ExcludeCalls: *excludeCalls,
+		Arid:         *arid,
+		NoArid:       *noArid,
 	}.Compile()
 	if err != nil {
 		return err
@@ -448,6 +450,7 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 	mutantsPath := fs.String("mutants", "", "mutants.json of the reports (required)")
 	srcs := fs.String("srcs", "", "comma-separated files or directories holding the mutated sources, for the source text of the HTML view")
 	out := fs.String("o", "", "write the report here instead of stdout")
+	maxPerLine := fs.Int("max-per-line", 0, "annotate at most this many mutants per source line (with -format github); 0 is no cap")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -486,7 +489,7 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 		})
 	case "github":
 		return writeTo(*out, stdout, func(w io.Writer) error {
-			return report.WriteAnnotations(w, mutants, reports)
+			return report.WriteAnnotations(w, mutants, reports, *maxPerLine)
 		})
 	default:
 		return fmt.Errorf("report: unknown -format %q", *format)

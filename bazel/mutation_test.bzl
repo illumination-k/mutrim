@@ -62,7 +62,9 @@ def _mutrim_schemata_impl(ctx):
     args.add_joined("-exclude-files", ctx.attr.exclude_files, join_with = ",", omit_if_empty = True)
     if ctx.attr.exclude_re:
         args.add("-exclude-re", ctx.attr.exclude_re)
-    args.add_joined("-exclude-calls", ctx.attr.exclude_calls, join_with = ",", omit_if_empty = True)
+    args.add_joined("-arid", ctx.attr.arid, join_with = ",", omit_if_empty = True)
+    if ctx.attr.no_arid:
+        args.add("-no-arid")
     args.add("-schemata", overlay.dirname)
     args.add("-o", ctx.outputs.mutants)
     args.add_all(go_srcs)
@@ -137,10 +139,13 @@ in the `(*T).Name` form of `mutrim gen -match`.""",
             doc = """Drops the mutants whose `func operator: description` matches this
 regexp (`mutrim gen -exclude-re`).""",
         ),
-        "exclude_calls": attr.string_list(
-            doc = """Drops the mutants of a call whose callee matches one of these globs,
-and of its arguments (`mutrim gen -exclude-calls`). Empty applies the built-in list,
-which the entry "default" also names; `["none"]` excludes no call.""",
+        "arid": attr.string_list(
+            doc = """Extends the built-in arid rules with callee globs: the mutants of a
+matching call and of its arguments are ignored (`mutrim gen -arid`).""",
+        ),
+        "no_arid": attr.bool(
+            doc = """Turns the built-in arid rules off; `arid` still applies
+(`mutrim gen -no-arid`).""",
         ),
         "_mutrim": attr.label(
             default = Label("//cmd/mutrim"),
@@ -171,7 +176,8 @@ def mutation_test(
         files = [],
         exclude_files = [],
         exclude_re = "",
-        exclude_calls = [],
+        arid = [],
+        no_arid = False,
         subtests = False,
         confirm_kills = 1,
         confirm_baseline = 1,
@@ -212,8 +218,9 @@ def mutation_test(
     to the lines that diff adds; every other mutant is reported `SKIPPED` and
     counts towards no score.
 
-    `match`, `files`, `exclude_files`, `exclude_re` and `exclude_calls` narrow
-    the sites that are mutated; a mutant they reject is still listed in `mutants.json` and
+    `match`, `files`, `exclude_files`, `exclude_re` and `arid` narrow
+    the sites that are mutated, and so do the built-in arid rules (logging,
+    sleeps, stdout writes, ...) unless `no_arid`; a mutant they reject is still listed in `mutants.json` and
     reported `IGNORED`, so the counts stay comparable across runs. A single
     site or function is suppressed in the source instead, with a
     `//mutrim:disable` directive, which is reported the same way.
@@ -234,10 +241,11 @@ def mutation_test(
             regexps (`mutrim gen -exclude-files`).
         exclude_re: drops the mutants whose `func operator: description`
             matches this regexp (`mutrim gen -exclude-re`).
-        exclude_calls: drops the mutants of a call whose callee matches one of
-            these globs, and of its arguments (`mutrim gen -exclude-calls`);
-            empty applies the built-in list of logging calls, which the entry
-            `"default"` also names, and `["none"]` excludes no call.
+        arid: extends the built-in arid rules with callee globs: the mutants
+            of a matching call and of its arguments are ignored
+            (`mutrim gen -arid`).
+        no_arid: turns the built-in arid rules off; `arid` still applies
+            (`mutrim gen -no-arid`).
         subtests: makes each subtest a row of the kill matrix
             (`mutrim run -subtests`).
         confirm_kills: reruns a mutant's killing tests until each has failed
@@ -266,7 +274,8 @@ def mutation_test(
         files = files,
         exclude_files = exclude_files,
         exclude_re = exclude_re,
-        exclude_calls = exclude_calls,
+        arid = arid,
+        no_arid = no_arid,
         testonly = True,
         visibility = ["//visibility:private"],
     )

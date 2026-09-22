@@ -161,21 +161,22 @@ func TestFilterSpecErrors(t *testing.T) {
 	}
 }
 
-// The default exclude-calls list covers a logging call, the expressions it
-// logs, and a method of a logger, and nothing else. The fixture marks the
-// lines it must cover with a "// logged" comment.
-func TestFilterExcludeCallsDefault(t *testing.T) {
-	pkg := load(t, "logging")
+// The built-in arid rules cover logging, standard-stream writes, sleeps,
+// sinks, timeouts, a map-cache lookup, panic("unreachable") and a String
+// method, and a block whose statements are all arid; nothing else. The
+// fixture marks the lines they must cover.
+func TestFilterAridDefault(t *testing.T) {
+	pkg := load(t, "arid")
 	filter, err := mutator.FilterSpec{}.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	logged := loggedLines(t)
+	marked := aridLines(t)
 	ignored, kept := 0, 0
 	for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
 		want := ""
-		if logged[m.Line] {
-			want = "exclude-calls"
+		if text, ok := marked[m.Line]; ok && strings.Contains(m.Description, text) {
+			want = "arid"
 		}
 		if m.Ignored != want {
 			t.Errorf("%s:%d %s %q: ignored=%q, want %q", filepath.Base(m.File), m.Line, m.Func, m.Description, m.Ignored, want)
@@ -187,59 +188,61 @@ func TestFilterExcludeCallsDefault(t *testing.T) {
 		}
 	}
 	if ignored == 0 || kept == 0 {
-		t.Fatalf("the logging fixture must have both kinds of mutant: %d ignored, %d kept", ignored, kept)
+		t.Fatalf("the arid fixture must have both kinds of mutant: %d ignored, %d kept", ignored, kept)
 	}
 }
 
-// loggedLines reads the lines of the logging fixture the default list must
-// cover, marked with a trailing "// logged" comment.
-func loggedLines(t *testing.T) map[int]bool {
+// aridLines reads the lines of the arid fixture the built-in rules must
+// cover: a trailing "// arid" covers every mutant of the line, and
+// "// arid: text" those whose description contains text.
+func aridLines(t *testing.T) map[int]string {
 	t.Helper()
-	src, err := os.ReadFile(filepath.Clean("testdata/logging/logging.go"))
+	src, err := os.ReadFile(filepath.Clean("testdata/arid/arid.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[int]bool{}
+	out := map[int]string{}
 	for i, line := range strings.Split(string(src), "\n") {
-		if strings.HasSuffix(strings.TrimSpace(line), "// logged") {
-			out[i+1] = true
+		_, marker, ok := strings.Cut(line, "// arid")
+		if ok && (marker == "" || strings.HasPrefix(marker, ": ")) {
+			out[i+1] = strings.TrimPrefix(marker, ": ")
 		}
 	}
 	if len(out) == 0 {
-		t.Fatal("the logging fixture marks no line")
+		t.Fatal("the arid fixture marks no line")
 	}
 	return out
 }
 
-// An explicit list replaces the default one, "default" extends it and
-// "none" excludes no call at all.
-func TestFilterExcludeCallsSpec(t *testing.T) {
-	// Functions whose mutants the spec must ignore; the others keep all
-	// of theirs.
+// -arid extends the built-in rules with callees, and -no-arid turns the
+// built-in rules off while the named callees still apply.
+func TestFilterAridSpec(t *testing.T) {
+	// Functions whose mutants the spec must ignore, at least in part; the
+	// others keep all of theirs.
+	builtin := []string{"Retry", "Report", "Wait", "Square", "Check", "Mode", "(T).String"}
 	cases := map[string]struct {
-		spec    string
+		spec    mutator.FilterSpec
 		ignored []string
 	}{
-		"default":     {"", []string{"Retry", "Report"}},
-		"named":       {"default", []string{"Retry", "Report"}},
-		"none":        {"none", nil},
-		"other calls": {"fmt.*", []string{"Describe"}},
-		"extended":    {"default, fmt.*", []string{"Retry", "Report", "Describe"}},
-		"import path": {"log/slog.*", []string{"Retry"}},
+		"default":     {mutator.FilterSpec{}, builtin},
+		"extended":    {mutator.FilterSpec{Arid: "fmt.*"}, append([]string{"Describe"}, builtin...)},
+		"none":        {mutator.FilterSpec{NoArid: true}, nil},
+		"only named":  {mutator.FilterSpec{NoArid: true, Arid: "fmt.Sprintf"}, []string{"Describe"}},
+		"import path": {mutator.FilterSpec{NoArid: true, Arid: "log/slog.*"}, []string{"Retry", "Check"}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			pkg := load(t, "logging")
-			filter, err := mutator.FilterSpec{ExcludeCalls: tc.spec}.Compile()
+			pkg := load(t, "arid")
+			filter, err := tc.spec.Compile()
 			if err != nil {
 				t.Fatal(err)
 			}
 			ignored := map[string]int{}
 			for _, m := range mutator.Generate(pkg, mutator.Options{TypeCheck: true, Filter: filter}) {
-				if m.Ignored == "exclude-calls" {
+				if m.Ignored == "arid" {
 					ignored[m.Func]++
 				} else if m.Ignored != "" {
-					t.Errorf("%s %q: ignored=%q, want exclude-calls or kept", m.Func, m.Description, m.Ignored)
+					t.Errorf("%s %q: ignored=%q, want arid or kept", m.Func, m.Description, m.Ignored)
 				}
 			}
 			for _, fn := range tc.ignored {
@@ -255,20 +258,12 @@ func TestFilterExcludeCallsSpec(t *testing.T) {
 	}
 }
 
-func TestFilterExcludeCallsErrors(t *testing.T) {
-	cases := map[string]string{
-		"bad glob":       "log.[-]",
-		"none with more": "none,log.*",
+func TestFilterAridErrors(t *testing.T) {
+	_, err := mutator.FilterSpec{Arid: "log.[-]"}.Compile()
+	if err == nil {
+		t.Fatal("expected an error")
 	}
-	for name, spec := range cases {
-		t.Run(name, func(t *testing.T) {
-			_, err := mutator.FilterSpec{ExcludeCalls: spec}.Compile()
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if !strings.Contains(err.Error(), "exclude-calls") {
-				t.Errorf("error does not name the rule: %v", err)
-			}
-		})
+	if !strings.Contains(err.Error(), "arid") {
+		t.Errorf("error does not name the rule: %v", err)
 	}
 }
