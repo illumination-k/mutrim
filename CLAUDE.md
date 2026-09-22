@@ -153,7 +153,14 @@ run on the result.
 - The local check misses context-dependent failures: constant overflow in the enclosing
   assignment, and an import or variable left unused by a return replacement. Those fail at
   build time; count build failures as NOT VIABLE.
-- Equivalent mutants are not detected; surviving mutants are simply dropped from requirements.
+- Equivalent mutants: static rules next to the type check (`mutator/equivalent.go`:
+  `identity-operand`, `non-negative-operand`) set `Mutant.Equivalent`, which the runner
+  reports `EQUIVALENT` without executing it. Every mutant run is traced too, and a LIVED
+  mutant no row failed against whose processes reached exactly the sites their rows reach
+  without it is `SUSPECT_EQUIVALENT` (Schuler & Zeller, STVR 2013). Neither is scored unless
+  `run -count-suspect` (`Report.CountSuspect`, read through `Report.Survived`). Duplicate
+  merging by compiled output (TCE) is not implemented. Other survivors are simply dropped
+  from requirements.
 - Per-test coverage is site coverage, not `go tool cover` blocks: with `GOMUTANT_TRACE` set the
   `mut` runtime appends every site ID the process reaches, and the runner runs each test once
   on its own that way. `-cover` cannot be used instead: `go test -c -cover -overlay` ignores

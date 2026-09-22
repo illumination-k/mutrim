@@ -1,0 +1,62 @@
+equivalent.go:6:13 Identity arithmetic "- -> +" viable=true | a := x + 0 + 0*x
+equivalent.go:6:9 Identity arithmetic "+ -> -" viable=true equivalent=identity-operand | a := x - 0 - 0*x
+equivalent.go:6:11 Identity constant "0 -> 1" viable=true | a := x + 1 - 0*x
+equivalent.go:6:16 Identity arithmetic "* -> /" viable=true | a := x + 0 - 0/x
+equivalent.go:6:15 Identity constant "0 -> 1" viable=true | a := x + 0 - 1*x
+equivalent.go:7:11 Identity arithmetic "+ -> -" viable=true | b := x*1 - x/1
+equivalent.go:7:8 Identity arithmetic "* -> /" viable=true equivalent=identity-operand | b := x/1 + x/1
+equivalent.go:7:9 Identity constant "1 -> 2" viable=true | b := x*2 + x/1
+equivalent.go:7:14 Identity arithmetic "/ -> *" viable=true equivalent=identity-operand | b := x*1 + x*1
+equivalent.go:7:15 Identity constant "1 -> 2" viable=true | b := x*1 + x/2
+equivalent.go:8:16 Identity arithmetic "- -> +" viable=true | c := x<<0 + 0 + x>>0
+equivalent.go:8:12 Identity arithmetic "+ -> -" viable=true equivalent=identity-operand | c := x<<0 - 0 - x>>0
+equivalent.go:8:8 Identity bitwise "<< -> >>" viable=true equivalent=identity-operand | c := x>>0 + 0 - x>>0
+equivalent.go:8:10 Identity constant "0 -> 1" viable=true | c := x<<1 + 0 - x>>0
+equivalent.go:8:14 Identity constant "0 -> 1" viable=true | c := x<<0 + 1 - x>>0
+equivalent.go:8:19 Identity bitwise ">> -> <<" viable=true equivalent=identity-operand | c := x<<0 + 0 - x<<0
+equivalent.go:8:21 Identity constant "0 -> 1" viable=true | c := x<<0 + 0 - x>>1
+equivalent.go:9:21 Identity arithmetic "+ -> -" viable=true | d := f*1 + f/1 + f - 0
+equivalent.go:9:17 Identity arithmetic "+ -> -" viable=true | d := f*1 + f/1 - f + 0
+equivalent.go:9:11 Identity arithmetic "+ -> -" viable=true | d := f*1 - f/1 + f + 0
+equivalent.go:9:8 Identity arithmetic "* -> /" viable=true equivalent=identity-operand | d := f/1 + f/1 + f + 0
+equivalent.go:9:9 Identity constant "1 -> 2" viable=true | d := f*2 + f/1 + f + 0
+equivalent.go:9:14 Identity arithmetic "/ -> *" viable=true equivalent=identity-operand | d := f*1 + f*1 + f + 0
+equivalent.go:9:15 Identity constant "1 -> 2" viable=true | d := f*1 + f/2 + f + 0
+equivalent.go:9:23 Identity constant "0 -> 1" viable=true | d := f*1 + f/1 + f + 1
+equivalent.go:10:9 Identity arithmetic "+ -> -" viable=true equivalent=identity-operand | e := u - 0
+equivalent.go:10:11 Identity constant "0 -> 1" viable=true | e := u + 1
+equivalent.go:11:4 Identity assignop "+= -> -=" viable=true equivalent=identity-operand | x -= 0
+equivalent.go:11:4 Identity assignop "+= -> =" viable=true | x = 0
+equivalent.go:11:7 Identity constant "0 -> 1" viable=true | x += 1
+equivalent.go:12:4 Identity assignop "*= -> /=" viable=true equivalent=identity-operand | x /= 1
+equivalent.go:12:4 Identity assignop "*= -> =" viable=true | x = 1
+equivalent.go:12:7 Identity constant "1 -> 2" viable=true | x *= 2
+equivalent.go:13:2 Identity return "result 1 -> 0" viable=true | return 0, d, e
+equivalent.go:13:2 Identity return "result 1 -> 1" viable=true | return 1, d, e
+equivalent.go:13:2 Identity return "result 2 -> 0" viable=true | return a + b + c + x, 0, e
+equivalent.go:13:2 Identity return "result 2 -> 1" viable=true | return a + b + c + x, 1, e
+equivalent.go:13:2 Identity return "result 3 -> 0" viable=true | return a + b + c + x, d, 0
+equivalent.go:13:2 Identity return "result 3 -> 1" viable=true | return a + b + c + x, d, 1
+equivalent.go:13:2 Identity return "return -> zero values" viable=true | return 0, 0, 0
+equivalent.go:13:19 Identity arithmetic "+ -> -" viable=true | return a + b + c - x, d, e
+equivalent.go:13:15 Identity arithmetic "+ -> -" viable=true | return a + b - c + x, d, e
+equivalent.go:13:11 Identity arithmetic "+ -> -" viable=true | return a - b + c + x, d, e
+equivalent.go:18:2 NonNegative return "result 1 -> false" viable=true | return false
+equivalent.go:18:2 NonNegative return "result 1 -> true" viable=true | return true
+equivalent.go:18:51 NonNegative logical "&& -> ||" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) >= 0 || u > 0
+equivalent.go:18:36 NonNegative logical "&& -> ||" viable=true | return (len(s) > -1 && -1 < cap(s) || len(s) >= 0) && u > 0
+equivalent.go:18:21 NonNegative logical "&& -> ||" viable=true | return (len(s) > -1 || -1 < cap(s)) && len(s) >= 0 && u > 0
+equivalent.go:18:16 NonNegative relational "> -> >=" viable=true equivalent=non-negative-operand | return len(s) >= -1 && -1 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:16 NonNegative invert "> -> <=" viable=true | return len(s) <= -1 && -1 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:18 NonNegative negatives "-x -> x" viable=true | return len(s) > +1 && -1 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:19 NonNegative constant "1 -> 2" viable=true | return len(s) > -2 && -1 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:27 NonNegative relational "< -> <=" viable=true equivalent=non-negative-operand | return len(s) > -1 && -1 <= cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:27 NonNegative invert "< -> >=" viable=true | return len(s) > -1 && -1 >= cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:24 NonNegative negatives "-x -> x" viable=true | return len(s) > -1 && +1 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:25 NonNegative constant "1 -> 2" viable=true | return len(s) > -1 && -2 < cap(s) && len(s) >= 0 && u > 0
+equivalent.go:18:46 NonNegative relational ">= -> >" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) > 0 && u > 0
+equivalent.go:18:46 NonNegative invert ">= -> <" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) < 0 && u > 0
+equivalent.go:18:49 NonNegative constant "0 -> 1" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) >= 1 && u > 0
+equivalent.go:18:56 NonNegative relational "> -> >=" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) >= 0 && u >= 0
+equivalent.go:18:56 NonNegative invert "> -> <=" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) >= 0 && u <= 0
+equivalent.go:18:58 NonNegative constant "0 -> 1" viable=true | return len(s) > -1 && -1 < cap(s) && len(s) >= 0 && u > 1

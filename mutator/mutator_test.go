@@ -39,6 +39,9 @@ func render(t *testing.T, pkg *packages.Package, ops []mutator.Operator, ms []mu
 		if m.Ignored != "" {
 			ignored = fmt.Sprintf(" ignored=%s(%q)", m.Ignored, m.Reason)
 		}
+		if m.Equivalent != "" {
+			ignored += " equivalent=" + m.Equivalent
+		}
 		fmt.Fprintf(&b, "%s:%d:%d %s %s %q viable=%v%s | %s\n",
 			filepath.Base(m.File), m.Line, m.Col, m.Func, m.Operator, m.Description, m.Viable, ignored,
 			mutatedLine(t, pkg, ops, m))
@@ -78,6 +81,7 @@ var goldenFixtures = []struct{ name, operators string }{
 	{name: "calls", operators: "default,call"},
 	{name: "excluded"},
 	{name: "disable"},
+	{name: "equivalent"},
 }
 
 func TestGenerateGolden(t *testing.T) {

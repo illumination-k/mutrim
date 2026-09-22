@@ -34,6 +34,7 @@ func (b BinaryOp) Sites(ctx *Context, n ast.Node) []Site {
 		Check:       func() error { return ctx.CheckExpr(e) },
 		Schemata:    schemata,
 		Wraps:       wraps,
+		Equivalent:  ctx.equivalentSwap(from, to, e.X, e.Y),
 	}}
 }
 

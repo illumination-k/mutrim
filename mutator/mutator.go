@@ -42,6 +42,11 @@ type Mutant struct {
 	// Reason is the text an inline directive gave for ignoring the
 	// mutant; filters give none.
 	Reason string `json:"reason,omitempty"`
+	// Equivalent names the static rule proving that the mutant computes
+	// what the original does, so no test can kill it; empty when no rule
+	// applies. Like an ignored mutant it is neither embedded nor
+	// executed, and it counts towards no score.
+	Equivalent string `json:"equivalent,omitempty"`
 
 	site site
 }
@@ -127,7 +132,10 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 		if m.Ignored == "" {
 			m.Ignored = s.Ignored
 		}
-		if m.Ignored == "" && opts.TypeCheck && s.Check != nil {
+		if m.Ignored == "" {
+			m.Equivalent = s.Equivalent
+		}
+		if !m.Excluded() && opts.TypeCheck && s.Check != nil {
 			s.Apply()
 			m.Viable = s.Check() == nil
 			s.Undo()
@@ -135,6 +143,12 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 		mutants = append(mutants, m)
 	}
 	return mutants
+}
+
+// Excluded reports whether the mutant is kept out of the run, ignored or
+// proven equivalent, so it is never embedded nor executed.
+func (m Mutant) Excluded() bool {
+	return m.Ignored != "" || m.Equivalent != ""
 }
 
 // mutantID hashes everything that identifies a mutant except its source

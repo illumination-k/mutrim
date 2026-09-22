@@ -137,6 +137,30 @@ func TestToStrykerRunError(t *testing.T) {
 	}
 }
 
+// A SUSPECT_EQUIVALENT mutant is Ignored, and not annotated, unless its
+// report counts suspects; then it is a survivor like LIVED.
+func TestToStrykerSuspectEquivalent(t *testing.T) {
+	ms := mutants()
+	for _, count := range []bool{false, true} {
+		r := &runner.Report{Pkg: "p", CountSuspect: count, Results: []runner.Result{{MutantID: "1", Status: runner.SuspectEquivalent, TestsRun: 1}}}
+		got := report.ToStryker(ms, []*runner.Report{r}, nil).Files["p/a.go"].Mutants[0]
+		want := report.Ignored
+		if count {
+			want = report.Survived
+		}
+		if got.Status != want || got.StatusReason == "" {
+			t.Errorf("count_suspect=%v: suspect mutant = %+v, want %s with a reason", count, got, want)
+		}
+		var buf bytes.Buffer
+		if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}, 0); err != nil {
+			t.Fatal(err)
+		}
+		if annotated := buf.Len() != 0; annotated != count {
+			t.Errorf("count_suspect=%v: annotated = %v", count, annotated)
+		}
+	}
+}
+
 // Shard reports of one package are merged: their results add up and the
 // test list, which every shard repeats, is not duplicated.
 func TestToStrykerMergesShards(t *testing.T) {

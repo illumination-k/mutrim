@@ -137,6 +137,9 @@ type Site struct {
 	// Ignored names the rule under which the operator reports the site
 	// but keeps it out of the run, as a Filter would; empty keeps it.
 	Ignored string
+	// Equivalent names the rule proving that the rewrite computes what
+	// the original does (see equivalent.go); empty when none does.
+	Equivalent string
 }
 
 // Operators selects operators by name from a comma-separated spec: a name
