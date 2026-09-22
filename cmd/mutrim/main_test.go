@@ -154,6 +154,28 @@ func TestGenSchemataThenRun(t *testing.T) {
 			t.Errorf("result not copied forward from -previous: %+v vs %+v", r, prev)
 		}
 	}
+
+	// -in-diff scopes the run to the lines a diff adds, before -previous is
+	// consulted: a diff that touches no source of the package leaves every
+	// mutant SKIPPED and the score at zero.
+	diffPath := filepath.Join(dir, "pr.diff")
+	diff := "--- a/other/file.go\n+++ b/other/file.go\n@@ -1,1 +1,2 @@\n package other\n+var x = 1\n"
+	if err := os.WriteFile(diffPath, []byte(diff), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scoped := filepath.Join(dir, "scoped.json")
+	stdout.Reset()
+	args = append(args[:len(args):len(args)], "-in-diff", diffPath, "-out", scoped)
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run -in-diff: %v\n%s", err, stderr.String())
+	}
+	var third runner.Report
+	if err := readJSON(scoped, &third); err != nil {
+		t.Fatal(err)
+	}
+	if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) || third.Totals.Score != 0 {
+		t.Errorf("an unrelated diff must skip every mutant: %+v", third.Totals)
+	}
 }
 
 // Bazel mode: gen type-checks the given files from export data instead of
@@ -393,6 +415,7 @@ func TestCommandErrors(t *testing.T) {
 		"run missing mutants file":   {"run", "-test-bin", "x.test", "-mutants", missing},
 		"run malformed mutants":      {"run", "-test-bin", "x.test", "-mutants", malformed},
 		"run missing previous":       {"run", "-test-bin", "x.test", "-mutants", missing, "-previous", missing},
+		"run missing in-diff":        {"run", "-test-bin", "x.test", "-mutants", mutantsFile, "-in-diff", missing},
 		"minimize bad flag":          {"minimize", "-bogus"},
 		"minimize no report":         {"minimize"},
 		"minimize missing report":    {"minimize", missing},

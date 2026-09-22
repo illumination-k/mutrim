@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -479,5 +480,97 @@ func TestRunIgnoredMutants(t *testing.T) {
 	}
 	if want := len(byDirective) + 1; report.Totals.Ignored != want {
 		t.Errorf("totals.ignored = %d, want %d", report.Totals.Ignored, want)
+	}
+}
+
+// A diff scopes the run to the lines it adds: every other mutant is
+// SKIPPED without being executed and counts towards no score.
+func TestRunInDiff(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	byID := map[string]mutator.Mutant{}
+	var target mutator.Mutant
+	for _, m := range mutants {
+		byID[m.ID] = m
+		if m.Func == "Less" && m.Operator == "relational" {
+			target = m
+		}
+	}
+	if target.ID == "" {
+		t.Fatal("fixture has no relational mutant of Less")
+	}
+	// The diff names the file as the repository does, while the mutant's
+	// file is absolute: only the added line has to line up.
+	file := path.Join("mutator/testdata/schemata", filepath.Base(target.File))
+	d, err := runner.ParseDiff(strings.NewReader(fmt.Sprintf(
+		"--- a/%[1]s\n+++ b/%[1]s\n@@ -%[2]d,1 +%[2]d,1 @@\n-func Less(a, b int) bool { return a <= b }\n+func Less(a, b int) bool { return a < b }\n",
+		file, target.Line,
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, InDiff: d, Log: &logs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Results) != len(mutants) {
+		t.Errorf("results = %d, want one per mutant (%d)", len(report.Results), len(mutants))
+	}
+	var hit bool
+	for _, res := range report.Results {
+		m := byID[res.MutantID]
+		onLine := m.Line <= target.Line && target.Line <= max(m.EndLine, m.Line)
+		switch {
+		case res.Status == runner.Skipped:
+			if onLine {
+				t.Errorf("%s at %s:%d-%d is on the changed line but was skipped", res.MutantID, m.Func, m.Line, m.EndLine)
+			}
+			if res.TestsRun != 0 || res.DurationMS != 0 || len(res.KilledBy) != 0 {
+				t.Errorf("%s SKIPPED but executed: %+v", res.MutantID, res)
+			}
+		case !onLine:
+			t.Errorf("%s at %s:%d is outside the diff but ran as %s", res.MutantID, m.Func, m.Line, res.Status)
+		default:
+			hit = true
+		}
+		if res.MutantID == target.ID && (res.Status != runner.Killed || !slices.Contains(res.KilledBy, "TestComparisons")) {
+			t.Errorf("the mutant on the changed line = %+v, want KILLED by TestComparisons", res)
+		}
+	}
+	if !hit {
+		t.Error("the diff selected no mutant at all")
+	}
+
+	tot := report.Totals
+	if tot.Skipped == 0 || tot.Killed == 0 {
+		t.Errorf("totals = %+v, want some mutants skipped and some run", tot)
+	}
+	if tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored+tot.Skipped != tot.Mutants {
+		t.Errorf("totals do not add up: %+v", tot)
+	}
+	// Skipped mutants stay out of the score, so it is the score of the diff.
+	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Score != want {
+		t.Errorf("score = %v, want %v", tot.Score, want)
+	}
+	if !strings.Contains(logs.String(), fmt.Sprintf("%d of %d mutants skipped", tot.Skipped, tot.Mutants)) {
+		t.Errorf("the log must say how much the diff dropped:\n%s", logs.String())
+	}
+
+	// A diff that touches nothing of the package runs nothing.
+	empty, err := runner.ParseDiff(strings.NewReader("--- a/other.go\n+++ b/other.go\n@@ -1,1 +1,2 @@\n package other\n+var x = 1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, InDiff: empty,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.Totals.Skipped != none.Totals.Mutants || none.Totals.Score != 0 {
+		t.Errorf("an unrelated diff must skip everything: %+v", none.Totals)
 	}
 }

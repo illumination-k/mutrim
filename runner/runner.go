@@ -56,6 +56,9 @@ type Options struct {
 	Timeout time.Duration
 	// Shard selects mutants whose ID % Shards == Shard. Shards <= 1 runs all.
 	Shard, Shards int
+	// InDiff, if set, scopes the run to the lines it adds: a mutant
+	// outside it is reported Skipped without being executed.
+	InDiff *Diff
 	// Previous, if set, supplies results copied forward for mutants whose
 	// ID it already contains; only new IDs are executed.
 	Previous *Report
@@ -69,7 +72,8 @@ type Options struct {
 // the report (the subtests too with o.Subtests). Then every row runs once
 // on its own with GOMUTANT_TRACE set to learn which sites it reaches, so a
 // mutant only runs the tests that can kill it and the report holds a
-// per-test kill matrix.
+// per-test kill matrix. Options.InDiff scopes the run to the lines of a
+// diff.
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.TestBin == "" {
 		return nil, errors.New("runner: test binary is required")
@@ -131,6 +135,8 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 		var r Result
 		switch prev, cached := previous[m.ID]; {
+		case !o.InDiff.Touches(m.File, m.Line, m.EndLine):
+			r = Result{MutantID: m.ID, Status: Skipped}
 		case m.Ignored != "":
 			r = Result{MutantID: m.ID, Status: Ignored}
 		case !m.Viable:
@@ -150,6 +156,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		report.Results = append(report.Results, r)
 	}
 	report.total()
+	if o.InDiff != nil {
+		logger.Printf("%d of %d mutants skipped: not in the diff", report.Totals.Skipped, report.Totals.Mutants)
+	}
 	return report, nil
 }
 

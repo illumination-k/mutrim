@@ -103,7 +103,9 @@ const (
 
 // status maps a runner status onto the schema's vocabulary. A mutant the
 // type-check or the lowering rejected never built, which is what the
-// schema calls a compile error.
+// schema calls a compile error; one a diff or a filter excluded is
+// Ignored, the schema's status for a mutant left out of the score on
+// purpose.
 func status(s runner.Status) Status {
 	switch s {
 	case runner.Killed:
@@ -114,7 +116,7 @@ func status(s runner.Status) Status {
 		return Timeout
 	case runner.NoCoverage:
 		return NoCoverage
-	case runner.Ignored:
+	case runner.Ignored, runner.Skipped:
 		return Ignored
 	default:
 		return CompileError
@@ -199,7 +201,10 @@ func toMutant(m mutator.Mutant, res runner.Result, coveredBy []string) Mutant {
 		n := res.TestsRun
 		out.TestsCompleted = &n
 	}
-	if m.Ignored != "" {
+	switch {
+	case res.Status == runner.Skipped:
+		out.StatusReason = "not in the diff"
+	case m.Ignored != "":
 		out.StatusReason = strings.TrimSpace(m.Ignored + " " + m.Reason)
 	}
 	return out

@@ -199,6 +199,11 @@ def mutation_test(
     redundant; a tag on the parent protects every row. Subtest names must be
     stable across runs.
 
+    Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
+    (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
+    to the lines that diff adds; every other mutant is reported `SKIPPED` and
+    counts towards no score.
+
     `match`, `files`, `exclude_files`, `exclude_re` and `exclude_calls` narrow
     the sites that are mutated; a mutant they reject is still listed in `mutants.json` and
     reported `IGNORED`, so the counts stay comparable across runs. A single
