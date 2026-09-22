@@ -204,13 +204,14 @@ var AllOperators = []Operator{
 	Composite{},
 	Method{},
 	Call{},
+	Concurrency{},
 	Return{},
 }
 
 // DefaultOperators is the operator set used when Options.Operators is nil.
 // Call is left out: replacing a call with a zero value produces many
 // mutants equivalent to the original, so PIT keeps it opt-in too.
-var DefaultOperators = defaultsExcept(Call{})
+var DefaultOperators = defaultsExcept(Call{}, Concurrency{})
 
 func defaultsExcept(opt ...Operator) []Operator {
 	optional := map[string]bool{}

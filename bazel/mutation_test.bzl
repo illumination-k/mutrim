@@ -215,6 +215,7 @@ def mutation_test(
         subtests = False,
         confirm_kills = 1,
         confirm_baseline = 1,
+        race = False,
         shard_count = None,
         env = {},
         **kwargs):
@@ -246,6 +247,10 @@ def mutation_test(
     the matrix with reruns: an unreproduced kill lands in `suspicious_by`
     instead of `killed_by`, and a test that does not pass reliably on its
     own is marked flaky and left out of `minimize.json` entirely.
+
+    `race` builds the test binary with the race detector, which the
+    opt-in `concurrency` operator needs: a data race it introduces fails
+    the test that hits it, and a deadlock ends as a TIMEOUT, a kill.
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
@@ -290,6 +295,8 @@ def mutation_test(
             (`mutrim run -confirm-baseline`); one that fails in some runs and
             passes in others is marked flaky and takes no part in the kill
             matrix or the cover. 1 trusts the first run.
+        race: builds the test binary with the race detector (`race = "on"`
+            of go_test), for the `concurrency` operator.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -319,6 +326,7 @@ def mutation_test(
         embed = [":" + schemata],
         deps = deps,
         env = env,
+        race = "on" if race else "auto",
         **kwargs
     )
     lib_srcs = schemata + "_srcs"
