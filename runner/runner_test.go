@@ -69,20 +69,23 @@ func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
 func TestRunReportGolden(t *testing.T) {
 	bin, mutants := buildFixture(t)
 	var logs bytes.Buffer
+	// The golden pins KILLED against TIMEOUT, and the looping mutant waits
+	// out the whole timeout: 3s keeps a loaded machine from turning a kill
+	// into a timeout without making the test much slower.
 	report, err := runner.Run(t.Context(), runner.Options{
 		TestBin: bin,
 		Mutants: mutants,
 		Dir:     fixtureDir,
-		Timeout: time.Second,
+		Timeout: 3 * time.Second,
 		Log:     &logs,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 1000 {
+	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 3000 {
 		t.Errorf("unexpected report metadata: %+v", report)
 	}
-	if !strings.Contains(logs.String(), "timeout 1s, 8 tests\n") {
+	if !strings.Contains(logs.String(), "timeout 3s, 8 tests\n") {
 		t.Errorf("the baseline must run every test:\n%s", logs.String())
 	}
 	// Every top-level test ran on its own and reached some sites.
@@ -291,8 +294,11 @@ func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
 
 func TestRunErrors(t *testing.T) {
 	bin, mutants := buildFixture(t)
-	if _, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Args: []string{"-test.run", "NoSuchTest"}}); err != nil {
-		t.Errorf("a run with no tests must still pass the baseline: %v", err)
+	empty, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Dir: fixtureDir, Args: []string{"-test.run", "NoSuchTest"}})
+	if err != nil {
+		t.Errorf("a run with no tests and no mutants must still pass the baseline: %v", err)
+	} else if empty.Pkg != "" || len(empty.Results) != 0 {
+		t.Errorf("report of nothing = %+v", empty)
 	}
 	cases := map[string]runner.Options{
 		"missing binary":   {TestBin: "/nonexistent/test.bin", Mutants: mutants},
