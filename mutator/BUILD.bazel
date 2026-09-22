@@ -8,6 +8,7 @@ go_library(
         "mutator.go",
         "operator.go",
         "ops_binary.go",
+        "ops_const.go",
         "ops_return.go",
         "ops_stmt.go",
         "ops_unary.go",

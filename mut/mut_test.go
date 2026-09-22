@@ -59,6 +59,9 @@ func TestIdentityWhenInactive(t *testing.T) {
 	if !Cond("x", true, false) || Cond("x", false, true) {
 		t.Error("Cond is not the identity")
 	}
+	if got := Const("x", int8(5), 6); got != 5 {
+		t.Errorf("Const = %d", got)
+	}
 	if Not("x", false) || !Not("x", true) {
 		t.Error("Not is not the identity")
 	}
@@ -119,6 +122,9 @@ func TestMutantWhenActive(t *testing.T) {
 	}
 	if Cond("m", true, false) || !Cond("m", false, true) {
 		t.Error("Cond mutant must return the forced value")
+	}
+	if got := Const("m", 0.5, 1.5); got != 1.5 {
+		t.Errorf("Const mutant = %v", got)
 	}
 	calls := 0
 	rhs := func() bool { calls++; return false }

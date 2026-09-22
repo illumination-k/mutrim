@@ -10,3 +10,5 @@ arith.go:9:2 Concat return "return -> zero values" viable=true | return ""
 arith.go:9:11 Concat arithmetic "+ -> -" viable=false | return s - "!"
 arith.go:14:2 Zero return "return -> zero values" viable=true | return 0
 arith.go:14:12 Zero arithmetic "* -> /" viable=false | return 10 / 0
+arith.go:14:9 Zero constant "10 -> 11" viable=true | return 11 * 0
+arith.go:14:14 Zero constant "0 -> 1" viable=true | return 10 * 1

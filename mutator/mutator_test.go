@@ -56,7 +56,7 @@ func mutatedLine(t *testing.T, pkg *packages.Package, m mutator.Mutant) string {
 }
 
 func TestGenerateGolden(t *testing.T) {
-	for _, name := range []string{"relational", "arith", "logical", "bitwise", "control", "stmt", "ret", "excluded"} {
+	for _, name := range []string{"relational", "arith", "logical", "bitwise", "constant", "control", "stmt", "ret", "excluded"} {
 		t.Run(name, func(t *testing.T) {
 			pkg := load(t, name)
 			mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})

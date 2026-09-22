@@ -27,6 +27,12 @@ var notEmbedded = map[string]bool{
 	`SkipNamedBoolCond cond -> !(cond)`: true, // condition of a defined bool type
 	`SkipNamedBoolCond cond -> true`:    true,
 	`SkipNamedBoolCond cond -> false`:   true,
+	`GreaterEq 0 -> 1`:                  true, // literal of a defined type
+	`Scale 2 -> 3`:                      true,
+	`SkipNamedConst 1 -> 2`:             true,
+	`SkipShiftConst << -> >>`:           true, // constant left operand of a shift
+	`SkipShiftConst 1 -> 2`:             true, // operands of a constant shift
+	`SkipShiftConst 2 -> 3`:             true,
 }
 
 // TestSchemataIdentity lowers the schemata fixture, pins the generated

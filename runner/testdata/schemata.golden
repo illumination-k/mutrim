@@ -6,8 +6,10 @@ schemata.go:21 Greater "return -> zero values" KILLED by TestComparisons
 schemata.go:21 Greater "> -> >=" KILLED by TestComparisons
 schemata.go:22 GreaterEq "return -> zero values" KILLED by TestComparisons
 schemata.go:22 GreaterEq ">= -> >" KILLED by TestComparisons
+schemata.go:22 GreaterEq "0 -> 1" NOT_VIABLE
 schemata.go:23 ConstLeft "return -> zero values" KILLED by TestComparisons
 schemata.go:23 ConstLeft "< -> <=" KILLED by TestComparisons
+schemata.go:23 ConstLeft "10 -> 11" KILLED by TestComparisons
 schemata.go:24 IsNil "return -> zero values" KILLED by TestComparisons
 schemata.go:24 IsNil "== -> !=" KILLED by TestComparisons
 schemata.go:25 NotNil "return -> zero values" KILLED by TestComparisons
@@ -22,6 +24,7 @@ schemata.go:32 Sub "return -> zero values" KILLED by TestArithmetic
 schemata.go:32 Sub "- -> +" KILLED by TestArithmetic
 schemata.go:33 Scale "return -> zero values" KILLED by TestArithmetic
 schemata.go:33 Scale "* -> /" KILLED by TestArithmetic
+schemata.go:33 Scale "2 -> 3" NOT_VIABLE
 schemata.go:34 Div "return -> zero values" KILLED by TestArithmetic
 schemata.go:34 Div "/ -> *" KILLED by TestArithmetic
 schemata.go:35 Mod "return -> zero values" KILLED by TestArithmetic
@@ -30,10 +33,13 @@ schemata.go:36 MulComplex "return -> zero values" KILLED by TestArithmetic
 schemata.go:36 MulComplex "* -> /" KILLED by TestArithmetic
 schemata.go:37 Half "return -> zero values" KILLED by TestArithmetic
 schemata.go:37 Half "* -> /" KILLED by TestArithmetic
+schemata.go:37 Half "0.5 -> 1.5" KILLED by TestArithmetic
 schemata.go:38 Sum "+ -> -" KILLED by TestArithmetic
 schemata.go:39 Shift "return -> zero values" KILLED by TestArithmetic
 schemata.go:39 Shift "+ -> -" KILLED by TestArithmetic
 schemata.go:39 Shift "<< -> >>" NOT_VIABLE
+schemata.go:39 Shift "1 -> 2" KILLED by TestArithmetic
+schemata.go:39 Shift "1 -> 2" KILLED by TestArithmetic
 schemata.go:43 And "return -> zero values" KILLED by TestLogical
 schemata.go:43 And "&& -> ||" KILLED by TestLogical
 schemata.go:44 Or "return -> zero values" KILLED by TestLogical
@@ -48,10 +54,15 @@ schemata.go:49 Sign "cond -> !(cond)" KILLED by TestStatements,TestRegression_Si
 schemata.go:49 Sign "cond -> true" KILLED by TestStatements,TestRegression_Sign
 schemata.go:49 Sign "cond -> false" KILLED by TestStatements,TestRegression_Sign
 schemata.go:49 Sign "> -> >=" KILLED by TestStatements,TestRegression_Sign
+schemata.go:49 Sign "0 -> 1" KILLED by TestStatements,TestRegression_Sign
 schemata.go:50 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
+schemata.go:50 Sign "1 -> 2" KILLED by TestStatements,TestRegression_Sign
 schemata.go:52 Sign "return -> zero values" KILLED by TestStatements,TestRegression_Sign
 schemata.go:52 Sign "-x -> x" NOT_VIABLE
+schemata.go:52 Sign "1 -> 2" KILLED by TestStatements,TestRegression_Sign
+schemata.go:56 CountTo "0 -> 1" KILLED by TestStatements
 schemata.go:57 CountTo "cond -> !(cond)" KILLED by TestStatements
+schemata.go:57 CountTo "0 -> 1" KILLED by TestStatements
 schemata.go:57 CountTo "< -> <=" KILLED by TestStatements
 schemata.go:57 CountTo "++ -> --" TIMEOUT by TestStatements
 schemata.go:58 CountTo "++ -> --" KILLED by TestStatements
@@ -60,6 +71,7 @@ schemata.go:63 Tally "++ -> --" KILLED by TestStatements
 schemata.go:65 Decrement "-- -> ++" KILLED by TestStatements
 schemata.go:69 (*Counter).Inc "++ -> --" KILLED by TestStatements
 schemata.go:73 Classify "< -> <=" KILLED by TestStatements
+schemata.go:73 Classify "0 -> 1" KILLED by TestStatements
 schemata.go:74 Classify "return -> zero values" KILLED by TestStatements
 schemata.go:76 Classify "return -> zero values" KILLED by TestStatements
 schemata.go:79 Pair "return -> zero values" KILLED by TestStatements
@@ -75,6 +87,7 @@ schemata.go:93 SkipRecover "!= -> ==" KILLED by TestSkipped
 schemata.go:94 SkipRecover "call -> removed" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "cond -> !(cond)" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "< -> <=" KILLED by TestSkipped
+schemata.go:99 SkipMapPost "3 -> 4" KILLED by TestSkipped
 schemata.go:99 SkipMapPost "++ -> --" NOT_VIABLE
 schemata.go:104 Mask "return -> zero values" KILLED by TestBitwise
 schemata.go:104 Mask "& -> |" KILLED by TestBitwise
@@ -86,14 +99,40 @@ schemata.go:107 Negate "return -> zero values" KILLED by TestBitwise
 schemata.go:107 Negate "-x -> x" KILLED by TestBitwise
 schemata.go:114 Twice "call -> removed" KILLED by TestCalls
 schemata.go:115 Twice "call -> removed" KILLED by TestCalls
+schemata.go:119 SkipInitCall "0 -> 1" KILLED by TestCalls
 schemata.go:120 SkipInitCall "cond -> !(cond)" KILLED by TestCalls
 schemata.go:120 SkipInitCall "call -> removed" NOT_VIABLE
 schemata.go:120 SkipInitCall "< -> <=" KILLED by TestCalls
+schemata.go:120 SkipInitCall "2 -> 3" KILLED by TestCalls
 schemata.go:120 SkipInitCall "call -> removed" NOT_VIABLE
+schemata.go:121 SkipInitCall "2 -> 3" KILLED by TestCalls
 schemata.go:123 SkipInitCall "return -> zero values" KILLED by TestCalls
 schemata.go:127 SkipNamedBoolCond "cond -> !(cond)" NOT_VIABLE
 schemata.go:127 SkipNamedBoolCond "cond -> true" NOT_VIABLE
 schemata.go:127 SkipNamedBoolCond "cond -> false" NOT_VIABLE
 schemata.go:128 SkipNamedBoolCond "return -> zero values" KILLED by TestCalls
-schemata.go:134 Untested "return -> zero values" NO_COVERAGE
-schemata.go:134 Untested "+ -> -" NO_COVERAGE
+schemata.go:128 SkipNamedBoolCond "1 -> 2" KILLED by TestCalls
+schemata.go:130 SkipNamedBoolCond "0 -> 1" KILLED by TestCalls
+schemata.go:137 Offset "return -> zero values" KILLED by TestConstants
+schemata.go:137 Offset "+ -> -" KILLED by TestConstants
+schemata.go:137 Offset "1 -> 2" KILLED by TestConstants
+schemata.go:138 Quarter "return -> zero values" KILLED by TestConstants
+schemata.go:138 Quarter "* -> /" KILLED by TestConstants
+schemata.go:138 Quarter "0.25 -> 1.25" KILLED by TestConstants
+schemata.go:139 SkipNamedConst "return -> zero values" KILLED by TestConstants
+schemata.go:139 SkipNamedConst "+ -> -" KILLED by TestConstants
+schemata.go:139 SkipNamedConst "1 -> 2" NOT_VIABLE
+schemata.go:140 Boxed "return -> zero values" KILLED by TestConstants
+schemata.go:140 Boxed "7 -> 8" KILLED by TestConstants
+schemata.go:141 SkipShiftConst "return -> zero values" KILLED by TestConstants
+schemata.go:141 SkipShiftConst "+ -> -" KILLED by TestConstants
+schemata.go:141 SkipShiftConst "<< -> >>" NOT_VIABLE
+schemata.go:141 SkipShiftConst "1 -> 2" NOT_VIABLE
+schemata.go:141 SkipShiftConst "2 -> 3" NOT_VIABLE
+schemata.go:142 NoSiteArrayLen "return -> zero values" KILLED by TestConstants
+schemata.go:143 NoSiteArrayKey "return -> zero values" KILLED by TestConstants
+schemata.go:143 NoSiteArrayKey "9 -> 10" KILLED by TestConstants
+schemata.go:143 NoSiteArrayKey "3 -> 4" KILLED by TestConstants
+schemata.go:146 Untested "return -> zero values" NO_COVERAGE
+schemata.go:146 Untested "+ -> -" NO_COVERAGE
+schemata.go:146 Untested "1 -> 2" NO_COVERAGE

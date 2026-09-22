@@ -4,18 +4,23 @@ stmt.go:11:5 Step negation "cond -> !(cond)" viable=true | if !(x > 0) {
 stmt.go:11:5 Step condition "cond -> true" viable=true | if true {
 stmt.go:11:5 Step condition "cond -> false" viable=true | if false {
 stmt.go:11:7 Step relational "> -> >=" viable=true | if x >= 0 {
+stmt.go:11:9 Step constant "0 -> 1" viable=true | if x > 1 {
 stmt.go:12:3 Step voidcall "call -> removed" viable=true | func() {
 stmt.go:14:22 Step negation "cond -> !(cond)" viable=true | for record("init"); !(x < 3); record("post") {
 stmt.go:14:6 Step voidcall "call -> removed" viable=true | for func() {
 stmt.go:14:24 Step relational "< -> <=" viable=true | for record("init"); x <= 3; record("post") {
+stmt.go:14:26 Step constant "3 -> 4" viable=true | for record("init"); x < 4; record("post") {
 stmt.go:14:29 Step voidcall "call -> removed" viable=true | for record("init"); x < 3; func() {
 stmt.go:15:3 Step incdec "++ -> --" viable=true | x--
 stmt.go:18:5 Step negation "cond -> !(cond)" viable=true | if !(x == 0) {
 stmt.go:18:5 Step condition "cond -> true" viable=true | if true {
 stmt.go:18:5 Step condition "cond -> false" viable=true | if false {
 stmt.go:18:7 Step relational "== -> !=" viable=true | if x != 0 {
+stmt.go:18:10 Step constant "0 -> 1" viable=true | if x == 1 {
 stmt.go:21:2 Step return "return -> zero values" viable=true | return 0
 stmt.go:29:5 Named negation "cond -> !(cond)" viable=true | if !(f) {
 stmt.go:29:5 Named condition "cond -> true" viable=true | if true {
 stmt.go:29:5 Named condition "cond -> false" viable=true | if false {
 stmt.go:30:3 Named return "return -> zero values" viable=true | return 0
+stmt.go:30:10 Named constant "1 -> 2" viable=true | return 2
+stmt.go:32:9 Named constant "0 -> 1" viable=true | return 1
