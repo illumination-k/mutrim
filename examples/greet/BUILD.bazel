@@ -1,0 +1,26 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("//:defs.bzl", "mutation_test")
+
+go_library(
+    name = "greet",
+    srcs = ["greet.go"],
+    embedsrcs = ["templates/hello.txt"],
+    importpath = "github.com/illumination-k/mutrim/examples/greet",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "greet_test",
+    srcs = ["greet_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":greet"],
+    embedsrcs = ["testdata/gopher.golden"],
+)
+
+mutation_test(
+    name = "mutant_greet",
+    srcs = ["greet_test.go"],
+    embed = [":greet"],
+    # The library's embedded files come with embed; the tests' are named here.
+    embedsrcs = ["testdata/gopher.golden"],
+)

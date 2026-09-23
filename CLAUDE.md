@@ -10,7 +10,7 @@ Follow the YANGI, SOLID, DRY, and KISS principles in all code and documentation.
 ## Development Process
 
 Run `mise install` first to install the toolchain and project tools. Task files are selected
-by `MISE_ENV` (`base`, `golang`, `bazel`; `.claude/settings.json` enables all of them), so the
+by `MISE_ENV` (`base`, `golang`, `bazel`, `docs`; `.claude/settings.json` enables all of them), so the
 tasks below cover Go and Bazel alike.
 
 At the end of a session, run `mise run ci` and make sure it passes. Use the narrower tasks while iterating:
@@ -242,7 +242,7 @@ at runtime via `GOMUTANT_ID`. One build per package; target count = packages × 
 Do **not** expand one `go_test` per mutant — tens of thousands of targets break Bazel
 loading/analysis.
 
-- `mutation_test(name, srcs, embed, deps, shard_count)` mirrors the package's `go_test`:
+- `mutation_test(name, srcs, embed, deps, embedsrcs, shard_count)` mirrors the package's `go_test`:
   `mutrim_schemata` lowers the embedded library (one `MutrimGen` action) and provides it as a
   `GoInfo` with the same import path; a `go_test` embeds it (the identity check); a test rule
   whose executable is `mutrim` itself (`mutrim bazel-test`, no shell) re-execs that binary per
@@ -308,6 +308,9 @@ it left out may have changed the verdicts, so a redundant test is weaker under i
 
 ### Conventions
 
+- User documentation is the Astro Starlight site in `docs/` (pnpm, `MISE_ENV=docs`), in English
+  (`docs/src/content/docs/`) and Japanese (its `ja/` mirror; update both together), published to GitHub Pages by `.github/workflows/docs.yml`; keep
+  `README.md` to a short overview that links there.
 - Generated artifacts (`mutants.json`, `report.json`, `mutation-report.json`, coverage
   matrices) are never committed.
 - Output on stdout is JSON only; logs go to stderr.

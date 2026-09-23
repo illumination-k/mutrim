@@ -1,8 +1,11 @@
-# Implementation plan
+---
+title: Implementation plan
+description: "The phased plan mutrim was built by."
+---
 
 This is the initial plan for building mutrim from the current scaffold. It orders the work so
 that every phase leaves `mise run ci` green and produces something testable on its own.
-Architecture and conventions are fixed in [CLAUDE.md](../CLAUDE.md); this document only
+Architecture and conventions are fixed in [CLAUDE.md](https://github.com/illumination-k/mutrim/blob/main/CLAUDE.md); this document only
 decides _what to build in which order_ and what "done" means for each step.
 
 ## Scope of the first release
@@ -176,8 +179,9 @@ Goal: `bazel_dep(name = "mutrim")` + `mutation_test(name, srcs, embed, shard_cou
    macro, `mise.bazel.toml` (`fmt:bazel`, `lint:bazel`, `test:bazel`, `ci:bazel`) and the
    `ci_bazel.yml` workflow on `ubuntu-latest`.
 
-Not supported: cgo packages, and `//go:embed` in the library under test (the schemata sources
-are generated into a subdirectory, so the embed paths no longer resolve). mutrim's own tests
+Not supported: cgo packages. `//go:embed` works (`examples/greet`): rules_go resolves the
+library's patterns against its `embedsrcs` although the schemata sources are generated into a
+subdirectory, and `mutation_test` takes the tests' `embedsrcs`. mutrim's own tests
 that shell out to `go` are excluded from the Bazel build and stay on `go test ./...`.
 
 Done: `bazel test //...` passes and `report.json` is visible as an undeclared test output.

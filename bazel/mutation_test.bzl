@@ -353,6 +353,7 @@ def mutation_test(
         srcs,
         embed,
         deps = [],
+        embedsrcs = [],
         operators = [],
         match = "",
         files = [],
@@ -378,7 +379,9 @@ def mutation_test(
     """Runs the tests in srcs against every mutant of the embedded library.
 
     Mirror the go_test of the package: `srcs` are its test files, `embed` the
-    go_library under test, `deps` the test dependencies. The macro defines
+    go_library under test, `deps` the test dependencies and `embedsrcs` the
+    files its `//go:embed` directives name. The library's own embedded files
+    come with `embed`. The macro defines
 
     - `<name>_schemata`: the library with every mutant embedded and
       `<name>.mutants.json` listing them,
@@ -446,6 +449,8 @@ def mutation_test(
         srcs: the test sources.
         embed: exactly one go_library.
         deps: dependencies of the test sources.
+        embedsrcs: files the `//go:embed` directives of the test sources
+            name, as go_test takes them.
         operators: operators to apply, as `mutrim gen -operators` takes them
             (e.g. `["default", "-constant"]`); empty applies the default set,
             which leaves out the opt-in operators.
@@ -530,6 +535,7 @@ def mutation_test(
         srcs = srcs,
         embed = [":" + schemata],
         deps = deps,
+        embedsrcs = embedsrcs,
         env = env,
         race = "on" if race else "auto",
         **kwargs

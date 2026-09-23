@@ -1,0 +1,40 @@
+---
+title: "mutrim"
+description: "テストスイートの最小化も行う、Go 向けの Bazel ネイティブなミューテーションテスト。"
+template: splash
+hero:
+  tagline: 結果をテストスイートの最小化にも用いる、Go 向けの Bazel ネイティブなミューテーションテスト。
+  actions:
+    - text: はじめる
+      link: guides/getting-started/
+      icon: right-arrow
+    - text: Bazel
+      link: guides/bazel/
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+mutrim (mutation + trim) は test × requirement のビット行列を構築する。requirement は、テストが
+到達するミュータントサイトと、テストが kill するミュータントの和集合である。その行列に対して
+重み付き貪欲集合被覆を実行し、冗長なテストと、どのテストも kill できない関数を報告する。
+プレアルファ版である。
+
+<CardGrid>
+  <Card title="型検査済みのミュータント" icon="approve-check">
+    すべての式ミュータントはビルドされる前に元のスコープで `go/types` により検査されるので、
+    コンパイルできないミュータントはまれである。
+  </Card>
+  <Card title="パッケージごとに 1 回のビルド" icon="rocket">
+    ミュータントスキーマタは全ミュータントを 1 つのソースに埋め込み、実行時に `GOMUTANT_ID` で
+    選択する。`mutation_test` ターゲットは通常の Bazel テストと同様にシャーディングできる。
+  </Card>
+  <Card title="テストごとの kill 行列" icon="list-format">
+    各テストは一度だけトレースされ、各ミュータントはそれに到達するテストに対してだけ実行され、
+    `report.json` が誰が何を kill したかを記録する。
+  </Card>
+  <Card title="テストスイートの最小化" icon="setting">
+    `mutrim minimize` は冗長なテスト、必須のテスト、保護されたテストと弱点を報告し、
+    何も削除しない。
+  </Card>
+</CardGrid>

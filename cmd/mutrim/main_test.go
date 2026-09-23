@@ -263,6 +263,35 @@ func TestGenSchemataThenRun(t *testing.T) {
 	})
 }
 
+// A package with //go:embed in its library and its tests: the overlay
+// replaces the sources in place, so the patterns still resolve against the
+// package directory and every mutant is killed through the embedded text.
+func TestGenSchemataEmbed(t *testing.T) {
+	const pkg = "../../examples/greet"
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	bin := filepath.Join(dir, "greet.test")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, pkg}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, pkg) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	stdout.Reset()
+	if err := run(t.Context(), []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", pkg}, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+	var report runner.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("run output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if report.Totals.Killed == 0 || report.Totals.Killed != len(report.Results) {
+		t.Errorf("want every mutant killed, got %+v", report.Totals)
+	}
+}
+
 // Bazel mode: gen type-checks the given files from export data instead of
 // running go list, and the schemata directory holds the complete package,
 // files without a mutant copied as they are.
