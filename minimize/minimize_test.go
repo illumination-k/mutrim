@@ -38,6 +38,7 @@ func TestGreedy(t *testing.T) {
 	)
 
 	res := minimize.Greedy(m, minimize.Options{})
+	minimize.Exclusives(m, &res)
 	// The greedy order is TestA (6/1), TestB (the only kill left), TestD,
 	// then TestAll for its site c (8/100). TestAll then satisfies
 	// everything TestA did, so TestA is pruned and the rest replayed.
@@ -50,23 +51,35 @@ func TestGreedy(t *testing.T) {
 	if s := res.Selected[2]; s.New != 3 || s.Gain != 0.07 {
 		t.Errorf("TestAll selection = %+v", s)
 	}
+	// TestB is the only killer of mutant b, TestD the only test on site d
+	// and TestAll the only one on site c: every selected test is essential,
+	// reported with the labels of the requirements no other test satisfies.
+	essential := func(i int, name string, labels ...string) {
+		if s := res.Selected[i]; s.Name != name || !s.Essential || !slices.Equal(s.Unique, labels) || s.UniqueCount != len(labels) {
+			t.Errorf("%s = %+v, want essential with unique %v", name, s, labels)
+		}
+	}
+	essential(0, "TestB", "kill:b")
+	essential(1, "TestD", "site:d")
+	essential(2, "TestAll", "site:c")
 	want := []minimize.Redundancy{
-		{Name: "TestA", SubsumedBy: []string{"TestAll"}},
-		{Name: "TestEmpty", SubsumedBy: []string{"TestAll", "TestB", "TestD"}},
-		{Name: "TestFast", SubsumedBy: []string{"TestAll"}},
+		{Name: "TestA", SubsumedBy: []string{"TestAll"}, SharedWith: 2},
+		{Name: "TestEmpty", SubsumedBy: []string{"TestAll", "TestB", "TestD"}, SharedWith: 0},
+		{Name: "TestFast", SubsumedBy: []string{"TestAll"}, SharedWith: 3},
 	}
 	if len(res.Redundant) != len(want) {
 		t.Fatalf("redundant = %+v, want %+v", res.Redundant, want)
 	}
 	for i := range want {
-		if res.Redundant[i].Name != want[i].Name || !slices.Equal(res.Redundant[i].SubsumedBy, want[i].SubsumedBy) {
+		if res.Redundant[i].Name != want[i].Name || !slices.Equal(res.Redundant[i].SubsumedBy, want[i].SubsumedBy) || res.Redundant[i].SharedWith != want[i].SharedWith {
 			t.Errorf("redundant[%d] = %+v, want %+v", i, res.Redundant[i], want[i])
 		}
 	}
 }
 
 // Protected tests come first, and whatever they satisfy no longer counts
-// as a gain for the others.
+// as a gain for the others. The report still sorts them behind the
+// essential test (TestB is the only test on site b).
 func TestGreedyProtected(t *testing.T) {
 	m := criteria.Compose(nil, criteria.Weighted{
 		Criterion: criteria.SiteCoverage{"TestA": {"a"}, "TestRegression_A": {"a"}, "TestB": {"b"}},
@@ -74,17 +87,26 @@ func TestGreedyProtected(t *testing.T) {
 	})
 	keep := regexp.MustCompile(`^TestRegression_`)
 	res := minimize.Greedy(m, minimize.Options{Protected: keep.MatchString})
-	if got, want := names(res.Selected), []string{"TestRegression_A", "TestB"}; !slices.Equal(got, want) {
+	minimize.Exclusives(m, &res)
+	if got, want := names(res.Selected), []string{"TestB", "TestRegression_A"}; !slices.Equal(got, want) {
 		t.Errorf("selected = %v, want %v", got, want)
 	}
-	if !res.Selected[0].Protected || res.Selected[1].Protected {
+	if res.Selected[0].Protected || !res.Selected[1].Protected {
 		t.Errorf("protected flags wrong: %+v", res.Selected)
 	}
-	if len(res.Redundant) != 1 || res.Redundant[0].Name != "TestA" || !slices.Equal(res.Redundant[0].SubsumedBy, []string{"TestRegression_A"}) {
+	if !res.Selected[0].Essential || res.Selected[1].Essential {
+		t.Errorf("essential flags wrong: %+v", res.Selected)
+	}
+	if !slices.Equal(res.Selected[0].Unique, []string{"site:b"}) || res.Selected[1].UniqueCount != 0 {
+		t.Errorf("unique = %v, %v", res.Selected[0].Unique, res.Selected[1].Unique)
+	}
+	if len(res.Redundant) != 1 || res.Redundant[0].Name != "TestA" || !slices.Equal(res.Redundant[0].SubsumedBy, []string{"TestRegression_A"}) || res.Redundant[0].SharedWith != 1 {
 		t.Errorf("redundant = %+v", res.Redundant)
 	}
 
-	empty := minimize.Greedy(&criteria.Matrix{}, minimize.Options{})
+	zero := &criteria.Matrix{}
+	empty := minimize.Greedy(zero, minimize.Options{})
+	minimize.Exclusives(zero, &empty)
 	if empty.Selected == nil || empty.Redundant == nil || len(empty.Selected)+len(empty.Redundant) != 0 {
 		t.Errorf("empty matrix: %+v", empty)
 	}
@@ -98,8 +120,18 @@ func TestGreedyUnknownDuration(t *testing.T) {
 		Weight:    1,
 	})
 	res := minimize.Greedy(m, minimize.Options{})
+	minimize.Exclusives(m, &res)
 	if got := names(res.Selected); !slices.Equal(got, []string{"TestKnown"}) {
 		t.Errorf("selected = %v (tie broken by name)", got)
+	}
+	// TestKnown satisfies nothing alone: TestUnknown covers the same
+	// site, and TestUnknown's single requirement is shared with TestKnown
+	// only — one deletion away from essential.
+	if res.Selected[0].Essential || res.Selected[0].UniqueCount != 0 {
+		t.Errorf("TestKnown = %+v, want no unique requirement", res.Selected[0])
+	}
+	if res.Redundant[0].SharedWith != 1 {
+		t.Errorf("TestUnknown = %+v, want its requirements shared with TestKnown alone", res.Redundant[0])
 	}
 }
 
@@ -111,6 +143,7 @@ func TestGreedyPrunesSubsumedSelections(t *testing.T) {
 	m := criteria.Compose(map[string]int64{"TestFast": 1, "TestBroad": 10, "TestTwin": 10}, criteria.Weighted{Criterion: sites, Weight: 1})
 	keep := regexp.MustCompile(`^TestRegression_`)
 	res := minimize.Greedy(m, minimize.Options{Protected: keep.MatchString})
+	minimize.Exclusives(m, &res)
 	// TestFast (1/1) is picked before TestBroad (1/10 for b), then pruned.
 	if got, want := names(res.Selected), []string{"TestRegression_A", "TestBroad"}; !slices.Equal(got, want) {
 		t.Errorf("selected = %v, want %v", got, want)
@@ -124,6 +157,16 @@ func TestGreedyPrunesSubsumedSelections(t *testing.T) {
 	if !slices.Equal(res.Redundant[0].SubsumedBy, []string{"TestBroad", "TestRegression_A"}) || !slices.Equal(res.Redundant[1].SubsumedBy, []string{"TestBroad"}) {
 		t.Errorf("subsumed_by = %+v", res.Redundant)
 	}
+	// No selected test is essential here: TestRegression_A and TestBroad
+	// share every requirement with TestFast or TestTwin. Each redundant
+	// test's requirements are shared with the selected tests and the other
+	// redundant one.
+	if res.Selected[0].Essential || res.Selected[1].Essential {
+		t.Errorf("essential flags wrong: %+v", res.Selected)
+	}
+	if res.Redundant[0].SharedWith != 3 || res.Redundant[1].SharedWith != 3 {
+		t.Errorf("shared_with = %d, %d; want 3 and 3 (the selected tests and each other)", res.Redundant[0].SharedWith, res.Redundant[1].SharedWith)
+	}
 }
 
 // Adjacent requirement bits are all counted: the constant mutant of the
@@ -131,8 +174,12 @@ func TestGreedyPrunesSubsumedSelections(t *testing.T) {
 func TestGreedyGainCountsEveryRequirement(t *testing.T) {
 	m := criteria.Compose(map[string]int64{"TestAll": 1}, criteria.Weighted{Criterion: criteria.SiteCoverage{"TestAll": {"a", "b", "c"}}, Weight: 2})
 	res := minimize.Greedy(m, minimize.Options{})
+	minimize.Exclusives(m, &res)
 	if len(res.Selected) != 1 || res.Selected[0].New != 3 || res.Selected[0].Gain != 6 {
 		t.Errorf("selected = %+v, want TestAll with 3 new requirements and gain 6", res.Selected)
+	}
+	if !res.Selected[0].Essential || !slices.Equal(res.Selected[0].Unique, []string{"site:a", "site:b", "site:c"}) {
+		t.Errorf("TestAll = %+v, want essential on three unique requirements", res.Selected[0])
 	}
 }
 

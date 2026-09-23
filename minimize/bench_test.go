@@ -55,6 +55,22 @@ func BenchmarkGreedy(b *testing.B) {
 	}
 }
 
+// BenchmarkExclusives measures the reporting of a cover, separate from
+// it: the transpose it builds is the size of the matrix itself
+// (requirements × tests bits), which could never fit inside the cover.
+func BenchmarkExclusives(b *testing.B) {
+	for _, size := range sizes {
+		durations, crit := synthetic(size.tests, size.sites)
+		m := criteria.Compose(durations, crit...)
+		res := minimize.Greedy(m, minimize.Options{})
+		b.Run(fmt.Sprintf("tests=%d/sites=%d", size.tests, size.sites), func(b *testing.B) {
+			for b.Loop() {
+				minimize.Exclusives(m, &res)
+			}
+		})
+	}
+}
+
 // BenchmarkCompose measures building the matrix Greedy runs on.
 func BenchmarkCompose(b *testing.B) {
 	for _, size := range sizes {

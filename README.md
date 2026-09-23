@@ -273,8 +273,12 @@ results keep the order of `mutants.json` whatever order the runs finish in.
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
 of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
 test whose requirements the other selected tests satisfy between them. `selected` lists the
-tests kept in order with their gain, `redundant` the rest with the selected tests that subsume
-each of them, and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
+tests kept with their gain, the essential ones first: a test that satisfies a requirement no
+other test in the whole suite does is `essential` (Harrold–Gupta–Soffa; Chen & Lau) and comes
+with the labels of those requirements (`unique`), so the list reads top-down as must keep →
+keep for now. `redundant` the rest with the selected tests that subsume each of them and how
+many other tests share its requirements (`shared_with`; one is a single deletion away from
+essential), and `weak_spots` (with `-mutants`) the functions whose mutants survive. Tests
 matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their doc comment
 (`-srcs` names the `_test.go` files or directories to scan) are always kept; `-keep` sees the
 full `TestX/case` name of a subtest row, and a tag on the parent keeps every one of its

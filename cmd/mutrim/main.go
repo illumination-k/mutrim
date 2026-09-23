@@ -473,8 +473,10 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		top, _, _ := strings.Cut(name, "/")
 		return tagged[top] || keepRE.MatchString(name)
 	}
+	res := minimize.Greedy(matrix, minimize.Options{Protected: protected})
+	minimize.Exclusives(matrix, &res)
 	result := minimizeOutput{
-		Result:    minimize.Greedy(matrix, minimize.Options{Protected: protected}),
+		Result:    res,
 		WeakSpots: []runner.Spot{},
 		Flaky:     slices.Sorted(maps.Keys(flaky)),
 	}

@@ -9,10 +9,16 @@
 //
 // Nothing is deleted. Protected tests are selected first whatever their
 // gain, and every redundant test comes with the selected tests that
-// subsume it, so a person (or an LLM) can decide.
+// subsume it, so a person (or an LLM) can decide. A selected test that
+// satisfies a requirement no other test in the whole suite does is
+// essential: Exclusives reports it with that requirement's label, and a
+// redundant test with how many other tests share its requirements. The
+// transpose that needs is the size of the matrix itself, which is why it
+// stays out of Greedy.
 package minimize
 
 import (
+	"cmp"
 	"container/heap"
 	"slices"
 
@@ -28,7 +34,9 @@ type Options struct {
 	Protected func(name string) bool
 }
 
-// Selection is a test the greedy cover kept, in selection order.
+// Selection is a test the greedy cover kept: after Exclusives the
+// essential ones come first, then by gain, ties keeping the selection
+// order.
 type Selection struct {
 	Name string `json:"name"`
 	// Protected tests are selected first, before any gain is computed.
@@ -38,6 +46,15 @@ type Selection struct {
 	// Gain is the weight of those requirements per millisecond of the
 	// test's run time (a zero duration counts as one).
 	Gain float64 `json:"gain"`
+	// Essential marks a test that satisfies a requirement no other test
+	// in the whole suite does: dropping it loses that requirement. The
+	// greedy selects it anyway; this is reporting only.
+	Essential bool `json:"essential,omitempty"`
+	// Unique lists, by label, the requirements no other test in the
+	// whole suite satisfies.
+	Unique []string `json:"unique"`
+	// UniqueCount is len(Unique).
+	UniqueCount int `json:"unique_count"`
 }
 
 // Redundancy is a test whose every requirement the selection satisfies.
@@ -46,9 +63,14 @@ type Redundancy struct {
 	// SubsumedBy lists the selected tests that each satisfy every
 	// requirement of this one; empty when only their union does.
 	SubsumedBy []string `json:"subsumed_by"`
+	// SharedWith counts the other tests that satisfy at least one of its
+	// requirements: how many tests its coverage is spread over. One is a
+	// test with a single dominator, one deletion away from essential;
+	// zero satisfies nothing.
+	SharedWith int `json:"shared_with"`
 }
 
-// Result is the outcome of Greedy.
+// Result is the outcome of Greedy, which Exclusives completes.
 type Result struct {
 	Selected  []Selection  `json:"selected"`
 	Redundant []Redundancy `json:"redundant"`
@@ -121,6 +143,26 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 		res.Redundant = append(res.Redundant, r)
 	}
 	return res
+}
+
+// Exclusives fills the reporting a person deciding about a test needs:
+// for each selected test the requirements no other test in the whole
+// suite satisfies (Unique, by label, making it Essential) and for each
+// redundant test how many other tests satisfy at least one of its
+// requirements (SharedWith): how far it is from unique, a test with a
+// single sharer being one deletion away from essential. The greedy cover
+// is unchanged by this; an essential test is selected anyway, which is
+// why it always survives the cover (Harrold, Gupta, Soffa, TOSEM 1993;
+// Chen & Lau, IST 1998: the essential tests are the fixed part of every
+// reduction). It then brings the essential tests to the front of the
+// selected list, ahead of the rest by gain.
+func Exclusives(m *criteria.Matrix, res *Result) {
+	byName := map[string]criteria.Test{}
+	for _, t := range m.Tests {
+		byName[t.Name] = t
+	}
+	exclusives(m, byName, res)
+	sortSelected(res.Selected)
 }
 
 // candidate is a test of the matrix, by index, with an upper bound of its
@@ -206,4 +248,64 @@ func gain(m *criteria.Matrix, t criteria.Test, covered *bitset.BitSet) float64 {
 		}
 	}
 	return weight / float64(max(t.DurationMS, 1))
+}
+
+// exclusives fills the reporting a person deciding about a test needs: for
+// each selected test the requirements no other test in the whole suite
+// satisfies (Unique, by label, making it Essential) and for each redundant
+// test how many other tests satisfy at least one of its requirements
+// (SharedWith): how far it is from unique, a test with a single sharer
+// being one deletion away from essential. The greedy is unchanged by this;
+// an essential test is selected anyway, which is why it always survives
+// the cover (Harrold, Gupta, Soffa, TOSEM 1993; Chen & Lau, IST 1998:
+// the essential tests are the fixed part of every reduction).
+func exclusives(m *criteria.Matrix, byName map[string]criteria.Test, res *Result) {
+	// columns[i] holds the tests that satisfy requirement i, so both
+	// sides read off the transposed matrix: a test's unique
+	// requirements are those with one satisfying test (itself), its
+	// sharers the union of the columns of its requirements.
+	columns := make([]bitset.BitSet, len(m.Requirements))
+	for j, t := range m.Tests {
+		for i, ok := t.Covers.NextSet(0); ok; i, ok = t.Covers.NextSet(i + 1) {
+			columns[i].Set(uint(j)) //nolint:gosec // a slice index
+		}
+	}
+	for k := range res.Selected {
+		s := &res.Selected[k]
+		s.Unique = []string{}
+		for i, ok := byName[s.Name].Covers.NextSet(0); ok; i, ok = byName[s.Name].Covers.NextSet(i + 1) {
+			if columns[i].Count() == 1 { // this test alone satisfies i
+				s.Unique = append(s.Unique, m.Requirements[i].Label)
+			}
+		}
+		s.UniqueCount = len(s.Unique)
+		s.Essential = s.UniqueCount > 0
+	}
+	for k := range res.Redundant {
+		r := &res.Redundant[k]
+		shared := bitset.New(uint(len(m.Tests))) //nolint:gosec // a slice length
+		for i, ok := byName[r.Name].Covers.NextSet(0); ok; i, ok = byName[r.Name].Covers.NextSet(i + 1) {
+			shared.InPlaceUnion(&columns[i])
+		}
+		// The test satisfies its requirements itself, so it always
+		// counts as one sharer too many.
+		if byName[r.Name].Covers.Count() > 0 {
+			r.SharedWith = int(shared.Count()) - 1 //nolint:gosec // bounded by len(m.Tests)
+		}
+	}
+}
+
+// sortSelected orders the kept tests so the report reads top-down as
+// must keep → keep for now: the essential tests first, then by gain, ties
+// keeping the selection order.
+func sortSelected(selected []Selection) {
+	slices.SortStableFunc(selected, func(a, b Selection) int {
+		if a.Essential != b.Essential {
+			if b.Essential {
+				return 1
+			}
+			return -1
+		}
+		return cmp.Compare(b.Gain, a.Gain) // the higher gain first
+	})
 }
