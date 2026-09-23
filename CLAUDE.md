@@ -84,7 +84,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                                                   | stdlib only                         |
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
 | `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                      | `bits-and-blooms/bitset`            |
-| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                                | `criteria`, `bitset`, `go/parser`   |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                           | `criteria`, `bitset`, `go/parser`   |
 | `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                                                    | `mutator`, `runner`                 |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
@@ -269,8 +269,14 @@ Gains only shrink as the cover grows, so the greedy is lazy (a heap of stale gai
 top recomputed); it selects exactly what a full scan would, ties to the first test by name.
 Coverage is the cheap first pass (it narrows which tests run per mutant); kills are the
 objective. The tool never deletes tests; `mutrim minimize` reports each redundant test with
-the selected tests that subsume it, and the functions whose mutants survive (weak spots), and
-leaves the decision to a human or LLM. Tests matching `-keep` (default `^TestRegression_`) or
+the selected tests that subsume it and how many other tests share its requirements (`shared_with`;
+one is a single deletion away from essential), each essential test (it satisfies a requirement no
+other test in the whole suite does, reported with the label of each such requirement) ahead of the
+rest by gain, and the functions whose mutants survive (weak spots), and
+leaves the decision to a human or LLM. That reporting is a separate `minimize.Exclusives` call,
+not part of `Greedy`: it builds the transpose of the matrix (requirements × tests bits, as large
+as the matrix itself), so `Greedy` stays the cover only; `BenchmarkExclusives` measures it next to
+`BenchmarkGreedy`, whose B/op rise is the rows carrying the report fields: its time and allocs stay put. Tests matching `-keep` (default `^TestRegression_`) or
 carrying `//mutrim:keep` in their doc comment are always kept; a subtest row is protected
 through its full name or its parent's tag. Exact solutions go through the
 exported JSON matrix (`-matrix`) + an external MIP solver.
