@@ -78,7 +78,12 @@ type Test struct {
 	Pkg string `json:"pkg,omitempty"`
 	// Parent is the test that runs this one as a subtest (`TestX` for
 	// `TestX/case`), qualified like Name; empty for a top-level test.
-	Parent     string `json:"parent,omitempty"`
+	Parent string `json:"parent,omitempty"`
+	// Hash is the SHA-256 of the source text of the test function (of
+	// the parent for a subtest), read from Options.TestSrcs or
+	// Binary.Srcs; empty without them. Options.Previous copies a result
+	// forward only while the tests it was observed with keep their hash.
+	Hash       string `json:"hash,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
 	// Sites lists the IDs of the mutants whose site the test reaches; only
 	// these can be killed by it.

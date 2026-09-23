@@ -268,11 +268,17 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 			reached = res.MutantID
 		}
 	}
+	// The survivor is observed with the tests of the second run.
 	prev := &runner.Report{Results: []runner.Result{
 		{MutantID: timedOut, Status: runner.Lived, DurationMS: 42},
 		{MutantID: notViable, Status: runner.Killed},
 		{MutantID: reached, Status: runner.NoCoverage},
 	}}
+	for _, tt := range first.Tests {
+		if tt.Name == "TestStatements" {
+			prev.Tests = append(prev.Tests, tt)
+		}
+	}
 	start := time.Now()
 	second, err := runner.Run(t.Context(), runner.Options{
 		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, Previous: prev,
@@ -303,6 +309,65 @@ func TestRunShardsPreviousAndTests(t *testing.T) {
 	// With only TestStatements running, nothing reaches the comparison mutants.
 	if second.Totals.NoCoverage <= first.Totals.NoCoverage || len(second.Tests) != 1 {
 		t.Errorf("tests allowlist did not narrow the run: %+v vs %+v", second.Totals, first.Totals)
+	}
+}
+
+// A previous result is copied forward only while the tests it was
+// observed with are unchanged: rewriting a test re-executes the mutants it
+// killed and the survivors it reaches, and leaves the rest cached.
+func TestRunPreviousChecksTests(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	srcs := []string{filepath.Join(fixtureDir, "schemata_test.go")}
+	first, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, TestSrcs: srcs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range first.Tests {
+		if tt.Hash == "" {
+			t.Fatalf("%s has no hash", tt.Name)
+		}
+	}
+
+	const marker = 424242 // a cached result keeps it
+	prev := *first
+	prev.Results = slices.Clone(first.Results)
+	for i := range prev.Results {
+		prev.Results[i].DurationMS = marker
+	}
+	prev.Tests = slices.Clone(first.Tests)
+	var rewritten runner.Test
+	for i, tt := range prev.Tests {
+		if tt.Name == "TestStatements" {
+			prev.Tests[i].Hash = "rewritten"
+			rewritten = tt
+		}
+	}
+	second, err := runner.Run(t.Context(), runner.Options{TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, TestSrcs: srcs, Previous: &prev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rerun, cached int
+	for _, res := range second.Results {
+		if !res.Status.Executed() {
+			continue
+		}
+		stale := slices.Contains(res.KilledBy, rewritten.Name)
+		if len(res.KilledBy) == 0 {
+			stale = slices.Contains(rewritten.Sites, res.MutantID)
+		}
+		switch {
+		case stale && res.DurationMS == marker:
+			t.Errorf("%s was copied forward though %s changed: %+v", res.MutantID, rewritten.Name, res)
+		case !stale && res.DurationMS != marker:
+			t.Errorf("%s was executed again though its tests are unchanged: %+v", res.MutantID, res)
+		case stale:
+			rerun++
+		default:
+			cached++
+		}
+	}
+	if rerun == 0 || cached == 0 {
+		t.Errorf("rerun %d, cached %d: want some of each", rerun, cached)
 	}
 }
 

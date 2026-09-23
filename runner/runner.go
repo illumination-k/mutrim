@@ -48,6 +48,9 @@ type Binary struct {
 	// Dir is the working directory of the test binary; empty means the
 	// current directory.
 	Dir string
+	// Srcs are the package's _test.go files, which Test.Hash is read from;
+	// none leaves the hashes empty.
+	Srcs []string
 }
 
 // Options configures Run.
@@ -65,6 +68,8 @@ type Options struct {
 	// Dir is the working directory of the test binary; empty means the
 	// current directory.
 	Dir string
+	// TestSrcs are TestBin's _test.go files, which Test.Hash is read from.
+	TestSrcs []string
 	// Args are passed to the binary after the runner's own test flags.
 	Args []string
 	// Tests restricts the run to these top-level tests of TestBin; nil
@@ -107,13 +112,17 @@ type Options struct {
 	// outside it is reported Skipped without being executed.
 	InDiff *Diff
 	// Previous, if set, supplies results copied forward for mutants whose
-	// ID it already contains; only new IDs are executed.
+	// ID it already contains, as long as the tests they were observed with
+	// are unchanged (see Test.Hash); the rest are executed.
 	Previous *Report
 	// Log receives one line per mutant; nil discards them.
 	Log io.Writer
 
-	// bins is TestBin (with Dir) followed by ExtraTests, set by Run.
+	// bins is TestBin (with Dir and TestSrcs) followed by ExtraTests, set
+	// by Run.
 	bins []Binary
+	// hashes holds the hashes of each of bins' test functions, by name.
+	hashes []map[string]string
 }
 
 // row is a row of the report: a test of one of Options.bins, by its name
@@ -167,7 +176,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			return nil, fmt.Errorf("runner: %q is a subtest; Tests names top-level tests", t)
 		}
 	}
-	o.bins = []Binary{{Path: o.TestBin, Dir: o.Dir}}
+	o.bins = []Binary{{Path: o.TestBin, Dir: o.Dir, Srcs: o.TestSrcs}}
 	pkgs := map[string]bool{}
 	for _, b := range o.ExtraTests {
 		if b.Path == "" || b.Pkg == "" {
@@ -178,6 +187,13 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 		pkgs[b.Pkg] = true
 		o.bins = append(o.bins, b)
+	}
+	for _, b := range o.bins {
+		h, err := HashTests(b.Srcs)
+		if err != nil {
+			return nil, err
+		}
+		o.hashes = append(o.hashes, h)
 	}
 
 	// The baseline runs every binary; its output names the rows.
@@ -233,11 +249,17 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	defer os.RemoveAll(ref.traceDir) //nolint:errcheck // a leftover temp dir is harmless
 
-	previous := map[string]Result{}
+	previous, before, now := map[string]Result{}, map[string]Test{}, map[string]Test{}
 	if o.Previous != nil {
 		for _, r := range o.Previous.Results {
 			previous[r.MutantID] = r
 		}
+		for _, t := range o.Previous.Tests {
+			before[t.Name] = t
+		}
+	}
+	for _, t := range tests {
+		now[t.Name] = t
 	}
 
 	report := &Report{BaselineMS: baseMS, TimeoutMS: maxTimeout.Milliseconds(), CountSuspect: o.CountSuspect, Tests: tests, Results: []Result{}}
@@ -261,7 +283,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		case len(reachers[m.ID]) == 0:
 			r = Result{MutantID: m.ID, Status: NoCoverage}
 			logger.Printf("%s %s %s:%d %s %q", m.ID, r.Status, m.File, m.Line, m.Func, m.Description)
-		case cached && prev.Status.Executed():
+		case cached && reusable(m.ID, prev, o.qualifyAll(reachers[m.ID]), now, before):
 			r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
@@ -491,7 +513,8 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 	tests := make([]Test, 0, len(rows))
 	for i, rw := range rows {
 		name := o.qualify(rw)
-		t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg}
+		top, _, _ := strings.Cut(rw.name, "/")
+		t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg, Hash: o.hashes[rw.bin][top]}
 		if p := parent(rw.name); p != "" {
 			t.Parent = o.qualify(row{rw.bin, p})
 		}

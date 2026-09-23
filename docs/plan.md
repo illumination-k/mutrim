@@ -136,7 +136,11 @@ Goal: one build per package; the test binary re-executed per mutant.
    (`totals.run_error`) and is never copied forward.
 4. **Incremental re-runs.** `-previous report.json`: mutants whose ID is present are copied
    forward; new IDs are executed; `NOT_VIABLE` is always recomputed from `mutants.json`. IDs
-   are content hashes, so an untouched function keeps its result.
+   are content hashes, so an untouched function keeps its result. The tests are checked too
+   (issue #30, PIT / StrykerJS incremental): `tests[].hash` is the SHA-256 of the test
+   function's source (`-test-srcs`), and a kill is copied only while every killer still
+   exists, reaches the mutant and keeps its hash; any other result only while the reaching
+   tests and their hashes are unchanged.
 
 Done: `runner/testdata/schemata.golden` is the report of the schemata fixture, produced by
 `gen -schemata` + `go test -c -overlay` + `run`, and every embedded mutant of a tested

@@ -4,6 +4,7 @@ go_library(
     name = "runner",
     srcs = [
         "diff.go",
+        "hash.go",
         "report.go",
         "runner.go",
     ],
