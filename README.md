@@ -206,6 +206,19 @@ overall `score`, so "error paths: 40% killed" is visible:
 }
 ```
 
+`totals.covered_score` is the score over the covered mutants only, `NO_COVERAGE` left out
+(PIT's test strength): how well the tests check the code they do reach.
+
+## Thresholds
+
+By default `run` passes whatever the score. `run -threshold 0.8` fails the run when `score` is
+below 0.8, and `-threshold-covered 0.9` when `covered_score` is below 0.9 (PIT
+`mutationThreshold` / `testStrengthThreshold`, Stryker `thresholds.break`); either fails only
+after `report.json` is written, and a run with nothing to score passes. The `threshold` and
+`threshold_covered` attributes of `mutation_test` pass them through, turning the target into a
+gate, and the other outputs are still written. Under sharding each shard checks its own
+mutants; the whole-package score needs the shards' reports merged.
+
 ## Flaky tests
 
 A kill read from one run is not always a kill. Shi, Bell and Marinov (ISSTA 2019) measured
@@ -341,6 +354,7 @@ mutation_test(
     confirm_kills = 3,                     # optional; `mutrim run -confirm-kills`
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
     extra_tests = ["//app:app_test"],      # optional; `mutrim run -extra-test`
+    threshold = 0.8,                       # optional; `mutrim run -threshold`
     shard_count = 4,
 )
 ```

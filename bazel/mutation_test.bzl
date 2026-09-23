@@ -364,6 +364,8 @@ def mutation_test(
         confirm_kills = 1,
         confirm_baseline = 1,
         count_suspect = False,
+        threshold = None,
+        threshold_covered = None,
         extra_tests = [],
         race = False,
         shard_count = None,
@@ -403,6 +405,12 @@ def mutation_test(
     its tests run against them too, named `<importpath>.TestX` in the
     report, so a mutant only a downstream package's tests catch is KILLED
     instead of LIVED or NO_COVERAGE. It cannot be combined with `race` yet.
+
+    `threshold` and `threshold_covered` make the target a gate: it fails,
+    after writing its outputs, when the mutation score (or the score over
+    the covered mutants) is below them. Unset, the target passes whatever
+    the score. Each shard checks its own mutants; a whole-package score
+    needs the shards' reports merged.
 
     `race` builds the test binary with the race detector, which the
     opt-in `concurrency` operator needs: a data race it introduces fails
@@ -455,6 +463,11 @@ def mutation_test(
             tests reached the same sites as without them) as survivors
             (`mutrim run -count-suspect`); by default they count towards no
             score.
+        threshold: fails the test when the mutation score is below this
+            fraction, e.g. `0.8` (`mutrim run -threshold`); unset is off.
+        threshold_covered: fails the test when the score over the covered
+            mutants (NO_COVERAGE left out) is below this fraction
+            (`mutrim run -threshold-covered`); unset is off.
         extra_tests: go_tests of packages importing the library, whose tests
             also run against its mutants (`mutrim run -extra-test`).
         race: builds the test binary with the race detector (`race = "on"`
@@ -527,7 +540,9 @@ def mutation_test(
                (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
                (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
-               (["-count-suspect"] if count_suspect else []),
+               (["-count-suspect"] if count_suspect else []) +
+               (["-threshold={}".format(threshold)] if threshold != None else []) +
+               (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []),
         data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.

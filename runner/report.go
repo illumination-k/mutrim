@@ -3,6 +3,7 @@ package runner
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -116,6 +117,8 @@ type Result struct {
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
 // timeout + lived + no_coverage), or zero when nothing is viable; with
 // Report.CountSuspect, suspect_equivalent joins the denominator.
+// CoveredScore is the same without no_coverage (PIT's test strength): how
+// well the tests check the code they reach.
 type Totals struct {
 	Mutants int `json:"mutants"`
 	Killed  int `json:"killed"`
@@ -136,8 +139,9 @@ type Totals struct {
 	// Suspicious counts the mutants with at least one unconfirmed kill
 	// (Result.SuspiciousBy). It overlaps the statuses above rather than
 	// partitioning them, and says how much of the run is flaky.
-	Suspicious int     `json:"suspicious"`
-	Score      float64 `json:"score"`
+	Suspicious   int     `json:"suspicious"`
+	Score        float64 `json:"score"`
+	CoveredScore float64 `json:"covered_score"`
 	// Classes breaks the score down by mutant class (mutator.ClassErrPath,
 	// ClassConcurrency, ClassDefault), so the score of error-handling code
 	// can be read next to the overall one.
@@ -227,14 +231,46 @@ func (r *Report) total() {
 			t.SuspectEquivalent++
 		}
 	}
-	viable := t.Killed + t.Timeout + t.Lived + t.NoCoverage
-	if r.CountSuspect {
-		viable += t.SuspectEquivalent
+	killed, covered := r.scored(t)
+	if viable := covered + t.NoCoverage; viable > 0 {
+		t.Score = float64(killed) / float64(viable)
 	}
-	if viable > 0 {
-		t.Score = float64(t.Killed+t.Timeout) / float64(viable)
+	if covered > 0 {
+		t.CoveredScore = float64(killed) / float64(covered)
 	}
 	r.Totals = t
+}
+
+// scored returns the killed mutants of t and the covered ones the score
+// counts: killed and survivors other than NO_COVERAGE.
+func (r *Report) scored(t Totals) (killed, covered int) {
+	killed = t.Killed + t.Timeout
+	covered = killed + t.Lived
+	if r.CountSuspect {
+		covered += t.SuspectEquivalent
+	}
+	return killed, covered
+}
+
+// Threshold is the minimum Score and CoveredScore of a passing run; a zero
+// bound is off.
+type Threshold struct {
+	Score, Covered float64
+}
+
+// Check returns an error naming each score of r below its bound. A score
+// with nothing to count (an empty shard, a run whose every mutant was
+// skipped) passes.
+func (th Threshold) Check(r *Report) error {
+	killed, covered := r.scored(r.Totals)
+	var errs []error
+	if viable := covered + r.Totals.NoCoverage; th.Score > 0 && viable > 0 && r.Totals.Score < th.Score {
+		errs = append(errs, fmt.Errorf("score %.4f (%d of %d killed) is below the threshold %g", r.Totals.Score, killed, viable, th.Score))
+	}
+	if th.Covered > 0 && covered > 0 && r.Totals.CoveredScore < th.Covered {
+		errs = append(errs, fmt.Errorf("covered score %.4f (%d of %d covered killed) is below the threshold %g", r.Totals.CoveredScore, killed, covered, th.Covered))
+	}
+	return errors.Join(errs...)
 }
 
 // Survived reports whether a mutant with status s counts as a survivor

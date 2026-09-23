@@ -195,6 +195,10 @@ run on the result.
   the schemata archive and every archive importing it recompiled, as rules_go's go_test does
   for external tests (the linker rejects mismatched export data). `minimize` takes reports
   of several packages as one matrix by qualifying bare names with the report's package.
+- `run -threshold` / `-threshold-covered` (the `threshold` / `threshold_covered` attributes of
+  `mutation_test`) fail the run when `score` / `covered_score` (NO_COVERAGE left out) is below
+  them, after every output is written; unset, the target passes whatever the score. Each shard
+  checks its own mutants, and nothing to score passes.
 - A kill read from one run is not trusted blindly: `run -confirm-kills N` reruns only the
   killing tests until each has failed N runs, and a failure that does not reproduce goes to
   `suspicious_by`, not `killed_by` (a mutant whose every killer turned suspicious is LIVED).

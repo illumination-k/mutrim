@@ -59,7 +59,9 @@ commands:
             -confirm-baseline rerun to keep flaky tests out of the matrix;
             -extra-test adds the tests of a package importing it; a
             survivor that left every test's trace unchanged is reported
-            SUSPECT_EQUIVALENT and scored only with -count-suspect
+            SUSPECT_EQUIVALENT and scored only with -count-suspect;
+            -threshold / -threshold-covered fail the run, after writing
+            the report, when its score is below them
   minimize  from report.json files (the shards of a package, or several
             packages), list the tests a greedy set cover finds redundant,
             the functions whose mutants survive, and the tests found flaky
@@ -278,6 +280,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
 	confirmBaseline := fs.Int("confirm-baseline", 1, "run each test this many times while tracing; one that fails in some runs and passes in others is marked flaky, and its failures are never kills")
 	countSuspect := fs.Bool("count-suspect", false, "count SUSPECT_EQUIVALENT mutants (survivors whose tests reached the same sites as without them) as survivors in the score and the reports")
+	threshold := fs.Float64("threshold", 0, "fail after writing the report when the score is below this (0..1); 0 is off")
+	thresholdCovered := fs.Float64("threshold-covered", 0, "fail after writing the report when the score over the covered mutants (covered_score) is below this (0..1); 0 is off")
 	dir := fs.String("dir", "", "working directory for the test binary")
 	var extra []runner.Binary
 	fs.Func("extra-test", "`pkg=bin[,dir]`: the test binary of package pkg, which imports the mutated one, built against the same schemata sources; its tests run against the mutants too, named pkg.TestX (repeatable)", func(v string) error {
@@ -294,6 +298,10 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 	if *testBin == "" || *mutantsPath == "" {
 		return errors.New("run: -test-bin and -mutants are required")
+	}
+	th := runner.Threshold{Score: *threshold, Covered: *thresholdCovered}
+	if th.Score < 0 || th.Score > 1 || th.Covered < 0 || th.Covered > 1 {
+		return errors.New("run: -threshold and -threshold-covered must be between 0 and 1")
 	}
 
 	opts := runner.Options{
@@ -333,8 +341,18 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 			*out = filepath.Join(d, "report.json")
 		}
 	}
-	return writeJSON(*out, stdout, rep)
+	if err := writeJSON(*out, stdout, rep); err != nil {
+		return err
+	}
+	if err := th.Check(rep); err != nil {
+		return thresholdError{err}
+	}
+	return nil
 }
+
+// thresholdError is a run that completed, report written, but whose score
+// is below `run -threshold` or `-threshold-covered`.
+type thresholdError struct{ error }
 
 // minimizeOutput is the JSON of `mutrim minimize`.
 type minimizeOutput struct {
@@ -635,13 +653,17 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if diff := os.Getenv("MUTRIM_IN_DIFF"); diff != "" {
 		runArgs = append(runArgs, "-in-diff", diff)
 	}
-	if err := run(ctx, runArgs, stdout, stderr); err != nil {
-		return err
+	// A score below the threshold still wrote report.json, so the other
+	// outputs are written before the test fails.
+	below := run(ctx, runArgs, stdout, stderr)
+	if below != nil && !errors.As(below, new(thresholdError)) {
+		return below
 	}
 	// Each output reads only report.json, so one failing leaves the others
 	// written.
 	srcs := strings.Join(libSrcs, ",")
 	return errors.Join(
+		below,
 		run(ctx, []string{"minimize", "-mutants", mutants, "-srcs", strings.Join(testSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
 		run(ctx, []string{"report", "-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
 		run(ctx, []string{"report", "-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
