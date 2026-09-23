@@ -199,6 +199,9 @@ run on the result.
   the schemata archive and every archive importing it recompiled, as rules_go's go_test does
   for external tests (the linker rejects mismatched export data). `minimize` takes reports
   of several packages as one matrix by qualifying bare names with the report's package.
+- `run -in-diff` scopes a run to a diff: the mutants on its added lines (`changed`) and,
+  unless `-diff-expand=false`, every mutant a row reaching one of them reaches (commit-relevant,
+  Ojdanić et al., TOSEM 2023); the rest are `SKIPPED`. `Totals.Diff` scores both sets.
 - `run -threshold` / `-threshold-covered` (the `threshold` / `threshold_covered` attributes of
   `mutation_test`) fail the run when `score` / `covered_score` (NO_COVERAGE left out) is below
   them, after every output is written; unset, the target passes whatever the score. Each shard

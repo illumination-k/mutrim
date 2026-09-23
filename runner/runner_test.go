@@ -638,6 +638,9 @@ func TestRunInDiff(t *testing.T) {
 			t.Errorf("%s at %s:%d is outside the diff but ran as %s", res.MutantID, m.Func, m.Line, res.Status)
 		default:
 			hit = true
+			if !res.Changed {
+				t.Errorf("%s ran on the changed line but is not marked changed", res.MutantID)
+			}
 		}
 		if res.MutantID == target.ID && (res.Status != runner.Killed || !slices.Contains(res.KilledBy, "TestComparisons")) {
 			t.Errorf("the mutant on the changed line = %+v, want KILLED by TestComparisons", res)
@@ -675,6 +678,80 @@ func TestRunInDiff(t *testing.T) {
 	}
 	if none.Totals.Skipped != none.Totals.Mutants || none.Totals.Score != 0 {
 		t.Errorf("an unrelated diff must skip everything: %+v", none.Totals)
+	}
+}
+
+// -diff-expand widens a diff to the commit-relevant mutants: those on the
+// changed lines, and every mutant a test reaching one of them reaches.
+// Both are scored on their own in totals.diff.
+func TestRunDiffExpand(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	var target mutator.Mutant
+	for _, m := range mutants {
+		if m.Func == "Less" && m.Operator == "relational" {
+			target = m
+		}
+	}
+	if target.ID == "" {
+		t.Fatal("fixture has no relational mutant of Less")
+	}
+	file := path.Join("mutator/testdata/schemata", filepath.Base(target.File))
+	d, err := runner.ParseDiff(strings.NewReader(fmt.Sprintf(
+		"--- a/%[1]s\n+++ b/%[1]s\n@@ -%[2]d,1 +%[2]d,1 @@\n-func Less(a, b int) bool { return a <= b }\n+func Less(a, b int) bool { return a < b }\n",
+		file, target.Line,
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: time.Second, InDiff: d, DiffExpand: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	changed := map[string]bool{}
+	for _, m := range mutants {
+		if d.Touches(m.File, m.Line, m.EndLine) {
+			changed[m.ID] = true
+		}
+	}
+	relevant := maps.Clone(changed)
+	for _, tt := range report.Tests {
+		if slices.ContainsFunc(tt.Sites, func(id string) bool { return changed[id] }) {
+			for _, id := range tt.Sites {
+				relevant[id] = true
+			}
+		}
+	}
+	var outside int
+	for _, res := range report.Results {
+		if res.Changed != changed[res.MutantID] {
+			t.Errorf("%s: changed = %v, want %v", res.MutantID, res.Changed, changed[res.MutantID])
+		}
+		if (res.Status == runner.Skipped) == relevant[res.MutantID] {
+			t.Errorf("%s: status %s, commit-relevant %v", res.MutantID, res.Status, relevant[res.MutantID])
+		}
+		if res.Status != runner.Skipped && !res.Changed {
+			outside++
+		}
+	}
+	if outside == 0 {
+		t.Error("the expansion selected no mutant outside the changed lines")
+	}
+
+	tot := report.Totals
+	if tot.Diff == nil {
+		t.Fatalf("totals.diff is missing: %+v", tot)
+	}
+	if got, want := tot.Diff.ChangedLines.Mutants, len(changed); got != want {
+		t.Errorf("changed_lines.mutants = %d, want %d", got, want)
+	}
+	if got, want := tot.Diff.CommitRelevant.Mutants, tot.Mutants-tot.Skipped; got != want {
+		t.Errorf("commit_relevant.mutants = %d, want %d", got, want)
+	}
+	if tot.Diff.ChangedLines.Killed == 0 || tot.Diff.CommitRelevant.Killed < tot.Diff.ChangedLines.Killed {
+		t.Errorf("totals.diff = %+v, want the changed line's kill counted in both", tot.Diff)
 	}
 }
 

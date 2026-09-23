@@ -55,7 +55,8 @@ commands:
   run       execute a schemata test binary once per mutant, against the
             tests that reach it, and report the per-test kill matrix;
             -subtests makes each subtest a row of it; -in-diff scopes the
-            run to the lines a unified diff adds; -confirm-kills and
+            run to the mutants a unified diff's added lines and their
+            tests reach (-diff-expand=false: the lines alone); -confirm-kills and
             -confirm-baseline rerun to keep flaky tests out of the matrix;
             -extra-test adds the tests of a package importing it; a
             survivor that left every test's trace unchanged is reported
@@ -272,7 +273,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	out := fs.String("out", "", "write report.json here (default: $TEST_UNDECLARED_OUTPUTS_DIR/report.json, else stdout)")
 	previous := fs.String("previous", "", "report.json of an earlier run; a result is copied forward while the tests it was observed with are unchanged (see -test-srcs)")
 	testSrcs := fs.String("test-srcs", "", "comma-separated _test.go files of the package; each test's hash in report.json is read from them, so -previous re-executes the mutants whose killing or reaching tests changed")
-	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines run, the rest are SKIPPED")
+	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines (see -diff-expand) run, the rest are SKIPPED")
+	diffExpand := fs.Bool("diff-expand", true, "with -in-diff, also run the commit-relevant mutants: every mutant a test reaching the diff's added lines reaches, wherever it lies")
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between -min-timeout and -timeout-factor × the baseline run)")
 	minTimeout := fs.Duration("min-timeout", runner.DefaultMinTimeout, "floor of the derived per-mutant timeout, which every looping mutant waits out; lower it for fast, self-contained tests")
 	timeoutFactor := fs.Float64("timeout-factor", runner.DefaultTimeoutFactor, "multiplier of the derived per-mutant timeout")
@@ -348,6 +350,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		if opts.InDiff, err = runner.ReadDiff(*inDiff); err != nil {
 			return err
 		}
+		opts.DiffExpand = *diffExpand
 	}
 	var err error
 	if opts.Shard, opts.Shards, err = shardEnv(); err != nil {
