@@ -117,8 +117,14 @@ type Options struct {
 	// Shard selects mutants whose ID % Shards == Shard. Shards <= 1 runs all.
 	Shard, Shards int
 	// InDiff, if set, scopes the run to the lines it adds: a mutant
-	// outside it is reported Skipped without being executed.
+	// outside it is reported Skipped without being executed. A mutant on
+	// an added line is marked Result.Changed.
 	InDiff *Diff
+	// DiffExpand widens InDiff from the changed lines to the
+	// commit-relevant mutants: every mutant reached by a row that reaches
+	// a changed line's site, wherever it lies (Ojdanić et al., TOSEM
+	// 2023: most commit-relevant mutants lie outside the changed lines).
+	DiffExpand bool
 	// Previous, if set, supplies results copied forward for mutants whose
 	// ID it already contains, as long as the tests they were observed with
 	// are unchanged (see Test.Hash); the rest are executed.
@@ -170,7 +176,8 @@ func (o Options) qualifyAll(rows []row) []string {
 // on its own with GOMUTANT_TRACE set to learn which sites it reaches, so a
 // mutant only runs the tests that can kill it and the report holds a
 // per-test kill matrix. Options.InDiff scopes the run to the lines of a
-// diff.
+// diff, or with Options.DiffExpand to the mutants the tests of those lines
+// reach.
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.TestBin == "" {
 		return nil, errors.New("runner: test binary is required")
@@ -278,6 +285,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		now[t.Name] = t
 	}
 
+	changed, scope := o.diffScope(tests)
 	report := &Report{BaselineMS: baseMS, TimeoutMS: maxTimeout.Milliseconds(), CountSuspect: o.CountSuspect, Tests: tests, Results: []Result{}}
 	if len(o.Mutants) > 0 {
 		report.Pkg = o.Mutants[0].Pkg
@@ -294,7 +302,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		r := &Result{}
 		results[i] = r
 		switch prev, cached := previous[m.ID]; {
-		case !o.InDiff.Touches(m.File, m.Line, m.EndLine):
+		case scope != nil && !scope[m.ID]:
 			*r = Result{MutantID: m.ID, Status: Skipped}
 		case m.Ignored != "":
 			*r = Result{MutantID: m.ID, Status: Ignored}
@@ -327,12 +335,15 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	for i, r := range results {
 		if r != nil {
 			r.Class = o.Mutants[i].Class
+			r.Changed = changed[r.MutantID]
 			report.Results = append(report.Results, *r)
 		}
 	}
 	report.total()
-	if o.InDiff != nil {
+	if d := report.Totals.Diff; d != nil {
 		logger.Printf("%d of %d mutants skipped: not in the diff", report.Totals.Skipped, report.Totals.Mutants)
+		logger.Printf("changed lines: %.0f%% killed (%d of %d scored)", 100*d.ChangedLines.Score, d.ChangedLines.Killed, d.ChangedLines.Killed+d.ChangedLines.Survived)
+		logger.Printf("commit-relevant: %.0f%% killed (%d of %d scored)", 100*d.CommitRelevant.Score, d.CommitRelevant.Killed, d.CommitRelevant.Killed+d.CommitRelevant.Survived)
 	}
 	for _, class := range slices.Sorted(maps.Keys(report.Totals.Classes)) {
 		c := report.Totals.Classes[class]
@@ -342,6 +353,34 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		logger.Printf("%d of %d mutants have an unconfirmed kill; see suspicious_by", report.Totals.Suspicious, report.Totals.Mutants)
 	}
 	return report, nil
+}
+
+// diffScope returns the mutants on the lines Options.InDiff adds, and the
+// mutants the run is scoped to: those, and with Options.DiffExpand every
+// mutant reached by a row that reaches one of them, since that row
+// exercises the change. Both are nil without a diff, which scopes nothing.
+func (o Options) diffScope(tests []Test) (changed, scope map[string]bool) {
+	if o.InDiff == nil {
+		return nil, nil
+	}
+	changed = map[string]bool{}
+	for _, m := range o.Mutants {
+		if o.InDiff.Touches(m.File, m.Line, m.EndLine) {
+			changed[m.ID] = true
+		}
+	}
+	if !o.DiffExpand {
+		return changed, changed
+	}
+	scope = maps.Clone(changed)
+	for _, t := range tests {
+		if slices.ContainsFunc(t.Sites, func(id string) bool { return changed[id] }) {
+			for _, id := range t.Sites {
+				scope[id] = true
+			}
+		}
+	}
+	return changed, scope
 }
 
 // jobs is the number of test processes run at once: Options.Jobs, or
