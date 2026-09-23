@@ -52,6 +52,7 @@ All tools are managed by mise. Run `mise install` to install them.
 | shellcheck    | Shell script linter                           |
 | ghalint       | GitHub Actions linter                         |
 | pinact        | Pin GitHub Actions versions to SHAs           |
+| agent-lens    | Analyzers and hook handlers for coding agents |
 | go            | Go toolchain                                  |
 | golangci-lint | Go linter suite and formatter                 |
 | govulncheck   | Go vulnerability scanner                      |
