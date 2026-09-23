@@ -133,7 +133,9 @@ Goal: one build per package; the test binary re-executed per mutant.
 3. **`report.json`** written to `TEST_UNDECLARED_OUTPUTS_DIR` (or `-out`):
    `{mutant_id, status, tests_run, killed_by, duration_ms, timeout_ms}` plus totals, the
    baseline and the timeout cap. TIMEOUT counts as KILLED in the score; RUN_ERROR counts towards no score
-   (`totals.run_error`) and is never copied forward.
+   (`totals.run_error`) and is never copied forward. Next to the mutation score `totals`
+   also reports the mutant coverage `totals.coverage`, the fraction of viable mutants a
+   test reaches (issue #34).
 4. **Incremental re-runs.** `-previous report.json`: mutants whose ID is present are copied
    forward; new IDs are executed; `NOT_VIABLE` is always recomputed from `mutants.json`. IDs
    are content hashes, so an untouched function keeps its result. The tests are checked too

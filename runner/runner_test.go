@@ -201,6 +201,9 @@ func TestRunReportGolden(t *testing.T) {
 	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
 		t.Errorf("score = %v, want %v", tot.Score, want)
 	}
+	if want := float64(tot.Killed+tot.Timeout+tot.Lived) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Coverage != want {
+		t.Errorf("coverage = %v, want %v", tot.Coverage, want)
+	}
 
 	// Disabled is not a weak spot: its mutants were suppressed, not survivors.
 	var untested int // the line WeakSpots must report for Untested
@@ -661,6 +664,9 @@ func TestRunInDiff(t *testing.T) {
 	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Score != want {
 		t.Errorf("score = %v, want %v", tot.Score, want)
 	}
+	if want := float64(tot.Killed+tot.Timeout+tot.Lived) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Coverage != want {
+		t.Errorf("coverage = %v, want %v (skipped mutants stay out)", tot.Coverage, want)
+	}
 	if !strings.Contains(logs.String(), fmt.Sprintf("%d of %d mutants skipped", tot.Skipped, tot.Mutants)) {
 		t.Errorf("the log must say how much the diff dropped:\n%s", logs.String())
 	}
@@ -879,6 +885,10 @@ func TestRunInfraError(t *testing.T) {
 	if want := float64(first.Totals.Killed+first.Totals.Timeout) /
 		float64(first.Totals.Killed+first.Totals.Timeout+first.Totals.Lived+first.Totals.NoCoverage); first.Totals.Score != want {
 		t.Errorf("score = %v, want %v (RUN_ERROR excluded)", first.Totals.Score, want)
+	}
+	if want := float64(first.Totals.Killed+first.Totals.Timeout+first.Totals.Lived) /
+		float64(first.Totals.Killed+first.Totals.Timeout+first.Totals.Lived+first.Totals.NoCoverage); first.Totals.Coverage != want {
+		t.Errorf("coverage = %v, want %v (RUN_ERROR excluded)", first.Totals.Coverage, want)
 	}
 
 	second, err := runner.Run(t.Context(), runner.Options{
