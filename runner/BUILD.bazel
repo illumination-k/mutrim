@@ -8,6 +8,7 @@ go_library(
         "hash.go",
         "report.go",
         "runner.go",
+        "sample.go",
     ],
     importpath = "github.com/illumination-k/mutrim/runner",
     visibility = ["//visibility:public"],
