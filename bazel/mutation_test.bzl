@@ -420,7 +420,9 @@ def mutation_test(
 
     Setting `MUTRIM_IN_DIFF` to the absolute path of a unified diff
     (`bazel test --test_env=MUTRIM_IN_DIFF=$PWD/pr.diff //...`) scopes the run
-    to the lines that diff adds; every other mutant is reported `SKIPPED` and
+    to the commit-relevant mutants: those on the lines that diff adds and
+    those the tests reaching them reach (`--test_arg=-diff-expand=false`
+    keeps the lines alone); every other mutant is reported `SKIPPED` and
     counts towards no score.
 
     `match`, `files`, `exclude_files`, `exclude_re` and `arid` narrow

@@ -8,7 +8,10 @@ import (
 // LoopCtrl swaps break and continue. Only unlabeled statements whose
 // nearest enclosing breakable statement is a loop are sites: a break in a
 // switch or select leaves that statement instead, so swapping it would
-// change which statement the mutant is about.
+// change which statement the mutant is about. A continue of an
+// unconditional for that no break leaves is not a site either: the break
+// would stop the loop from being a terminating statement, and a function
+// ending in it would no longer compile.
 type LoopCtrl struct{}
 
 func (LoopCtrl) Name() string { return "loopctrl" }
@@ -18,7 +21,11 @@ func (LoopCtrl) Sites(ctx *Context, n ast.Node) []Site {
 	if !ok || s.Label != nil || (s.Tok != token.BREAK && s.Tok != token.CONTINUE) {
 		return nil
 	}
-	if !ctx.inLoopBody() {
+	loop, label := ctx.enclosingLoop()
+	if loop == nil {
+		return nil
+	}
+	if f, ok := loop.(*ast.ForStmt); ok && s.Tok == token.CONTINUE && f.Cond == nil && !breaks(f.Body, label) {
 		return nil
 	}
 	from, to := s.Tok, token.CONTINUE
@@ -41,18 +48,53 @@ func (LoopCtrl) Sites(ctx *Context, n ast.Node) []Site {
 	}}
 }
 
-// inLoopBody reports whether the nearest enclosing statement that break
-// leaves is a loop, so that break and continue are each other's mutant.
-func (c *Context) inLoopBody() bool {
+// enclosingLoop returns the nearest enclosing statement that break leaves
+// if it is a loop, so that break and continue are each other's mutant, with
+// the label of that loop ("" if none).
+func (c *Context) enclosingLoop() (loop ast.Stmt, label string) {
 	for i := 1; i <= len(c.Path); i++ {
-		switch c.parent(i).(type) {
+		switch n := c.parent(i).(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
-			return true
+			if l, ok := c.parent(i + 1).(*ast.LabeledStmt); ok {
+				label = l.Label.Name
+			}
+			return n.(ast.Stmt), label
 		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.FuncLit:
-			return false
+			return nil, ""
 		}
 	}
-	return false
+	return nil, ""
+}
+
+// breaks reports whether body holds a break that leaves the loop it is the
+// body of: an unlabeled one outside any nested breakable statement, or one
+// naming label.
+func breaks(body *ast.BlockStmt, label string) bool {
+	found := false
+	var visit func(root ast.Node, nested bool)
+	visit = func(root ast.Node, nested bool) {
+		ast.Inspect(root, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			switch n := n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.BranchStmt:
+				if n.Tok == token.BREAK && (n.Label == nil && !nested || n.Label != nil && n.Label.Name == label) {
+					found = true
+				}
+			case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+				if !nested {
+					visit(n, true)
+					return false
+				}
+			}
+			return true
+		})
+	}
+	visit(body, false)
+	return found
 }
 
 // LoopCond makes a loop run zero times: the condition of a for statement is

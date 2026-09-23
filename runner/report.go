@@ -37,7 +37,7 @@ const (
 	// type-check or could not be embedded as schemata.
 	NotViable Status = "NOT_VIABLE"
 	// Skipped means a diff scoped the run (Options.InDiff) and the
-	// mutant lies outside it, so it was never executed; like Ignored it
+	// mutant lies outside its scope, so it was never executed; like Ignored it
 	// counts towards no score.
 	Skipped Status = "SKIPPED"
 	// Ignored means a gen filter or an inline //mutrim:disable directive
@@ -117,6 +117,9 @@ type Result struct {
 	// TimeoutMS is the timeout each of the mutant's test processes ran
 	// under, so a TIMEOUT can be audited; zero when nothing ran.
 	TimeoutMS int64 `json:"timeout_ms,omitempty"`
+	// Changed says the mutant lies on a line the diff scoping the run
+	// adds (Options.InDiff), as opposed to one only its tests reach.
+	Changed bool `json:"changed,omitempty"`
 }
 
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
@@ -158,9 +161,21 @@ type Totals struct {
 	// ClassConcurrency, ClassDefault), so the score of error-handling code
 	// can be read next to the overall one.
 	Classes map[string]ClassTotals `json:"classes,omitempty"`
+	// Diff is the score of a run a diff scoped (a result is Skipped or
+	// Changed); nil otherwise.
+	Diff *DiffTotals `json:"diff,omitempty"`
 }
 
-// ClassTotals is the score of one mutant class, counted as in Totals:
+// DiffTotals scores a run scoped to a diff twice: over the mutants on its
+// changed lines, and over every commit-relevant mutant the run kept
+// (Options.DiffExpand), which the two report apart since they correlate
+// only weakly (Ma et al., ICSME 2020).
+type DiffTotals struct {
+	ChangedLines   ClassTotals `json:"changed_lines"`
+	CommitRelevant ClassTotals `json:"commit_relevant"`
+}
+
+// ClassTotals is the score of a group of mutants, counted as in Totals:
 // Killed includes timeouts, Survived the mutants the score counts as
 // survivors (Report.Survived).
 type ClassTotals struct {
@@ -202,21 +217,19 @@ func ReadReport(path string) (*Report, error) {
 
 func (r *Report) total() {
 	t := Totals{Classes: map[string]ClassTotals{}}
+	var diff DiffTotals
 	for _, res := range r.Results {
 		t.Mutants++
 		class := cmp.Or(res.Class, mutator.ClassDefault)
 		c := t.Classes[class]
-		c.Mutants++
-		switch {
-		case res.Status == Killed || res.Status == Timeout:
-			c.Killed++
-		case r.Survived(res.Status):
-			c.Survived++
-		}
-		if c.Killed+c.Survived > 0 {
-			c.Score = float64(c.Killed) / float64(c.Killed+c.Survived)
-		}
+		r.add(&c, res.Status)
 		t.Classes[class] = c
+		if res.Status != Skipped {
+			r.add(&diff.CommitRelevant, res.Status)
+		}
+		if res.Changed {
+			r.add(&diff.ChangedLines, res.Status)
+		}
 		if len(res.SuspiciousBy) > 0 {
 			t.Suspicious++
 		}
@@ -243,6 +256,9 @@ func (r *Report) total() {
 			t.SuspectEquivalent++
 		}
 	}
+	if t.Skipped > 0 || diff.ChangedLines.Mutants > 0 {
+		t.Diff = &diff
+	}
 	killed, covered := r.scored(t)
 	if viable := covered + t.NoCoverage; viable > 0 {
 		t.Score = float64(killed) / float64(viable)
@@ -252,6 +268,20 @@ func (r *Report) total() {
 		t.CoveredScore = float64(killed) / float64(covered)
 	}
 	r.Totals = t
+}
+
+// add counts a mutant with status s into c.
+func (r *Report) add(c *ClassTotals, s Status) {
+	c.Mutants++
+	switch {
+	case s == Killed || s == Timeout:
+		c.Killed++
+	case r.Survived(s):
+		c.Survived++
+	}
+	if c.Killed+c.Survived > 0 {
+		c.Score = float64(c.Killed) / float64(c.Killed+c.Survived)
+	}
 }
 
 // scored returns the killed mutants of t and the covered ones the score

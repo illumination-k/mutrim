@@ -287,7 +287,7 @@ mutants carry the sites and kills of both.
 
 ## Scoping a run to a diff
 
-`run -in-diff` runs only the mutants on the lines a unified diff adds, which is what a
+`run -in-diff` runs only the mutants a unified diff is relevant to, which is what a
 pull request needs:
 
 ```bash
@@ -295,10 +295,13 @@ git diff --unified=0 --merge-base origin/main > pr.diff
 go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -in-diff pr.diff -out report.json
 ```
 
+The scope is the commit-relevant mutants, found through the per-test trace: the mutants
+on the lines the diff adds (`changed: true` in `report.json`), the tests reaching any of
+them (they exercise the change), and every mutant those tests reach, in whichever file of
+the package. Most commit-relevant mutants lie outside the changed lines (Ojdanić et al.,
+TOSEM 2023), so the lines alone miss them; `-diff-expand=false` keeps the lines alone.
+
 Every other mutant is reported `SKIPPED`: it is not executed and counts towards no score,
-so `score` is the mutation score of the diff and `coverage` the fraction of its viable
-mutants a test reaches. The filter is applied before everything else, `-previous` included,
-so a scoped run executes nothing outside the diff.
 
 Only the new side of the diff is read. A removed line holds no mutant, and a context line
 is code the diff did not change, so a mutant is kept when its span overlaps an added line;
@@ -316,6 +319,8 @@ Under Bazel the diff is passed by path, which keeps the runner hermetic:
 ```bash
 git diff --unified=0 --merge-base origin/main > "$PWD/pr.diff"
 bazel test --test_env=MUTRIM_IN_DIFF="$PWD/pr.diff" //...:all
+# the changed lines alone
+bazel test --test_env=MUTRIM_IN_DIFF="$PWD/pr.diff" --test_arg=-diff-expand=false //...:all
 ```
 
 ## Reporting

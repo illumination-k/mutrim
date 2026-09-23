@@ -58,9 +58,68 @@ loop.go:61:13 Forever branch "if body -> empty" viable=true | if stop() {
 loop.go:62:4 Forever return "result 1 -> 0" viable=true | return 0
 loop.go:62:4 Forever return "result 1 -> 1" viable=true | return 1
 loop.go:64:3 Forever incdec "++ -> --" viable=true | n--
-loop.go:70:11 Sum constant "0 -> 1" viable=true | total := 1
-loop.go:71:23 Sum loopcond "range -> no iteration" viable=true | for _, x := range xs {
-loop.go:72:9 Sum assignop "+= -> -=" viable=true | total -= x
-loop.go:72:9 Sum assignop "+= -> =" viable=true | total = x
-loop.go:74:2 Sum return "result 1 -> 0" viable=true | return 0
-loop.go:74:2 Sum return "result 1 -> 1" viable=true | return 1
+loop.go:73:6 Retry negation "cond -> !(cond)" viable=true | if !(!ok) {
+loop.go:73:6 Retry condition "cond -> true" viable=true | if true {
+loop.go:73:6 Retry condition "cond -> false" viable=true | if false {
+loop.go:73:10 Retry branch "if body -> empty" viable=true | if !ok {
+loop.go:73:6 Retry negatives "!x -> x" viable=true | if !!(ok) {
+loop.go:74:4 Retry return "result 1 -> 1" viable=true | return 1
+loop.go:74:11 Retry constant "0 -> 1" viable=true | return 1
+loop.go:76:6 Retry negation "cond -> !(cond)" viable=true | if !(v < 0) {
+loop.go:76:6 Retry condition "cond -> true" viable=true | if true {
+loop.go:76:6 Retry condition "cond -> false" viable=true | if false {
+loop.go:76:12 Retry branch "if body -> empty" viable=true | if v < 0 {
+loop.go:76:8 Retry relational "< -> <=" viable=true | if v <= 0 {
+loop.go:76:8 Retry invert "< -> >=" viable=true | if v >= 0 {
+loop.go:76:10 Retry constant "0 -> 1" viable=true | if v < 1 {
+loop.go:79:6 Retry negation "cond -> !(cond)" viable=true | if !(v > 10) {
+loop.go:79:6 Retry condition "cond -> true" viable=true | if true {
+loop.go:79:6 Retry condition "cond -> false" viable=true | if false {
+loop.go:79:13 Retry branch "if body -> empty" viable=true | if v > 10 {
+loop.go:79:8 Retry relational "> -> >=" viable=true | if v >= 10 {
+loop.go:79:8 Retry invert "> -> <=" viable=true | if v <= 10 {
+loop.go:79:10 Retry constant "10 -> 11" viable=true | if v > 11 {
+loop.go:80:4 Retry return "result 1 -> 0" viable=true | return 0
+loop.go:80:4 Retry return "result 1 -> 1" viable=true | return 1
+loop.go:89:6 RetryBreaks negation "cond -> !(cond)" viable=true | if !(!ok) {
+loop.go:89:6 RetryBreaks condition "cond -> true" viable=true | if true {
+loop.go:89:6 RetryBreaks condition "cond -> false" viable=true | if false {
+loop.go:89:10 RetryBreaks branch "if body -> empty" viable=true | if !ok {
+loop.go:89:6 RetryBreaks negatives "!x -> x" viable=true | if !!(ok) {
+loop.go:90:4 RetryBreaks loopctrl "break -> continue" viable=true | continue
+loop.go:92:6 RetryBreaks negation "cond -> !(cond)" viable=true | if !(v < 0) {
+loop.go:92:6 RetryBreaks condition "cond -> true" viable=true | if true {
+loop.go:92:6 RetryBreaks condition "cond -> false" viable=true | if false {
+loop.go:92:12 RetryBreaks branch "if body -> empty" viable=true | if v < 0 {
+loop.go:92:8 RetryBreaks relational "< -> <=" viable=true | if v <= 0 {
+loop.go:92:8 RetryBreaks invert "< -> >=" viable=true | if v >= 0 {
+loop.go:92:10 RetryBreaks constant "0 -> 1" viable=true | if v < 1 {
+loop.go:93:4 RetryBreaks loopctrl "continue -> break" viable=true | break
+loop.go:96:2 RetryBreaks return "result 1 -> 1" viable=true | return 1
+loop.go:96:9 RetryBreaks constant "0 -> 1" viable=true | return 1
+loop.go:104:7 RetryLabeled negation "cond -> !(cond)" viable=true | if !(!ok) {
+loop.go:104:7 RetryLabeled condition "cond -> true" viable=true | if true {
+loop.go:104:7 RetryLabeled condition "cond -> false" viable=true | if false {
+loop.go:104:11 RetryLabeled branch "if body -> empty" viable=true | if !ok {
+loop.go:104:7 RetryLabeled negatives "!x -> x" viable=true | if !!(ok) {
+loop.go:107:7 RetryLabeled negation "cond -> !(cond)" viable=true | if !(v < 0) {
+loop.go:107:7 RetryLabeled condition "cond -> true" viable=true | if true {
+loop.go:107:7 RetryLabeled condition "cond -> false" viable=true | if false {
+loop.go:107:13 RetryLabeled branch "if body -> empty" viable=true | if v < 0 {
+loop.go:107:9 RetryLabeled relational "< -> <=" viable=true | if v <= 0 {
+loop.go:107:9 RetryLabeled invert "< -> >=" viable=true | if v >= 0 {
+loop.go:107:11 RetryLabeled constant "0 -> 1" viable=true | if v < 1 {
+loop.go:110:4 RetryLabeled loopctrl "break -> continue" viable=true | continue
+loop.go:112:23 RetryLabeled negation "cond -> !(cond)" viable=true | if _, ok := next(); !(ok) {
+loop.go:112:23 RetryLabeled condition "cond -> true" viable=true | if _, ok := next(); true {
+loop.go:112:23 RetryLabeled condition "cond -> false" viable=true | if _, ok := next(); false {
+loop.go:112:26 RetryLabeled branch "if body -> empty" viable=true | if _, ok := next(); ok {
+loop.go:113:4 RetryLabeled loopctrl "continue -> break" viable=true | break
+loop.go:116:2 RetryLabeled return "result 1 -> 1" viable=true | return 1
+loop.go:116:9 RetryLabeled constant "0 -> 1" viable=true | return 1
+loop.go:121:11 Sum constant "0 -> 1" viable=true | total := 1
+loop.go:122:23 Sum loopcond "range -> no iteration" viable=true | for _, x := range xs {
+loop.go:123:9 Sum assignop "+= -> -=" viable=true | total -= x
+loop.go:123:9 Sum assignop "+= -> =" viable=true | total = x
+loop.go:125:2 Sum return "result 1 -> 0" viable=true | return 0
+loop.go:125:2 Sum return "result 1 -> 1" viable=true | return 1
