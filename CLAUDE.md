@@ -20,7 +20,11 @@ mise run fmt      # Format
 mise run lint     # Lint and policy checks
 mise run test     # Tests
 mise run ci       # Full required verification
+mise run bench origin/main   # Benchmarks: working tree vs a ref (benchstat)
 ```
+
+Judge a performance change by `mise run bench <ref>`, not a single run, and keep a
+benchmark next to the code it measures (`bench_test.go`).
 
 ## Commands
 

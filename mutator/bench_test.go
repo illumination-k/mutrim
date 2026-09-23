@@ -37,12 +37,11 @@ func BenchmarkGenerate(b *testing.B) {
 		b.Run(pattern, func(b *testing.B) {
 			pkg := loadBench(b, pattern)
 			var n int
-			b.ResetTimer()
 			for b.Loop() {
 				n = len(Generate(pkg, Options{TypeCheck: true}))
 			}
 			b.ReportMetric(float64(n), "mutants")
-			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/float64(n)/1e6, "ms/mutant")
+			b.ReportMetric(b.Elapsed().Seconds()/float64(b.N)/float64(n), "sec/mutant")
 		})
 	}
 }

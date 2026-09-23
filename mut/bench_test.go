@@ -6,84 +6,48 @@ import (
 	"testing"
 )
 
-// benchIDs are site IDs shaped like the mutator's: 16 hex digits.
-var benchIDs = func() []string {
+// BenchmarkSite is the cost of one schemata site on the hot path, the
+// lowering of `a < b` in a loop over 64 sites, in each state a process
+// runs it in: the identity build (no mutant selected), a mutant's run
+// (another mutant selected), and a traced run, which every trace and
+// every mutant's run is, from one goroutine and from GOMAXPROCS.
+func BenchmarkSite(b *testing.B) {
 	ids := make([]string, 64)
 	for i := range ids {
 		ids[i] = strconv.FormatUint(0xfedcba9876543210+uint64(i), 16)
 	}
-	return ids
-}()
-
-// setTrace traces to a temp file for the duration of the benchmark.
-func setTrace(b *testing.B) {
-	b.Helper()
-	prev := trace
-	trace = newTracer(filepath.Join(b.TempDir(), "trace"))
-	b.Cleanup(func() { trace = prev })
-}
-
-// BenchmarkCmp is the cost of one inactive site on the hot path: the
-// schemata of `a < b` in a loop, with no mutant selected and no trace.
-func BenchmarkCmp(b *testing.B) {
-	prev := active
-	active = ""
-	b.Cleanup(func() { active = prev })
-	var n int
-	for i := 0; b.Loop(); i++ {
-		if Cmp(benchIDs[i&63], i, 1000, "<", "<=") {
-			n++
-		}
-	}
-	_ = n
-}
-
-// BenchmarkCmpActive is BenchmarkCmp while another mutant is selected, as
-// in every mutant's run.
-func BenchmarkCmpActive(b *testing.B) {
-	prev := active
-	active = "0123456789abcdef"
-	b.Cleanup(func() { active = prev })
-	var n int
-	for i := 0; b.Loop(); i++ {
-		if Cmp(benchIDs[i&63], i, 1000, "<", "<=") {
-			n++
-		}
-	}
-	_ = n
-}
-
-// BenchmarkCmpTraced is BenchmarkCmpActive with GOMUTANT_TRACE set, as in
-// the trace runs and every mutant's run: sites already recorded dominate.
-func BenchmarkCmpTraced(b *testing.B) {
-	prev := active
-	active = "0123456789abcdef"
-	b.Cleanup(func() { active = prev })
-	setTrace(b)
-	var n int
-	for i := 0; b.Loop(); i++ {
-		if Cmp(benchIDs[i&63], i, 1000, "<", "<=") {
-			n++
-		}
-	}
-	_ = n
-}
-
-// BenchmarkCmpTracedParallel is BenchmarkCmpTraced from parallel
-// goroutines, as in a test using t.Parallel or a concurrent library.
-func BenchmarkCmpTracedParallel(b *testing.B) {
-	prev := active
-	active = "0123456789abcdef"
-	b.Cleanup(func() { active = prev })
-	setTrace(b)
-	b.RunParallel(func(pb *testing.PB) {
-		var n, i int
-		for pb.Next() {
-			if Cmp(benchIDs[i&63], i, 1000, "<", "<=") {
-				n++
+	for _, bc := range []struct {
+		name     string
+		active   string
+		traced   bool
+		parallel bool
+	}{
+		{name: "inactive"},
+		{name: "other-active", active: "0123456789abcdef"},
+		{name: "traced", active: "0123456789abcdef", traced: true},
+		{name: "traced-parallel", active: "0123456789abcdef", traced: true, parallel: true},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			prevActive, prevTrace := active, trace
+			b.Cleanup(func() { active, trace = prevActive, prevTrace })
+			active, trace = bc.active, nil
+			if bc.traced {
+				trace = newTracer(filepath.Join(b.TempDir(), "trace"))
 			}
-			i++
-		}
-		_ = n
-	})
+			loop := func(next func() bool) {
+				n := 0
+				for i := 0; next(); i++ {
+					if Cmp(ids[i&63], i, 1000, "<", "<=") {
+						n++
+					}
+				}
+				_ = n
+			}
+			if bc.parallel {
+				b.RunParallel(func(pb *testing.PB) { loop(pb.Next) })
+			} else {
+				loop(b.Loop)
+			}
+		})
+	}
 }

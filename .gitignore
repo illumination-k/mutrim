@@ -32,3 +32,6 @@ go.work.sum
 
 # mutrim on itself (tools/dogfood.sh)
 /.mutrim/
+
+# Benchmark results (tools/bench.sh)
+/.bench/
