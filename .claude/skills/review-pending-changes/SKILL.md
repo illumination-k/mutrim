@@ -1,0 +1,105 @@
+---
+name: review-pending-changes
+description: Use when the user wants to audit pending git changes (unstaged edits, work-in-progress) for quality issues before committing — duplicated functions, thin wrappers, complexity creep, weakened cohesion. Composes the `--diff-only` modes of `agent-lens analyze similarity / wrapper / cohesion / complexity / delegation`.
+---
+
+# Review pending changes with agent-lens
+
+Goal: surface only the noise that the current `git diff` introduced, not the whole file's history. Every analyzer used here scopes to functions or `impl` blocks that overlap unstaged hunks (`git diff -U0`).
+
+## When to run
+
+- Before the user asks to commit or push.
+- After the user finishes a multi-file edit and asks "did I break anything?"
+- As a sanity pass after the agent itself made a large edit.
+
+The PostToolUse hook already runs `similarity` + `wrapper` on every Edit/Write, so don't re-run those for a single just-edited file — those reports are already in context. Reach for this skill when the change is broader than one file or when the user explicitly wants a sweep.
+
+## Workflow
+
+### 1. Find the touched source files
+
+```bash
+git diff --name-only --diff-filter=AM \
+  | grep -E '\.(rs|tsx?|mts|cts|jsx?|mjs|cjs|py|go)$'
+```
+
+All five diff-only analyzers (`similarity`, `wrapper`, `cohesion`, `complexity`, `delegation`) accept Rust, TypeScript / JavaScript, Python, and Go — no need to fan out by extension.
+
+### 2. Run the diff-scoped analyzers per file
+
+For each touched source file:
+
+```bash
+agent-lens analyze similarity <path> --diff-only --format md
+agent-lens analyze wrapper    <path> --diff-only --format md
+agent-lens analyze cohesion   <path> --diff-only --format md
+agent-lens analyze complexity <path> --diff-only --format md
+```
+
+Then once, for the tree the change lives in — a forwarding chain spans files, so a per-file run cannot see one:
+
+```bash
+agent-lens analyze delegation <dir> --diff-only --format md
+```
+
+And once for the change as a whole, from the repository root — this one asks whether the edit is one change or several tangled together:
+
+```bash
+agent-lens analyze change-entropy . --diff-only --format md
+```
+
+It reports files touched, modules spanned, and the scatter percentile against this repo's own commits. A high percentile spanning several unrelated modules is the case for splitting the commit; one file carrying most of the changed lines is a focused change however many files it touched. Unlike the analyzers above it reads every file type, so `.toml`, `.md` and CI config count.
+
+Then the same question at function level, also from the repository root — did the edit stay on task, and what did it leave behind:
+
+```bash
+agent-lens analyze footprint . --format md
+```
+
+It counts the functions the diff touched and flags four things: touched functions outside the change's impact closure (their callers share nothing with the rest of the edit — the drive-by edit), complexity increases, functions turned into forwarders, and added functions nothing calls outside tests. Untracked files count as added, so new files the edit created are in scope.
+
+If a report is empty, skip it silently — empty diff-only output is the success case.
+
+### 3. Crate / entry-level coupling (no `--diff-only`)
+
+`coupling` doesn't have a diff mode; it's a whole-graph metric, and it runs on Rust crates, TS/JS module graphs, and Go modules. Only re-run it if the diff changed module structure — for Rust, added or removed `mod` declarations, `pub use` re-exports, or moved files between modules; for TS/JS, added or removed relative `import` / `export` statements at module scope; for Go, added or removed local `import` statements:
+
+```bash
+# Rust
+git diff --name-only | grep -q -E '(lib|main|mod)\.rs|src/.*\.rs' && \
+  agent-lens analyze coupling crates/<name> --format md
+
+# TS/JS — re-run when imports/exports moved
+git diff -U0 -- '*.ts' '*.tsx' '*.js' '*.jsx' \
+  | grep -qE '^[+-](import |export )' && \
+  agent-lens analyze coupling app/src/index.ts --format md
+
+# Go — re-run when local imports moved
+git diff -U0 -- '*.go' | grep -qE '^[+-]\s*"' && \
+  agent-lens analyze coupling ./cmd/server --format md
+```
+
+### 4. Aggregate and decide
+
+For each finding, classify:
+
+- **Block-on-commit**: new clone (TSED ≥ 0.95), new function with cognitive ≥ 25, new `impl` whose LCOM4 jumped from 1 to ≥ 2, new dependency cycle in the coupling cycles list.
+- **Worth a callout**: cognitive 15–25, MI < 65, new wrapper with one call site, a forwarding chain the edit lengthened (open its terminus and ask whether the new hop earns its file), fan-out increase that pushes a module past the rest of the crate.
+- **Noise**: TSED < 0.85 once `--exclude-tests` is on; minor cognitive deltas on already-complex functions.
+
+Surface block-on-commit findings to the user before they commit. Mention worth-a-callout findings once, then move on.
+
+## Combining with `--exclude-tests`
+
+If the diff is in a file dominated by `#[cfg(test)] mod tests`, similarity will fire on the table-driven test cases. Add `--exclude-tests` to silence that:
+
+```bash
+agent-lens analyze similarity <path> --diff-only --exclude-tests --format md
+```
+
+## Don't reach for it when
+
+- The user is mid-edit and hasn't paused — the PostToolUse hook is already running similarity + wrapper after every save. Adding more analyzers here would be redundant noise.
+- The change is documentation-only or config-only — none of these analyzers will have anything useful to say.
+- The diff is empty — `--diff-only` reports will all be empty by definition.
