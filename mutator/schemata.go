@@ -47,36 +47,57 @@ func (l *Lowering) Expr() ast.Expr { return l.current.(ast.Expr) }
 
 // Call builds `mut.fn(id, args...)`.
 func (l *Lowering) Call(fn string, args ...ast.Expr) *ast.CallExpr {
-	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: ast.NewIdent(l.runtime), Sel: ast.NewIdent(fn)},
-		Args: append([]ast.Expr{l.idLit()}, args...),
-	}
+	return runtimeCall(l.runtime, fn, l.ID, args...)
 }
 
 // Active builds `mut.Active(id)`.
 func (l *Lowering) Active() ast.Expr { return l.Call("Active") }
 
-func (l *Lowering) idLit() ast.Expr {
-	return &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(l.ID)}
+// runtimeCall builds `runtime.fn(id, args...)`.
+func runtimeCall(runtime, fn, id string, args ...ast.Expr) *ast.CallExpr {
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: ast.NewIdent(runtime), Sel: ast.NewIdent(fn)},
+		Args: append([]ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(id)}}, args...),
+	}
 }
 
 // Schemata is the outcome of Lower: rewritten sources with every embedded
 // mutant selectable at runtime through GOMUTANT_ID.
 type Schemata struct {
 	// Files maps each rewritten file's original path to its new contents.
-	// Files without an embedded mutant are absent and used as they are.
+	// Files without an embedded mutant or a probe are absent and used as
+	// they are.
 	Files map[string][]byte
 	// Embedded holds the IDs of the mutants present in Files. Viable,
 	// non-excluded mutants that are missing here cannot be expressed as
-	// schemata (see the operator docs) and must not be executed.
+	// schemata (see the operator docs) and must not be executed through
+	// GOMUTANT_ID.
 	Embedded map[string]bool
+	// Probed holds the IDs of the viable, non-excluded mutants
+	// LowerFallback could not embed but traces: a probe, `mut.Active(id)`
+	// as a statement, runs wherever the mutant's code runs, so
+	// GOMUTANT_TRACE records the tests that reach it while GOMUTANT_ID
+	// changes nothing. Such a mutant runs from a build of its own
+	// (Mutant.Fallback). Always empty after Lower.
+	Probed map[string]bool
 }
 
 // Lower rewrites pkg so that every viable mutant in mutants that is not Excluded
 // is embedded and selected by GOMUTANT_ID. The package's syntax trees are
 // rewritten in place and must not be reused afterwards.
 func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
-	out := &Schemata{Files: map[string][]byte{}, Embedded: map[string]bool{}}
+	return lower(pkg, mutants, false)
+}
+
+// LowerFallback is Lower, plus a probe for each mutant it cannot embed
+// (Schemata.Probed), so the tests reaching that mutant are known without
+// embedding it.
+func LowerFallback(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
+	return lower(pkg, mutants, true)
+}
+
+func lower(pkg *packages.Package, mutants []Mutant, probe bool) (*Schemata, error) {
+	out := &Schemata{Files: map[string][]byte{}, Embedded: map[string]bool{}, Probed: map[string]bool{}}
 	if pkg.PkgPath == RuntimePath {
 		return out, nil // the runtime cannot import itself
 	}
@@ -84,11 +105,13 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 	byNode := map[ast.Node][]Mutant{}
 	byFile := map[*ast.File][]Mutant{}
 	for _, m := range mutants {
-		if m.Excluded() || !m.Viable || m.site.Schemata == nil {
+		if m.Excluded() || !m.Viable || (m.site.Schemata == nil && !probe) {
 			continue
 		}
-		byNode[m.site.Node] = append(byNode[m.site.Node], m)
 		byFile[m.site.file] = append(byFile[m.site.file], m)
+		if m.site.Schemata != nil {
+			byNode[m.site.Node] = append(byNode[m.site.Node], m)
+		}
 	}
 	for _, ms := range byNode {
 		// The rewrite that rebuilds the node first, then the ones that wrap
@@ -104,10 +127,19 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 		}
 		name := pkg.Fset.Position(f.Package).Filename
 		runtime := runtimeName(pkg, f)
+		var anchors map[string]anchor
+		if probe {
+			// Read before the lowering, which rebuilds the ancestry.
+			anchors = probeAnchors(f, byFile[f])
+		}
+		// replaced maps each node a lowering replaced to what now stands
+		// in its place.
+		replaced := map[ast.Node]ast.Node{}
+		used := false
 		astutil.Apply(f, nil, func(c *astutil.Cursor) bool {
-			current := c.Node()
+			orig, current := c.Node(), c.Node()
 			lowered := false
-			for _, m := range byNode[c.Node()] {
+			for _, m := range byNode[orig] {
 				if lowered && !m.site.Wraps {
 					continue // its replacement would discard the lowering before it
 				}
@@ -119,8 +151,18 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 					out.Embedded[m.ID] = true
 				}
 			}
+			if lowered {
+				replaced[orig] = current
+				used = true
+			}
 			return true
 		})
+		if probe && placeProbes(f, runtime, anchors, replaced, out) {
+			used = true
+		}
+		if !used {
+			continue // unchanged, and the runtime import would be unused
+		}
 		// runtimeName never reuses a name the file already binds, so the
 		// import is always added (a second import of RuntimePath under a
 		// new name when the package already uses the runtime).

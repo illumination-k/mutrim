@@ -266,6 +266,65 @@ func TestGenSchemataThenRun(t *testing.T) {
 // Bazel mode: gen type-checks the given files from export data instead of
 // running go list, and the schemata directory holds the complete package,
 // files without a mutant copied as they are.
+// gen -fallback writes the mutants the schemata cannot embed as sources of
+// their own, and run builds and kills them.
+func TestGenFallbackThenRun(t *testing.T) {
+	dir := t.TempDir()
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	bin := filepath.Join(dir, "schemata.test")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-fallback", "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -fallback: %v\n%s", err, stderr.String())
+	}
+	var mutants []mutator.Mutant
+	if err := readJSON(mutantsPath, &mutants); err != nil {
+		t.Fatal(err)
+	}
+	var target mutator.Mutant
+	for _, m := range mutants {
+		if m.Fallback == "" {
+			continue
+		}
+		var overlay mutator.Overlay
+		if err := readJSON(m.Fallback, &overlay); err != nil {
+			t.Fatal(err)
+		}
+		for orig, mutated := range overlay.Replace {
+			if !filepath.IsAbs(m.Fallback) || !filepath.IsAbs(orig) || filepath.Dir(mutated) != filepath.Dir(m.Fallback) {
+				t.Errorf("%s: fallback paths must be absolute and side by side: %s, %s -> %s", m.ID, m.Fallback, orig, mutated)
+			}
+		}
+		if !m.Viable {
+			t.Errorf("%s: a fallback mutant must stay viable", m.ID)
+		}
+		if m.Func == "SkipConst" {
+			target = m
+		}
+	}
+	if target.ID == "" {
+		t.Fatal("no fallback mutant of SkipConst")
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, schemataFixture) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	if err := writeJSON(mutantsPath, nil, []mutator.Mutant{target}); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	args := []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-tests", "TestSkipped", "-build-flags", "-tags=unused"}
+	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+	var report runner.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if r := report.Results[0]; r.Status != runner.Killed || !slices.Equal(r.KilledBy, []string{"TestSkipped"}) {
+		t.Errorf("fallback mutant: %+v", r)
+	}
+}
+
 func TestGenFromFiles(t *testing.T) {
 	dir := t.TempDir()
 	mutantsPath := filepath.Join(dir, "mutants.json")
@@ -487,6 +546,7 @@ func TestCommandErrors(t *testing.T) {
 		"gen bad arid":               {"gen", "-arid", "[-]", fixture},
 		"gen unwritable output":      {"gen", "-o", notADir, fixture},
 		"gen unwritable schemata":    {"gen", "-schemata", notADir, fixture},
+		"gen fallback no schemata":   {"gen", "-fallback", fixture},
 		"overlay bad flag":           {"overlay", "-bogus"},
 		"overlay without id":         {"overlay", fixture},
 		"overlay bad package":        {"overlay", "-id", "0000000000000000", "./does/not/exist"},

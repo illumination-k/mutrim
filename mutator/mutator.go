@@ -50,6 +50,12 @@ type Mutant struct {
 	// Class groups the mutant for the per-class score of report.json:
 	// ClassErrPath, ClassConcurrency or ClassDefault.
 	Class string `json:"class"`
+	// Fallback is the go build -overlay file that applies this mutant
+	// alone to the original sources, for a mutant the schemata could not
+	// embed (`gen -schemata -fallback`): the runner builds a test binary
+	// from it instead of selecting the mutant through GOMUTANT_ID. Empty
+	// for every other mutant.
+	Fallback string `json:"fallback,omitempty"`
 
 	site site
 }

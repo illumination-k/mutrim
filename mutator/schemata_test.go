@@ -370,3 +370,60 @@ func TestSchemataErrPath(t *testing.T) {
 		}
 	}
 }
+
+// TestLowerFallbackProbes lowers the schemata fixture with probes: every
+// mutant the lowering declines is probed instead, the source still behaves
+// like the original, and a trace run records the probes of exactly the
+// declined sites its test reaches.
+func TestLowerFallbackProbes(t *testing.T) {
+	pkg := load(t, "schemata")
+	mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})
+	sch, err := mutator.LowerFallback(pkg, mutants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, m := range mutants {
+		key := m.Func + " " + m.Description
+		ids[key] = m.ID
+		if !m.Viable || m.Excluded() {
+			continue
+		}
+		if sch.Embedded[m.ID] == sch.Probed[m.ID] {
+			t.Errorf("%s: embedded=%v probed=%v, want exactly one", key, sch.Embedded[m.ID], sch.Probed[m.ID])
+		}
+		if sch.Probed[m.ID] != notEmbedded[key] {
+			t.Errorf("%s: probed=%v, want %v", key, sch.Probed[m.ID], notEmbedded[key])
+		}
+	}
+
+	overlayPath := overlayFor(t, sch)
+	if out, gerr := goTestOverlay(t, "schemata", overlayPath, ""); gerr != nil {
+		t.Fatalf("schemata source must pass the fixture tests: %v\n%s", gerr, out)
+	}
+	trace := filepath.Join(t.TempDir(), "trace")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-count=1", "-run", "^TestSkipped$", "-overlay", overlayPath, "./testdata/schemata") //nolint:gosec // test-controlled args
+	cmd.Env = append(os.Environ(), "GOMUTANT_TRACE="+trace)
+	if out, rerr := cmd.CombinedOutput(); rerr != nil {
+		t.Fatalf("trace run: %v\n%s", rerr, out)
+	}
+	data, err := os.ReadFile(trace) //nolint:gosec // test-controlled path
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached := map[string]bool{}
+	for _, id := range strings.Fields(string(data)) {
+		reached[id] = true
+	}
+	for key, want := range map[string]bool{
+		"SkipConst * -> /":            true,  // before the const declaration
+		"SkipMapPost ++ -> --":        true,  // before the for statement
+		"SkipRecover || -> &&":        true,  // inside the deferred closure
+		"Classify case body -> empty": false, // TestSkipped never calls it
+		"Drain default body -> empty": false,
+	} {
+		if reached[ids[key]] != want {
+			t.Errorf("%s: reached=%v, want %v", key, reached[ids[key]], want)
+		}
+	}
+}

@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/illumination-k/mutrim/mutator"
 )
 
 // traceTests runs every row on its own with GOMUTANT_TRACE set and
@@ -110,7 +112,7 @@ func readTrace(path string) (map[string]bool, error) {
 	return sites, nil
 }
 
-// runMutant runs the rows reaching mutant id against it and merges the
+// runMutant runs the rows reaching mutant m against it and merges the
 // outcomes. A -test.run pattern selects the subtests of one parent, so the
 // rows run in one process per binary and parent; KILLED wins over TIMEOUT, which wins
 // over RUN_ERROR, which wins over LIVED, and every process's killers are
@@ -132,16 +134,34 @@ func readTrace(path string) (map[string]bool, error) {
 // rows reach without it is SUSPECT_EQUIVALENT: it changed neither an
 // outcome nor the path taken. The trace is the union over a process's
 // rows, compared with the union of their own.
-func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout time.Duration, ref baseline) (Result, error) {
-	r := Result{MutantID: id, Status: Lived, TimeoutMS: timeout.Milliseconds()}
+//
+// A mutant with a Fallback runs in test binaries built for it alone (see
+// buildFallback) instead; a build that fails makes it NOT_VIABLE. Those
+// binaries hold no schemata, so their processes trace nothing and the
+// mutant is never SUSPECT_EQUIVALENT.
+func (o Options) runMutant(ctx context.Context, m mutator.Mutant, rows []row, timeout time.Duration, ref baseline) (Result, error) {
+	r := Result{MutantID: m.ID, Status: Lived, TimeoutMS: timeout.Milliseconds()}
 	differed := false
 	byBin := make([][]string, len(o.bins))
 	for _, rw := range rows {
 		byBin[rw.bin] = append(byBin[rw.bin], rw.name)
 	}
+	bins := o.bins
+	if m.Fallback != "" {
+		dir, err := os.MkdirTemp("", "mutrim-fallback-")
+		if err != nil {
+			return Result{}, err
+		}
+		defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
+		built, err := o.buildFallback(ctx, m, byBin, dir)
+		if err != nil || built == nil {
+			return Result{MutantID: m.ID, Status: NotViable}, err
+		}
+		bins = built
+	}
 	for bin, names := range byBin {
 		for _, group := range groupByParent(names) {
-			status, changed, err := o.runGroup(ctx, &r, bin, group, timeout, ref)
+			status, changed, err := o.runGroup(ctx, &r, bins[bin], bin, group, timeout, ref, m.Fallback == "")
 			if err != nil {
 				return Result{}, err
 			}
@@ -180,26 +200,33 @@ func (b baseline) reached(rows []string) map[string]bool {
 	return out
 }
 
-// runGroup runs the rows of one binary and parent against mutant r,
+// runGroup runs the rows of one parent of binary b, the bin-th of
+// Options.bins or the build of it for a fallback mutant, against mutant r,
 // records its kills in r and returns the group's status, and whether the
-// mutant made a row fail or changed the sites the rows reach.
-func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []string, timeout time.Duration, ref baseline) (status Status, changed bool, err error) {
-	b := o.bins[bin]
-	trace := filepath.Join(ref.traceDir, r.MutantID+".trace")
+// mutant made a row fail or changed the sites the rows reach. Without
+// traced, b records no sites, so nothing shows the path unchanged.
+func (o Options) runGroup(ctx context.Context, r *Result, b Binary, bin int, group []string, timeout time.Duration, ref baseline, traced bool) (status Status, changed bool, err error) {
+	trace := ""
+	if traced {
+		trace = filepath.Join(ref.traceDir, r.MutantID+".trace")
+	}
 	res, err := o.exec(ctx, b, r.MutantID, trace, testPattern(group), timeout)
 	if err != nil {
 		return "", false, err
 	}
-	reached, err := readTrace(trace)
-	if err != nil {
-		return "", false, err
-	}
-	qualified := make([]string, len(group))
-	for i, name := range group {
-		qualified[i] = o.qualify(row{bin, name})
-	}
 	ran, failed := parseOutput(res.output, res.Status == Timeout, group)
-	changed = len(failed) > 0 || !maps.Equal(reached, ref.reached(qualified))
+	changed = len(failed) > 0 || !traced
+	if traced {
+		var reached map[string]bool
+		if reached, err = readTrace(trace); err != nil {
+			return "", false, err
+		}
+		qualified := make([]string, len(group))
+		for i, name := range group {
+			qualified[i] = o.qualify(row{bin, name})
+		}
+		changed = changed || !maps.Equal(reached, ref.reached(qualified))
+	}
 	r.TestsRun += ran
 	r.DurationMS += res.DurationMS
 

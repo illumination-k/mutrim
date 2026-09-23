@@ -34,7 +34,8 @@ const (
 	// executed; it counts as surviving in the totals.
 	NoCoverage Status = "NO_COVERAGE"
 	// NotViable means the mutant was never executed: it did not
-	// type-check or could not be embedded as schemata.
+	// type-check, could not be embedded as schemata (without a
+	// mutator.Mutant.Fallback), or the build of its fallback failed.
 	NotViable Status = "NOT_VIABLE"
 	// Skipped means a diff scoped the run (Options.InDiff) and the
 	// mutant lies outside its scope, so it was never executed; like Ignored it

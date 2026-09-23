@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "diff.go",
         "exec.go",
+        "fallback.go",
         "hash.go",
         "report.go",
         "runner.go",

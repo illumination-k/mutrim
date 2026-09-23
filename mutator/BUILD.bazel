@@ -24,6 +24,7 @@ go_library(
         "ops_stmt.go",
         "ops_unary.go",
         "overlay.go",
+        "probe.go",
         "schemata.go",
     ],
     importpath = "github.com/illumination-k/mutrim/mutator",

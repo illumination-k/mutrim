@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/go/packages"
+
 	"github.com/illumination-k/mutrim/mutator"
 	"github.com/illumination-k/mutrim/runner"
 )
@@ -56,19 +58,27 @@ func buildPkg(t testing.TB, dir string) (bin string, mutants []mutator.Mutant) {
 // packages importing dir can be built against them.
 func buildPkgOverlay(t testing.TB, dir string) (bin string, mutants []mutator.Mutant, overlayPath string) {
 	t.Helper()
+	bin, mutants, overlayPath, _ = buildPkgWith(t, dir, mutator.Lower)
+	return bin, mutants, overlayPath
+}
+
+// buildPkgWith is buildPkgOverlay with the given lowering, also returning
+// the mutants it probed, which stay viable.
+func buildPkgWith(t testing.TB, dir string, lower func(*packages.Package, []mutator.Mutant) (*mutator.Schemata, error)) (bin string, mutants []mutator.Mutant, overlayPath string, probed map[string]bool) {
+	t.Helper()
 	pkgs, err := mutator.Load(".", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pkg := pkgs[0]
 	mutants = mutator.Generate(pkg, mutator.Options{TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants)
+	sch, err := lower(pkg, mutants)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := range mutants {
 		if !mutants[i].Excluded() {
-			mutants[i].Viable = mutants[i].Viable && sch.Embedded[mutants[i].ID]
+			mutants[i].Viable = mutants[i].Viable && (sch.Embedded[mutants[i].ID] || sch.Probed[mutants[i].ID])
 		}
 	}
 
@@ -91,7 +101,7 @@ func buildPkgOverlay(t testing.TB, dir string) (bin string, mutants []mutator.Mu
 	}
 	bin = filepath.Join(out, "schemata.test")
 	compileTest(t, overlayPath, bin, dir)
-	return bin, mutants, overlayPath
+	return bin, mutants, overlayPath, sch.Probed
 }
 
 // compileTest builds the test binary of the package in dir with overlay.

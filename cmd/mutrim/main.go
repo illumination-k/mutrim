@@ -48,6 +48,8 @@ commands:
             ignored); mutants inside arid nodes (logging, sleeps, ...) are
             ignored unless -no-arid;
             -schemata also writes sources with every mutant embedded;
+            with -fallback, a mutant the schemata cannot express is
+            probed and written as a source of its own for run to build;
             -importpath type-checks the given files from export data
             (Bazel mode)
   overlay   write one mutant and print a go build -overlay file for it;
@@ -59,6 +61,8 @@ commands:
             tests reach (-diff-expand=false: the lines alone); -confirm-kills and
             -confirm-baseline rerun to keep flaky tests out of the matrix;
             -extra-test adds the tests of a package importing it; a
+            fallback mutant (gen -fallback) runs in test binaries go test
+            -c builds for it alone, with -build-flags; a
             survivor that left every test's trace unchanged is reported
             SUSPECT_EQUIVALENT and scored only with -count-suspect;
             -threshold / -threshold-covered fail the run, after writing
@@ -120,8 +124,12 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
 	stdlib := fs.String("stdlib", "", "directory of compiled standard-library packages, <dir>/<goos_goarch>/<path>.a (with -importpath)")
 	tags := fs.String("tags", "", "comma-separated build tags (with -importpath)")
+	fallback := fs.Bool("fallback", false, "with -schemata, probe each mutant the schemata cannot embed and write it as a source of its own with a go build -overlay file (\"fallback\" in mutants.json), which run builds a test binary from; without it such a mutant is NOT_VIABLE")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *fallback && *schemata == "" {
+		return errors.New("gen: -fallback needs -schemata")
 	}
 	ops, err := mutator.Operators(*operators)
 	if err != nil {
@@ -139,33 +147,39 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	var pkgs []*packages.Package
-	if *importPath != "" {
+	load := func() ([]*packages.Package, error) {
+		if *importPath == "" {
+			return mutator.Load(".", patterns(fs)...)
+		}
 		cfg := mutator.FilesConfig{ImportPath: *importPath, Files: fs.Args(), Importcfg: *importcfg, Stdlib: *stdlib}
 		if *tags != "" {
 			cfg.Tags = strings.Split(*tags, ",")
 		}
-		pkg, err := mutator.LoadFiles(cfg)
-		if err != nil {
-			return err
-		}
-		pkgs = []*packages.Package{pkg}
-	} else {
-		var err error
-		if pkgs, err = mutator.Load(".", patterns(fs)...); err != nil {
-			return err
-		}
+		pkg, lerr := mutator.LoadFiles(cfg)
+		return []*packages.Package{pkg}, lerr
+	}
+	pkgs, err := load()
+	if err != nil {
+		return err
 	}
 	mutants := []mutator.Mutant{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
+	probed := map[string]bool{}
 	for _, pkg := range pkgs {
 		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter})
 		if *schemata != "" {
-			if err := writeSchemata(*schemata, pkg, ms, &overlay); err != nil {
+			p, err := writeSchemata(*schemata, pkg, ms, &overlay, *fallback)
+			if err != nil {
 				return err
 			}
+			maps.Copy(probed, p)
 		}
 		mutants = append(mutants, ms...)
+	}
+	if len(probed) > 0 {
+		if err := writeFallbacks(*schemata, load, ops, mutants, probed); err != nil {
+			return err
+		}
 	}
 	if *schemata != "" {
 		if err := writeJSON(filepath.Join(*schemata, "overlay.json"), nil, overlay); err != nil {
@@ -179,32 +193,89 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // files with an embedded mutant are lowered, the rest (including files
 // excluded by build constraints) are copied as they are, so the directory
 // can replace the package. Mutants the lowering declined are marked not
-// viable, so the runner never selects them; ignored and equivalent
-// mutants are not embedded either, but keep their status.
-func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
-	sch, err := mutator.Lower(pkg, ms)
+// viable, so the runner never selects them, unless fallback probes them:
+// it returns those, which stay viable and need writeFallbacks. Ignored
+// and equivalent mutants are not embedded either, but keep their status.
+func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay, fallback bool) (probed map[string]bool, err error) {
+	lower := mutator.Lower
+	if fallback {
+		lower = mutator.LowerFallback
+	}
+	sch, err := lower(pkg, ms)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for i := range ms {
 		if !ms[i].Excluded() {
-			ms[i].Viable = ms[i].Viable && sch.Embedded[ms[i].ID]
+			ms[i].Viable = ms[i].Viable && (sch.Embedded[ms[i].ID] || sch.Probed[ms[i].ID])
 		}
 	}
 	pkgDir := filepath.Join(dir, filepath.FromSlash(pkg.PkgPath))
 	if err := os.MkdirAll(pkgDir, 0o750); err != nil {
-		return err
+		return nil, err
 	}
 	for _, orig := range slices.Concat(pkg.GoFiles, pkg.IgnoredFiles) {
 		src, err := schemataSource(sch, orig)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		mutated := filepath.Clean(filepath.Join(pkgDir, filepath.Base(orig)))
 		if err := os.WriteFile(mutated, src, 0o600); err != nil {
-			return err
+			return nil, err
 		}
 		overlay.Replace[orig] = mutated
+	}
+	return sch.Probed, nil
+}
+
+// writeFallbacks writes each probed mutant as the file it mutates with
+// only it applied, under dir/fallback/<id>/, next to the go build
+// -overlay file swapping it in, and records that file's absolute path in
+// the mutant's Fallback, the paths inside it absolute too, since the
+// runner builds from the package's directory. The lowering rewrote the
+// loaded syntax trees, so load loads the packages afresh, and the mutants
+// are regenerated with ops to apply them.
+func writeFallbacks(dir string, load func() ([]*packages.Package, error), ops []mutator.Operator, mutants []mutator.Mutant, probed map[string]bool) error {
+	pkgs, err := load()
+	if err != nil {
+		return err
+	}
+	ids := map[string][]string{}
+	for _, m := range mutants {
+		if probed[m.ID] {
+			ids[m.Pkg] = append(ids[m.Pkg], m.ID)
+		}
+	}
+	overlays := map[string]string{}
+	for _, pkg := range pkgs {
+		srcs, err := mutator.Sources(pkg, ids[pkg.PkgPath], ops)
+		if err != nil {
+			return err
+		}
+		for id, src := range srcs {
+			mutDir, err := filepath.Abs(filepath.Join(dir, "fallback", id))
+			if err != nil {
+				return err
+			}
+			orig, err := filepath.Abs(src.File)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(mutDir, 0o750); err != nil {
+				return err
+			}
+			mutated := filepath.Join(mutDir, filepath.Base(orig))
+			if err := os.WriteFile(mutated, src.Src, 0o600); err != nil {
+				return err
+			}
+			overlays[id] = filepath.Join(mutDir, "overlay.json")
+			if err := writeJSON(overlays[id], nil, mutator.Overlay{Replace: map[string]string{orig: mutated}}); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range mutants {
+		mutants[i].Fallback = overlays[mutants[i].ID]
 	}
 	return nil
 }
@@ -288,6 +359,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	thresholdCovered := fs.Float64("threshold-covered", 0, "fail after writing the report when the score over the covered mutants (covered_score) is below this (0..1); 0 is off")
 	dir := fs.String("dir", "", "working directory for the test binary")
 	jobs := fs.Int("jobs", 0, "test processes run at once, while tracing and while running the mutants (default: GOMAXPROCS)")
+	buildFlags := fs.String("build-flags", "", "space-separated go test -c flags for building a fallback mutant (gen -fallback), as the schemata test binary was built: \"-race -tags=x\"")
 	var extra []runner.Binary
 	fs.Func("extra-test", "`pkg=bin[,dir]`: the test binary of package pkg, which imports the mutated one, built against the same schemata sources; its tests run against the mutants too, named pkg.TestX (repeatable)", func(v string) error {
 		pkg, rest, ok := strings.Cut(v, "=")
@@ -329,6 +401,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
 		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, CountSuspect: *countSuspect,
 		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, MinTimeout: *minTimeout, Jobs: *jobs, Log: stderr,
+		BuildFlags: strings.Fields(*buildFlags),
 	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {
 		return err

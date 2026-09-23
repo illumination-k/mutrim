@@ -120,6 +120,22 @@ and has the same hash; any other result while the tests reaching the mutant and 
 are the same, so a new or rewritten test gets its chance at a survivor. `mutation_test`
 passes its `srcs`.
 
+Some mutants cannot be embedded: the schemata form is a call, which is no constant, a
+helper returning plain `bool` is not a defined boolean type, and a case body that ends in a
+`return` cannot be skipped at runtime without the function losing its terminating
+statement. By default they are `NOT_VIABLE` (about 3% of mutrim's own mutants). `gen
+-fallback` runs them anyway, as gremlins runs every mutant: it puts a probe (`mut.Active(id)`
+as a statement) where each would run, so tracing still learns which tests reach it, and
+writes it as a source of its own under `<schemata>/fallback/<id>/` with the overlay file
+`fallback` names in `mutants.json`. `run` builds a test binary per such mutant (`go test -c
+-overlay`, plus `-build-flags` such as `-race`) and runs the tests reaching it; a build that
+fails is `NOT_VIABLE`. Under Bazel the test has no Go toolchain, so `mutation_test` does not
+use it.
+
+```bash
+go run ./cmd/mutrim gen -schemata out -fallback -o mutants.json ./path/to/pkg
+```
+
 `run` first runs every top-level test on its own with `GOMUTANT_TRACE` set, which makes the
 `mut` runtime record the mutant sites the test reaches. Each mutant then runs only against
 the tests reaching it, and `report.json` holds the per-test kill matrix: `tests` (name,

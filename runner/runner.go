@@ -130,6 +130,10 @@ type Options struct {
 	// while running the mutants; zero means GOMAXPROCS. The derived
 	// timeouts come from trace runs made under the same load.
 	Jobs int
+	// BuildFlags are passed to `go test -c` when a mutant with a
+	// mutator.Mutant.Fallback is built ("-race", "-tags=x"), so its test
+	// binaries are built like the schemata ones.
+	BuildFlags []string
 	// Log receives one line per mutant, in the order they finish; nil
 	// discards them.
 	Log io.Writer
@@ -139,6 +143,8 @@ type Options struct {
 	bins []Binary
 	// hashes holds the hashes of each of bins' test functions, by name.
 	hashes []map[string]string
+	// logger writes to Log, set by Run.
+	logger *log.Logger
 }
 
 // row is a row of the report: a test of one of Options.bins, by its name
@@ -179,7 +185,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if err := o.setup(); err != nil {
 		return nil, err
 	}
-	logger := log.New(o.Log, "", 0)
+	logger := o.logger
 
 	// The baseline runs every binary; its output names the rows.
 	names, baseMS, err := o.baselines(ctx)
@@ -263,7 +269,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		default:
 			g.Go(func() error {
 				timeout := o.mutantTimeout(o.qualifyAll(reachers[m.ID]), durations, maxTimeout)
-				res, err := o.runMutant(gctx, m.ID, reachers[m.ID], timeout, ref)
+				res, err := o.runMutant(gctx, m, reachers[m.ID], timeout, ref)
 				if err != nil {
 					return err
 				}
@@ -299,6 +305,7 @@ func (o *Options) setup() error {
 	if o.Log == nil {
 		o.Log = io.Discard
 	}
+	o.logger = log.New(o.Log, "", 0)
 	for _, m := range o.Mutants {
 		if _, err := strconv.ParseUint(m.ID, 16, 64); err != nil {
 			return fmt.Errorf("runner: mutant ID %q is not a hex hash", m.ID)
