@@ -9,6 +9,9 @@ go_library(
 
 go_test(
     name = "mut_test",
-    srcs = ["mut_test.go"],
+    srcs = [
+        "bench_test.go",
+        "mut_test.go",
+    ],
     embed = [":mut"],
 )

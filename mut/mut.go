@@ -34,10 +34,12 @@ func Active(id string) bool {
 	return active == id
 }
 
-// tracer appends each reached site ID to a file, once per process.
+// tracer appends each reached site ID to a file, once per process. A site
+// is reached over and over in a hot loop but recorded once, so seen is a
+// sync.Map: the repeat visits are a lock-free read.
 type tracer struct {
+	seen sync.Map
 	mu   sync.Mutex
-	seen map[string]bool
 	file *os.File
 }
 
@@ -49,16 +51,19 @@ func newTracer(path string) *tracer {
 	if err != nil {
 		panic("mut: GOMUTANT_TRACE: " + err.Error())
 	}
-	return &tracer{seen: map[string]bool{}, file: f}
+	return &tracer{file: f}
 }
 
 func (t *tracer) record(id string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.seen[id] {
+	// Load first: LoadOrStore alone is about half as fast on a hit.
+	if _, seen := t.seen.Load(id); seen {
 		return
 	}
-	t.seen[id] = true
+	if _, seen := t.seen.LoadOrStore(id, struct{}{}); seen {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	_, _ = t.file.WriteString(id + "\n") // best effort: a lost line only widens the runner's narrowing
 }
 

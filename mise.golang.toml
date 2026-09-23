@@ -27,3 +27,7 @@ depends = ["lint:golang", "test:golang"]
 [tasks.dogfood]
 description = "Run mutrim on its own packages and write .mutrim/<pkg>/{report,minimize}.json"
 run = "tools/dogfood.sh"
+
+[tasks.bench]
+description = "Run the Go benchmarks (mutator, mut runtime, runner, minimize); compare runs with benchstat"
+run = "go test -run '^$' -bench . -benchmem ./..."

@@ -73,14 +73,14 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 ### Packages
 
-| Package    | Responsibility                                                                                                                                                                                                                                                    | Depends on                          |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                                                                   | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                       | stdlib only                         |
-| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, `report.json`, incremental | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                                                                          | `bits-and-blooms/bitset`            |
-| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                    | `criteria`, `bitset`, `go/parser`   |
-| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                        | `mutator`, `runner`                 |
+| Package    | Responsibility                                                                                                                                                                                                                                                                                | Depends on                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                                                                                               | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                                                   | stdlib only                         |
+| `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                      | `bits-and-blooms/bitset`            |
+| `minimize` | Weighted greedy set cover, subsumption per redundant test, protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                                | `criteria`, `bitset`, `go/parser`   |
+| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                                                    | `mutator`, `runner`                 |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -225,6 +225,9 @@ loading/analysis.
   drops Bazel's test-protocol variables from the child environment, since the rules_go test
   main would otherwise shard, filter and report a second time.
 - Sharding via `shard_count` + `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` (`id % TOTAL == INDEX`).
+  Within a shard the trace runs and the mutants run `-jobs` processes at once (the `jobs`
+  attribute, default GOMAXPROCS). The derived timeout's floor (`-min-timeout`, 10s) is what
+  every looping mutant costs, and dominates a run of fast tests.
 - Mutant IDs are content hashes (function name + AST path + operator), not positions, so the
   runner can do incremental re-runs from the previous `report.json`: a kill is copied forward
   while its killers keep their `tests[].hash` (SHA-256 of the test function, `run
@@ -241,6 +244,8 @@ loading/analysis.
 ### Minimizer
 
 Gain = (w_site × new sites reached + w_kill × new kills) / test time, default weights 1 : 5.
+Gains only shrink as the cover grows, so the greedy is lazy (a heap of stale gains, only the
+top recomputed); it selects exactly what a full scan would, ties to the first test by name.
 Coverage is the cheap first pass (it narrows which tests run per mutant); kills are the
 objective. The tool never deletes tests; `mutrim minimize` reports each redundant test with
 the selected tests that subsume it, and the functions whose mutants survive (weak spots), and

@@ -253,16 +253,17 @@ func TestTotalsByClass(t *testing.T) {
 }
 
 // The derived timeout follows the durations of the rows reaching the
-// mutant, between MinTimeout and the cap; Options.Timeout overrides it.
+// mutant, between Options.MinTimeout and the cap; Options.Timeout
+// overrides it.
 func TestMutantTimeout(t *testing.T) {
 	durations := map[string]int64{"TestFast": 5, "TestSlow": 20_000, "TestMid": 4_000}
 	maxTimeout := 60 * time.Second
-	o := Options{TimeoutFactor: 3, TimeoutConst: 2 * time.Second}
+	o := Options{TimeoutFactor: 3, TimeoutConst: 2 * time.Second, MinTimeout: DefaultMinTimeout}
 	for _, tc := range []struct {
 		rows []string
 		want time.Duration
 	}{
-		{[]string{"TestFast"}, MinTimeout},
+		{[]string{"TestFast"}, DefaultMinTimeout},
 		{[]string{"TestMid"}, 14 * time.Second},
 		{[]string{"TestFast", "TestMid"}, 14015 * time.Millisecond},
 		{[]string{"TestSlow", "TestMid"}, maxTimeout},
@@ -270,6 +271,10 @@ func TestMutantTimeout(t *testing.T) {
 		if got := o.mutantTimeout(tc.rows, durations, maxTimeout); got != tc.want {
 			t.Errorf("mutantTimeout(%v) = %s, want %s", tc.rows, got, tc.want)
 		}
+	}
+	o.MinTimeout = time.Second
+	if got := o.mutantTimeout([]string{"TestFast"}, durations, maxTimeout); got != 2015*time.Millisecond {
+		t.Errorf("a lower MinTimeout must lower the floor: got %s", got)
 	}
 	o.Timeout = time.Second
 	if got := o.mutantTimeout([]string{"TestSlow"}, durations, maxTimeout); got != time.Second {

@@ -19,5 +19,7 @@ mutation_test(
     name = "mutant_criteria",
     srcs = ["criteria_test.go"],
     embed = [":criteria"],
+    # In-memory tests: a looping mutant need not wait out the 10s default.
+    min_timeout = "1s",
     deps = [],
 )

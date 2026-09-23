@@ -253,10 +253,16 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
 ```
 
 Each mutant's timeout follows the tests reaching it: `-timeout-factor` (3) × their traced
-durations + `-timeout-const` (2s), at least 10s and at most `-timeout-factor` × the baseline
-run, so a mutant looping forever in a hot function reached by one quick test gives up long
-before the whole suite's worth. Each result records its `timeout_ms`; `-timeout` sets one
-timeout for every mutant instead.
+durations + `-timeout-const` (2s), at least `-min-timeout` (10s) and at most
+`-timeout-factor` × the baseline run, so a mutant looping forever in a hot function reached by
+one quick test gives up long before the whole suite's worth. Each result records its
+`timeout_ms`; `-timeout` sets one timeout for every mutant instead. Every looping mutant waits
+out the floor, which dominates a run of fast unit tests: `-min-timeout 1s` ran mutrim's own
+`minimize` package in 5s instead of 41s with the same verdicts. Keep the default for tests that
+spawn processes or touch the network, whose worst case strays far from their traced time.
+
+Tracing and the mutants' runs execute `-jobs` test processes at once (default GOMAXPROCS);
+results keep the order of `mutants.json` whatever order the runs finish in.
 
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
 of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
@@ -361,6 +367,9 @@ mutation_test(
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
     extra_tests = ["//app:app_test"],      # optional; `mutrim run -extra-test`
     threshold = 0.8,                       # optional; `mutrim run -threshold`
+    jobs = 4,                              # optional; `mutrim run -jobs`, pair with tags
+    min_timeout = "2s",                    # optional; `mutrim run -min-timeout`
+    tags = ["cpu:4"],
     shard_count = 4,
 )
 ```
@@ -395,16 +404,23 @@ Tasks are grouped by `MISE_ENV`: `base` (formatting, GitHub Actions), `golang` (
 golangci-lint, govulncheck) and `bazel` (gazelle, buildifier, `bazel test //...`). For
 example, `MISE_ENV=bazel mise run ci:bazel` runs only the Bazel checks.
 
-Benchmark mutant generation, including the go/types pre-filter, with:
+`mise run bench` runs every benchmark; compare two runs with
+[benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) (`-count 10` each):
+
+| Benchmark                            | Measures                                                     |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `mutator` `BenchmarkGenerate`        | generation with the go/types pre-filter, `ms/mutant`         |
+| `mut` `BenchmarkCmp*`                | one schemata site: inactive, another mutant active, traced   |
+| `runner` `BenchmarkRun`              | a whole run of the schemata fixture, one job and GOMAXPROCS  |
+| `minimize` `BenchmarkGreedy/Compose` | the set cover and its matrix, up to 3000 tests × 30000 sites |
 
 ```bash
-go test ./mutator -run '^$' -bench . -benchtime 3x         # fixture + go/parser
 go test ./mutator -run '^$' -bench . -benchpkg go/types    # one extra package
 ```
-
-`BenchmarkGenerate` reports `ms/mutant` for the full pipeline.
 
 `mise run dogfood` (`tools/dogfood.sh`) runs the schemata pipeline on mutrim's own packages and
 writes `report.json` and `minimize.json` per package under `.mutrim/`. It takes a while:
 the `runner` tests build and execute test binaries, and every mutant reruns them. Pass package
-directories to limit it, for example `tools/dogfood.sh criteria minimize`.
+directories to limit it, for example `tools/dogfood.sh criteria minimize`. Each phase's wall
+time (gen, build, run, minimize) lands in `.mutrim/timings.tsv`, so it is also the end-to-end
+benchmark.
