@@ -176,8 +176,9 @@ Goal: `bazel_dep(name = "mutrim")` + `mutation_test(name, srcs, embed, shard_cou
    macro, `mise.bazel.toml` (`fmt:bazel`, `lint:bazel`, `test:bazel`, `ci:bazel`) and the
    `ci_bazel.yml` workflow on `ubuntu-latest`.
 
-Not supported: cgo packages, and `//go:embed` in the library under test (the schemata sources
-are generated into a subdirectory, so the embed paths no longer resolve). mutrim's own tests
+Not supported: cgo packages. `//go:embed` works (`examples/greet`): rules_go resolves the
+library's patterns against its `embedsrcs` although the schemata sources are generated into a
+subdirectory, and `mutation_test` takes the tests' `embedsrcs`. mutrim's own tests
 that shell out to `go` are excluded from the Bazel build and stay on `go test ./...`.
 
 Done: `bazel test //...` passes and `report.json` is visible as an undeclared test output.
