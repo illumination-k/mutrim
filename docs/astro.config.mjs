@@ -34,6 +34,7 @@ export default defineConfig({
             "guides/thresholds",
             "guides/flaky-tests",
             "guides/diff",
+            "guides/sampling",
             "guides/reporting",
           ],
         },

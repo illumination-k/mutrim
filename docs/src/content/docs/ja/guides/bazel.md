@@ -27,6 +27,8 @@ mutation_test(
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
     extra_tests = ["//app:app_test"],      # optional; `mutrim run -extra-test`
     threshold = 0.8,                       # optional; `mutrim run -threshold`
+    sample = 0.2,                          # optional; `mutrim run -sample`
+    seed = 42,                             # optional; `mutrim run -seed`
     jobs = 4,                              # optional; `mutrim run -jobs`, pair with tags
     min_timeout = "2s",                    # optional; `mutrim run -min-timeout`
     tags = ["cpu:4"],
