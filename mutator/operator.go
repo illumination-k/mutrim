@@ -1,8 +1,10 @@
 package mutator
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"maps"
@@ -110,6 +112,63 @@ func (c *Context) callsRecover(e ast.Expr) bool {
 		return !found
 	})
 	return found
+}
+
+// stmtSlot returns the place s occupies in a statement list or a labeled
+// statement, where it may be replaced by a statement of another kind, or
+// nil when s is a for init or post, a select case's communication, or
+// otherwise bound to its kind.
+func (c *Context) stmtSlot(s ast.Stmt) *ast.Stmt {
+	var list []ast.Stmt
+	switch p := c.parent(1).(type) {
+	case *ast.BlockStmt:
+		list = p.List
+	case *ast.CaseClause:
+		list = p.Body
+	case *ast.CommClause:
+		list = p.Body
+	case *ast.LabeledStmt:
+		return &p.Stmt
+	}
+	for i := range list {
+		if list[i] == s {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
+// checkSpelled type-checks the expression src at pos and requires it to
+// have type want: a spelled type can resolve to another type of the same
+// name, or to nothing, in the scope of the site.
+func (c *Context) checkSpelled(src string, pos token.Pos, want types.Type) error {
+	e, err := parser.ParseExpr(src)
+	if err != nil {
+		return err
+	}
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	if err := types.CheckExpr(c.Fset, c.Pkg, pos, e, info); err != nil {
+		return err
+	}
+	if !types.Identical(info.Types[e].Type, want) {
+		return errors.New("mutator: " + src + " does not spell " + want.String())
+	}
+	return nil
+}
+
+// calleeFunc returns the function or method call invokes, or nil.
+func calleeFunc(ctx *Context, call *ast.CallExpr) *types.Func {
+	var id *ast.Ident
+	switch f := ast.Unparen(call.Fun).(type) {
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	default:
+		return nil
+	}
+	fn, _ := ctx.Info.Uses[id].(*types.Func)
+	return fn
 }
 
 // Site is one rewrite at one node. Apply and Undo mutate the AST in place

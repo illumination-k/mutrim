@@ -94,6 +94,18 @@ loop and non-Bazel users are both served. Under Bazel there is no `go list`: `mu
 its dependencies (`mutator.LoadFiles`, the nogo approach), and the same `Generate`/`Lower`
 run on the result.
 
+### Data flow
+
+`gen` writes `mutants.json`, the inventory every other step consumes: `run` lowers
+schemata from it and needs it to select mutants; `minimize` needs it for the weak spots
+(`WeakSpots`); `report` reads it for the source text and positions of the HTML view. `run`
+writes `report.json`, one per run (a shard, a package): `Results` carries each mutant's
+status and the tests that killed it, `Tests` the rows with the sites they reached.
+`minimize` joins several reports into one `test × requirement` matrix (`criteria.Compose`
+over `SiteCoverage` and `Mutation`), and `report` renders the same reports for humans
+(Stryker JSON, HTML, GitHub annotations). Every artifact in this chain is per-run output
+and never committed (see Conventions).
+
 ### Mutation engine
 
 - Operators (`mutator.AllOperators`, one `ops_*.go` per family):

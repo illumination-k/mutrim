@@ -119,106 +119,115 @@ func TestRunReportGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 3000 {
-		t.Errorf("unexpected report metadata: %+v", report)
-	}
-	if !strings.Contains(logs.String(), "timeout at most 3s, 14 tests\n") {
-		t.Errorf("the baseline must run every test:\n%s", logs.String())
-	}
-	// Every top-level test ran on its own and reached some sites.
-	reached := map[string]map[string]bool{}
-	for _, tt := range report.Tests {
-		reached[tt.Name] = map[string]bool{}
-		for _, id := range tt.Sites {
-			reached[tt.Name][id] = true
+
+	t.Run("report", func(t *testing.T) {
+		if report.Pkg != "github.com/illumination-k/mutrim/mutator/testdata/schemata" || report.BaselineMS < 0 || report.TimeoutMS != 3000 {
+			t.Errorf("unexpected report metadata: %+v", report)
 		}
-		if len(tt.Sites) == 0 || tt.DurationMS < 0 {
-			t.Errorf("test row %+v", tt)
+		if !strings.Contains(logs.String(), "timeout at most 3s, 14 tests\n") {
+			t.Errorf("the baseline must run every test:\n%s", logs.String())
 		}
-	}
-	if len(reached) != 14 {
-		t.Errorf("tests = %d rows, want 14", len(reached))
-	}
-	for _, r := range report.Results {
-		switch r.Status {
-		case runner.Killed:
-			// Only the tests reaching the site run, and every one that fails is recorded.
-			if r.TestsRun == 0 || len(r.KilledBy) == 0 || len(r.KilledBy) > r.TestsRun {
-				t.Errorf("%s KILLED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
+		// Every top-level test ran on its own and reached some sites.
+		reached := map[string]map[string]bool{}
+		for _, tt := range report.Tests {
+			reached[tt.Name] = map[string]bool{}
+			for _, id := range tt.Sites {
+				reached[tt.Name][id] = true
 			}
-			for _, name := range r.KilledBy {
-				if !reached[name][r.MutantID] {
-					t.Errorf("%s killed by %s, which does not reach it", r.MutantID, name)
+			if len(tt.Sites) == 0 || tt.DurationMS < 0 {
+				t.Errorf("test row %+v", tt)
+			}
+		}
+		if len(reached) != 14 {
+			t.Errorf("tests = %d rows, want 14", len(reached))
+		}
+		for _, r := range report.Results {
+			switch r.Status {
+			case runner.Killed:
+				// Only the tests reaching the site run, and every one that fails is recorded.
+				if r.TestsRun == 0 || len(r.KilledBy) == 0 || len(r.KilledBy) > r.TestsRun {
+					t.Errorf("%s KILLED with tests_run=%d killed_by=%v", r.MutantID, r.TestsRun, r.KilledBy)
+				}
+				for _, name := range r.KilledBy {
+					if !reached[name][r.MutantID] {
+						t.Errorf("%s killed by %s, which does not reach it", r.MutantID, name)
+					}
+				}
+			case runner.Lived:
+				t.Errorf("%s LIVED: every reached mutant of the fixture is killed", r.MutantID)
+			case runner.NoCoverage, runner.NotViable:
+				if r.TestsRun != 0 || r.DurationMS != 0 || len(r.KilledBy) != 0 {
+					t.Errorf("%s %s was executed: %+v", r.MutantID, r.Status, r)
 				}
 			}
-		case runner.Lived:
-			t.Errorf("%s LIVED: every reached mutant of the fixture is killed", r.MutantID)
-		case runner.NoCoverage, runner.NotViable:
-			if r.TestsRun != 0 || r.DurationMS != 0 || len(r.KilledBy) != 0 {
-				t.Errorf("%s %s was executed: %+v", r.MutantID, r.Status, r)
+		}
+	})
+
+	t.Run("golden", func(t *testing.T) {
+		byID := map[string]mutator.Mutant{}
+		for _, m := range mutants {
+			byID[m.ID] = m
+		}
+		var b strings.Builder
+		for _, r := range report.Results {
+			m := byID[r.MutantID]
+			fmt.Fprintf(&b, "%s:%d %s %q %s", filepath.Base(m.File), m.Line, m.Func, m.Description, r.Status)
+			if r.Status == runner.Killed && len(r.KilledBy) == 0 {
+				t.Errorf("%s %s: killed but no failing test recorded", m.Func, m.Description)
+			}
+			if len(r.KilledBy) > 0 {
+				fmt.Fprintf(&b, " by %s", strings.Join(r.KilledBy, ","))
+			}
+			b.WriteString("\n")
+		}
+		got := b.String()
+		golden := filepath.Join("testdata", "schemata.golden")
+		if *update {
+			if werr := os.WriteFile(golden, []byte(got), 0o600); werr != nil {
+				t.Fatal(werr)
 			}
 		}
-	}
+		want, err := os.ReadFile(filepath.Clean(golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != string(want) {
+			t.Errorf("report differs from %s (run with -update to accept)\n--- got ---\n%s", golden, got)
+		}
+	})
 
-	byID := map[string]mutator.Mutant{}
-	for _, m := range mutants {
-		byID[m.ID] = m
-	}
-	var b strings.Builder
-	for _, r := range report.Results {
-		m := byID[r.MutantID]
-		fmt.Fprintf(&b, "%s:%d %s %q %s", filepath.Base(m.File), m.Line, m.Func, m.Description, r.Status)
-		if r.Status == runner.Killed && len(r.KilledBy) == 0 {
-			t.Errorf("%s %s: killed but no failing test recorded", m.Func, m.Description)
+	t.Run("totals", func(t *testing.T) {
+		tot := report.Totals
+		if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored != tot.Mutants {
+			t.Errorf("totals do not add up: %+v", tot)
 		}
-		if len(r.KilledBy) > 0 {
-			fmt.Fprintf(&b, " by %s", strings.Join(r.KilledBy, ","))
+		if tot.Timeout != 3 || tot.Lived != 0 || tot.NoCoverage != 4 || tot.NotViable != 24 || tot.Ignored != 4 {
+			t.Errorf("unexpected totals: %+v", tot)
 		}
-		b.WriteString("\n")
-	}
-	got := b.String()
-	golden := filepath.Join("testdata", "schemata.golden")
-	if *update {
-		if werr := os.WriteFile(golden, []byte(got), 0o600); werr != nil {
-			t.Fatal(werr)
+		if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
+			t.Errorf("score = %v, want %v", tot.Score, want)
 		}
-	}
-	want, err := os.ReadFile(filepath.Clean(golden))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != string(want) {
-		t.Errorf("report differs from %s (run with -update to accept)\n--- got ---\n%s", golden, got)
-	}
+		if want := float64(tot.Killed+tot.Timeout+tot.Lived) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Coverage != want {
+			t.Errorf("coverage = %v, want %v", tot.Coverage, want)
+		}
+	})
 
-	tot := report.Totals
-	if tot.Mutants != len(mutants) || tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored != tot.Mutants {
-		t.Errorf("totals do not add up: %+v", tot)
-	}
-	if tot.Timeout != 3 || tot.Lived != 0 || tot.NoCoverage != 4 || tot.NotViable != 24 || tot.Ignored != 4 {
-		t.Errorf("unexpected totals: %+v", tot)
-	}
-	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.NoCoverage); tot.Score != want {
-		t.Errorf("score = %v, want %v", tot.Score, want)
-	}
-	if want := float64(tot.Killed+tot.Timeout+tot.Lived) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Coverage != want {
-		t.Errorf("coverage = %v, want %v", tot.Coverage, want)
-	}
-
-	// Disabled is not a weak spot: its mutants were suppressed, not survivors.
-	var untested int // the line WeakSpots must report for Untested
-	for _, m := range mutants {
-		if m.Func == "Untested" {
-			untested = m.Line
+	t.Run("weak spots", func(t *testing.T) {
+		// Disabled is not a weak spot: its mutants were suppressed, not survivors.
+		var untested int // the line WeakSpots must report for Untested
+		for _, m := range mutants {
+			if m.Func == "Untested" {
+				untested = m.Line
+			}
 		}
-	}
-	spots := runner.WeakSpots(mutants, report)
-	if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 4 || spots[0].Killed != 0 || spots[0].Line != untested {
-		t.Errorf("weak spots = %+v, want Untested with four unreached mutants at line %d", spots, untested)
-	}
-	if none := runner.WeakSpots(nil, report); none == nil || len(none) != 0 {
-		t.Errorf("weak spots of nothing = %#v, want an empty list (JSON [])", none)
-	}
+		spots := runner.WeakSpots(mutants, report)
+		if len(spots) != 1 || spots[0].Func != "Untested" || spots[0].NoCoverage != 4 || spots[0].Killed != 0 || spots[0].Line != untested {
+			t.Errorf("weak spots = %+v, want Untested with four unreached mutants at line %d", spots, untested)
+		}
+		if none := runner.WeakSpots(nil, report); none == nil || len(none) != 0 {
+			t.Errorf("weak spots of nothing = %#v, want an empty list (JSON [])", none)
+		}
+	})
 }
 
 // Sharding partitions the mutants; incremental runs copy previous results
