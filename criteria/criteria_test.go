@@ -80,3 +80,32 @@ func TestMatrixJSON(t *testing.T) {
 		t.Error("malformed test row: expected an error")
 	}
 }
+
+// m2 is killed by a superset of m1's killers and m3 by the same ones, so
+// m1 alone is left of the three; m4 has killers of its own.
+func TestDominators(t *testing.T) {
+	kills := criteria.Mutation{
+		"TestA": {"m2", "m1", "m3", "m1"},
+		"TestB": {"m2"},
+		"TestC": {"m4", "m2"},
+		"TestD": {},
+	}
+	if got := strings.Join(kills.Mutants(), " "); got != "m1 m2 m3 m4" {
+		t.Errorf("mutants = %q", got)
+	}
+	got := kills.Dominators()
+	want := map[string]string{"TestA": "m1", "TestB": "", "TestC": "m4", "TestD": ""}
+	if len(got) != len(want) {
+		t.Errorf("dominators = %v, want a row per test", got)
+	}
+	for name, ids := range want {
+		if row, ok := got[name]; !ok || strings.Join(row, " ") != ids {
+			t.Errorf("%s kills %q, want %q", name, row, ids)
+		}
+	}
+	// Identical kill sets merge into their first ID.
+	same := criteria.Mutation{"TestA": {"z", "y"}, "TestB": {"y", "z"}}.Dominators()
+	if strings.Join(same["TestA"], " ") != "y" || strings.Join(same["TestB"], " ") != "y" {
+		t.Errorf("identical kill sets not merged: %v", same)
+	}
+}

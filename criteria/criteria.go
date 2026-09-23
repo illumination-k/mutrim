@@ -6,7 +6,8 @@
 // Two criteria come from the runner's report: SiteCoverage (the mutant
 // sites a test reaches: cheap, and what narrows the mutation run) and
 // Mutation (the mutants a test kills: the real objective). Surviving
-// mutants are no requirement at all, so they never keep a test.
+// mutants are no requirement at all, so they never keep a test, and
+// Mutation.Dominators drops the killed mutants another one subsumes.
 package criteria
 
 import (
@@ -45,6 +46,83 @@ func (Mutation) Name() string { return "kill" }
 
 // Rows returns the map itself.
 func (m Mutation) Rows() map[string][]string { return m }
+
+// Mutants returns the IDs of the mutants some test kills, sorted.
+func (m Mutation) Mutants() []string {
+	ids := map[string]bool{}
+	for _, killed := range m {
+		for _, id := range killed {
+			ids[id] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(ids))
+}
+
+// Dominators keeps only the dominator mutants of the dynamic subsumption
+// graph (Ammann, Delamaro, Offutt, ICST 2014; Kurtz et al., FSE 2016).
+// Mutant a subsumes b when every test killing a also kills b, so any test
+// set that kills a kills b too and b constrains nothing: a mutant whose
+// kill set is a strict superset of another's is dropped, and the mutants
+// with one kill set are merged into one requirement, labeled with the
+// first of their IDs. Without it the cover over-rewards a test killing
+// many trivial variants of one site. Every test of m keeps its row.
+func (m Mutation) Dominators() Mutation {
+	tests := slices.Sorted(maps.Keys(m))
+	killers := map[string]*bitset.BitSet{}
+	for j, t := range tests {
+		for _, id := range m[t] {
+			if killers[id] == nil {
+				killers[id] = bitset.New(uint(len(tests))) //nolint:gosec // a slice length
+			}
+			killers[id].Set(uint(j)) //nolint:gosec // a slice index
+		}
+	}
+	// One class per kill set, represented by its first mutant.
+	type class struct {
+		id      string
+		killers *bitset.BitSet
+		count   uint
+	}
+	var classes []class
+	sets := map[string]bool{}
+	for _, id := range m.Mutants() {
+		if key := killers[id].String(); !sets[key] {
+			sets[key] = true
+			classes = append(classes, class{id, killers[id], killers[id].Count()})
+		}
+	}
+	// A strict subset is smaller, so by size the dominators subsuming a
+	// class are all kept before it: a subsumed one is subsumed by a
+	// dominator too, by transitivity.
+	slices.SortStableFunc(classes, func(a, b class) int { return cmp.Compare(a.count, b.count) })
+	// A subset's first killer is one of the superset's killers, so the
+	// kept dominators are indexed by their first killer and a class is
+	// only compared with those under its own killers.
+	dominators := map[string]bool{}
+	byFirst := make([][]*bitset.BitSet, len(tests))
+	for _, c := range classes {
+		subsumed := false
+		for j, ok := c.killers.NextSet(0); ok && !subsumed; j, ok = c.killers.NextSet(j + 1) {
+			subsumed = slices.ContainsFunc(byFirst[j], c.killers.IsSuperSet)
+		}
+		if !subsumed {
+			dominators[c.id] = true
+			first, _ := c.killers.NextSet(0)
+			byFirst[first] = append(byFirst[first], c.killers)
+		}
+	}
+	out := Mutation{}
+	for _, t := range tests {
+		killed := map[string]bool{}
+		for _, id := range m[t] {
+			if dominators[id] {
+				killed[id] = true
+			}
+		}
+		out[t] = slices.Sorted(maps.Keys(killed))
+	}
+	return out
+}
 
 // Weighted is a criterion with the weight of each of its requirements.
 type Weighted struct {

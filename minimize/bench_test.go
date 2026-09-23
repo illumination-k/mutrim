@@ -82,3 +82,19 @@ func BenchmarkCompose(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkDominators measures dropping the subsumed mutants from the
+// kill criterion before Compose.
+func BenchmarkDominators(b *testing.B) {
+	for _, size := range sizes {
+		_, crit := synthetic(size.tests, size.sites)
+		kills := crit[1].Criterion.(criteria.Mutation) //nolint:forcetypeassert // synthetic's second criterion
+		b.Run(fmt.Sprintf("tests=%d/sites=%d", size.tests, size.sites), func(b *testing.B) {
+			var dominators criteria.Mutation
+			for b.Loop() {
+				dominators = kills.Dominators()
+			}
+			b.ReportMetric(float64(len(dominators.Mutants())), "dominators")
+		})
+	}
+}

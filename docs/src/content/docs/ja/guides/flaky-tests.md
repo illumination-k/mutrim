@@ -42,7 +42,12 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
 実行の終了順にかかわらず、結果は `mutants.json` の順序を保つ。
 
 `minimize` はその行列を構成し (到達したサイトの重み 1、kill の重み 5、テスト時間 1 ミリ秒あたり。
-`-w-site` / `-w-kill`)、貪欲な集合被覆を実行した後、他の選択済みテストの組み合わせで要件が満たされる
+`-w-site` / `-w-kill`)、貪欲な集合被覆を実行する。kill の要件は支配ミュータント
+(dominator mutant) だけである (Ammann–Delamaro–Offutt; Kurtz et al.)。あるミュータントを kill する
+テストがすべて別のミュータントも kill するなら後者は包含 (subsume) されて除かれ、kill するテストが
+同じミュータントは 1 つの要件にまとめられるので、1 つの `if` の変種をすべて kill するテストが過大に
+評価されない。`totals` は kill された (`killed`) ミュータント、そのうちの `dominators`、生き残った
+(`survived`) ミュータントの数と `dominator_score` = dominators / (dominators + survived) を示す。その後、他の選択済みテストの組み合わせで要件が満たされる
 選択済みテストをすべて取り除く。`selected` は保持されたテストをゲインとともに、essential なものから
 順に列挙する。スイート全体で他のどのテストも満たさない要件を満たすテストは `essential` であり
 (Harrold–Gupta–Soffa; Chen & Lau)、それらの要件のラベル (`unique`) が付く。したがってリストは上から
@@ -53,7 +58,8 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
 付いたテスト (`-srcs` は走査する `_test.go` ファイルまたはディレクトリを指定する) は常に保持される。
 `-keep` はサブテスト行の完全な `TestX/case` 名を見て、親のタグはそのすべてのサブテストを保持する。
 修飾された行では、どちらもパッケージ内の名前に一致する。`-matrix` は構成したテスト × 要件行列を
-厳密ソルバー向けに JSON でエクスポートする。1 つのパッケージのシャードはまとめて渡せ、複数の
+厳密ソルバー向けに JSON でエクスポートし、`-raw-matrix` を付けると支配ミュータントではなく kill された
+すべてのミュータントを含める。1 つのパッケージのシャードはまとめて渡せ、複数の
 パッケージのレポートもまとめて渡せる。そのとき修飾されていない各テスト名はレポートのパッケージで
 修飾されるので、テストはどこに現れても 1 つの行になる。`-extra-test` で `pkg` のミュータントに対して
 実行され、かつ `app` 自身のミュータントに対しても実行された `app` のテストは、両方のサイトと kill を

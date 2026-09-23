@@ -83,7 +83,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                                                                                                                            | `go/ast`, `go/types`, `go/packages` |
 | `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                                                                                | stdlib only                         |
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, random sampling (`-sample`), `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                                                   | `bits-and-blooms/bitset`            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                            | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                  | `criteria`, `bitset`, `go/parser`   |
 | `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                                                                                 | `mutator`, `runner`                 |
 
@@ -274,8 +274,12 @@ Gain = (w_site × new sites reached + w_kill × new kills) / test time, default 
 Gains only shrink as the cover grows, so the greedy is lazy (a heap of stale gains, only the
 top recomputed); it selects exactly what a full scan would, ties to the first test by name.
 Coverage is the cheap first pass (it narrows which tests run per mutant); kills are the
-objective. The tool never deletes tests; `mutrim minimize` reports each redundant test with
-the selected tests that subsume it and how many other tests share its requirements (`shared_with`;
+objective, and only the dominator mutants are kill requirements (`Mutation.Dominators`,
+Ammann et al. ICST 2014, Kurtz et al. FSE 2016): a mutant whose killers are a strict superset
+of another's is subsumed and dropped, mutants with the same killers merge into one, and
+`totals` reports `killed`, `dominators`, `survived` and `dominator_score`; `-raw-matrix`
+exports the uncollapsed kills. The tool never deletes tests; `mutrim minimize` reports each
+redundant test with the selected tests that subsume it and how many other tests share its requirements (`shared_with`;
 one is a single deletion away from essential), each essential test (it satisfies a requirement no
 other test in the whole suite does, reported with the label of each such requirement) ahead of the
 rest by gain, and the functions whose mutants survive (weak spots), and

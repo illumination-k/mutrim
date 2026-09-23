@@ -636,6 +636,10 @@ func TestMinimize(t *testing.T) {
 	if len(result.WeakSpots) != 1 || result.WeakSpots[0].Func != "Untested" || result.WeakSpots[0].NoCoverage != 4 {
 		t.Errorf("weak_spots = %+v, want Untested", result.WeakSpots)
 	}
+	if tot := result.Totals; tot.Killed == 0 || tot.Dominators == 0 || tot.Dominators >= tot.Killed || tot.Survived != 4 ||
+		tot.DominatorScore != float64(tot.Dominators)/float64(tot.Dominators+4) {
+		t.Errorf("totals = %+v, want fewer dominators than kills and the 4 survivors of Untested", tot)
+	}
 
 	var matrix criteria.Matrix
 	if err := readJSON(matrixPath, &matrix); err != nil {
@@ -655,8 +659,26 @@ func TestMinimize(t *testing.T) {
 			t.Errorf("unexpected requirement %+v", r)
 		}
 	}
-	if kills == 0 || sites < kills {
-		t.Errorf("matrix has %d kills and %d sites", kills, sites)
+	if kills != result.Totals.Dominators || sites < kills {
+		t.Errorf("matrix has %d kills and %d sites, want the %d dominators", kills, sites, result.Totals.Dominators)
+	}
+
+	// -raw-matrix exports every killed mutant.
+	stdout.Reset()
+	if err := run(t.Context(), append([]string{"minimize", "-raw-matrix"}, args[1:]...), &stdout, &stderr); err != nil {
+		t.Fatalf("minimize -raw-matrix: %v\n%s", err, stderr.String())
+	}
+	if err := readJSON(matrixPath, &matrix); err != nil {
+		t.Fatal(err)
+	}
+	kills = 0
+	for _, r := range matrix.Requirements {
+		if strings.HasPrefix(r.Label, "kill:") {
+			kills++
+		}
+	}
+	if kills != result.Totals.Killed {
+		t.Errorf("raw matrix has %d kills, want %d", kills, result.Totals.Killed)
 	}
 
 	// Without -srcs the tag is unknown, and the shards of a package can be
