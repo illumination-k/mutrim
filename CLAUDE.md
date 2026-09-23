@@ -112,7 +112,7 @@ run on the result.
   | `voidcall`    | a call statement removed                                                                                                                                       |
   | `assign`      | the store of `x = y` dropped, y still evaluated                                                                                                                |
   | `branch`      | the body of an `if`, an `else`, a `case` or a select clause emptied                                                                                            |
-  | `loopctrl`    | `break` ↔ `continue`                                                                                                                                           |
+  | `loopctrl`    | `break` ↔ `continue` (not `continue` → `break` in an unconditional `for` no `break` leaves)                                                                    |
   | `loopcond`    | `for cond` → `for false`, `for range` → no iteration                                                                                                           |
   | `constant`    | numeric literal `c` → `c+1`, never where a constant is required                                                                                                |
   | `boolean`     | `true` ↔ `false`                                                                                                                                               |
