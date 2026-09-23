@@ -115,10 +115,18 @@ func Compose(durations map[string]int64, criteria ...Weighted) *Matrix {
 	for name := range durations {
 		names[name] = true
 	}
-	for _, c := range criteria {
+	// columns maps each criterion's labels to their requirement, so the
+	// rows below look a label up without building "<name>:<label>".
+	columns := make([]map[string]uint, len(criteria))
+	for k, c := range criteria {
+		columns[k] = map[string]uint{}
 		for name, labels := range c.Rows() {
 			names[name] = true
 			for _, l := range labels {
+				if _, ok := columns[k][l]; ok {
+					continue
+				}
+				columns[k][l] = 0
 				label := c.Name() + ":" + l
 				if _, ok := index[label]; !ok {
 					index[label] = 0
@@ -131,12 +139,17 @@ func Compose(durations map[string]int64, criteria ...Weighted) *Matrix {
 	for i, r := range m.Requirements {
 		index[r.Label] = uint(i) //nolint:gosec // a slice index
 	}
+	for k, c := range criteria {
+		for l := range columns[k] {
+			columns[k][l] = index[c.Name()+":"+l]
+		}
+	}
 
 	for _, name := range slices.Sorted(maps.Keys(names)) {
 		t := Test{Name: name, DurationMS: durations[name], Covers: bitset.New(uint(len(m.Requirements)))} //nolint:gosec // a slice length
-		for _, c := range criteria {
+		for k, c := range criteria {
 			for _, l := range c.Rows()[name] {
-				t.Covers.Set(index[c.Name()+":"+l])
+				t.Covers.Set(columns[k][l])
 			}
 		}
 		m.Tests = append(m.Tests, t)

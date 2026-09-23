@@ -2,6 +2,7 @@
 go = "1.27.0"
 "aqua:golangci/golangci-lint" = "2.13.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.7.0"
+"go:golang.org/x/perf/cmd/benchstat" = "0.0.0-20260908200009-22c9c6c9d4da"
 
 [tasks."fmt:golang"]
 description = "Format Go code with golangci-lint"
@@ -27,3 +28,7 @@ depends = ["lint:golang", "test:golang"]
 [tasks.dogfood]
 description = "Run mutrim on its own packages and write .mutrim/<pkg>/{report,minimize}.json"
 run = "tools/dogfood.sh"
+
+[tasks.bench]
+description = "Run the Go benchmarks; `mise run bench <ref>` compares the working tree with that git ref"
+run = "tools/bench.sh"

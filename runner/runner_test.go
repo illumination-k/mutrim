@@ -39,13 +39,13 @@ const (
 )
 
 // buildFixture lowers the schemata fixture and compiles its test binary.
-func buildFixture(t *testing.T) (bin string, mutants []mutator.Mutant) {
+func buildFixture(t testing.TB) (bin string, mutants []mutator.Mutant) {
 	t.Helper()
 	return buildPkg(t, fixtureDir)
 }
 
 // buildPkg lowers the package in dir and compiles its test binary.
-func buildPkg(t *testing.T, dir string) (bin string, mutants []mutator.Mutant) {
+func buildPkg(t testing.TB, dir string) (bin string, mutants []mutator.Mutant) {
 	t.Helper()
 	bin, mutants, _ = buildPkgOverlay(t, dir)
 	return bin, mutants
@@ -54,7 +54,7 @@ func buildPkg(t *testing.T, dir string) (bin string, mutants []mutator.Mutant) {
 // buildPkgOverlay is buildPkg, also returning the go build -overlay file
 // that swaps in the schemata sources, so the test binaries of the
 // packages importing dir can be built against them.
-func buildPkgOverlay(t *testing.T, dir string) (bin string, mutants []mutator.Mutant, overlayPath string) {
+func buildPkgOverlay(t testing.TB, dir string) (bin string, mutants []mutator.Mutant, overlayPath string) {
 	t.Helper()
 	pkgs, err := mutator.Load(".", dir)
 	if err != nil {
@@ -95,7 +95,7 @@ func buildPkgOverlay(t *testing.T, dir string) (bin string, mutants []mutator.Mu
 }
 
 // compileTest builds the test binary of the package in dir with overlay.
-func compileTest(t *testing.T, overlay, bin, dir string) {
+func compileTest(t testing.TB, overlay, bin, dir string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", overlay, "-o", bin, dir) //nolint:gosec // test-controlled args
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -371,7 +371,7 @@ func TestRunPreviousChecksTests(t *testing.T) {
 	}
 }
 
-// The derived timeout is capped at 3× the baseline with MinTimeout as the
+// The derived timeout is capped at 3× the baseline with DefaultMinTimeout as the
 // floor, each result records the one it ran under, and
 // a GOMUTANT_ID inherited from the environment must not leak into the
 // baseline run.
@@ -391,12 +391,12 @@ func TestRunDerivesTimeoutAndStripsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline must ignore the inherited GOMUTANT_ID: %v", err)
 	}
-	if want := max(3*report.BaselineMS, runner.MinTimeout.Milliseconds()); report.TimeoutMS != want {
+	if want := max(3*report.BaselineMS, runner.DefaultMinTimeout.Milliseconds()); report.TimeoutMS != want {
 		t.Errorf("timeout_ms = %d, want %d (baseline %dms)", report.TimeoutMS, want, report.BaselineMS)
 	}
 	for _, r := range report.Results {
-		if r.Status.Executed() && (r.TimeoutMS < runner.MinTimeout.Milliseconds() || r.TimeoutMS > report.TimeoutMS) {
-			t.Errorf("%s: timeout_ms = %d, want within [%d, %d]", r.MutantID, r.TimeoutMS, runner.MinTimeout.Milliseconds(), report.TimeoutMS)
+		if r.Status.Executed() && (r.TimeoutMS < runner.DefaultMinTimeout.Milliseconds() || r.TimeoutMS > report.TimeoutMS) {
+			t.Errorf("%s: timeout_ms = %d, want within [%d, %d]", r.MutantID, r.TimeoutMS, runner.DefaultMinTimeout.Milliseconds(), report.TimeoutMS)
 		}
 		if r.Status == runner.Killed && r.TestsRun != 1 {
 			t.Errorf("%s: -test.run narrowing ran %d tests, want 1", r.MutantID, r.TestsRun)

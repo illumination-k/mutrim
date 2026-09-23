@@ -273,7 +273,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	previous := fs.String("previous", "", "report.json of an earlier run; a result is copied forward while the tests it was observed with are unchanged (see -test-srcs)")
 	testSrcs := fs.String("test-srcs", "", "comma-separated _test.go files of the package; each test's hash in report.json is read from them, so -previous re-executes the mutants whose killing or reaching tests changed")
 	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines run, the rest are SKIPPED")
-	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between 10s and -timeout-factor × the baseline run)")
+	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between -min-timeout and -timeout-factor × the baseline run)")
+	minTimeout := fs.Duration("min-timeout", runner.DefaultMinTimeout, "floor of the derived per-mutant timeout, which every looping mutant waits out; lower it for fast, self-contained tests")
 	timeoutFactor := fs.Float64("timeout-factor", runner.DefaultTimeoutFactor, "multiplier of the derived per-mutant timeout")
 	timeoutConst := fs.Duration("timeout-const", 2*time.Second, "added to the derived per-mutant timeout for process startup")
 	tests := fs.String("tests", "", "comma-separated top-level tests to run (default: all)")
@@ -284,6 +285,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	threshold := fs.Float64("threshold", 0, "fail after writing the report when the score is below this (0..1); 0 is off")
 	thresholdCovered := fs.Float64("threshold-covered", 0, "fail after writing the report when the score over the covered mutants (covered_score) is below this (0..1); 0 is off")
 	dir := fs.String("dir", "", "working directory for the test binary")
+	jobs := fs.Int("jobs", 0, "test processes run at once, while tracing and while running the mutants (default: GOMAXPROCS)")
 	var extra []runner.Binary
 	fs.Func("extra-test", "`pkg=bin[,dir]`: the test binary of package pkg, which imports the mutated one, built against the same schemata sources; its tests run against the mutants too, named pkg.TestX (repeatable)", func(v string) error {
 		pkg, rest, ok := strings.Cut(v, "=")
@@ -324,7 +326,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	opts := runner.Options{
 		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
 		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, CountSuspect: *countSuspect,
-		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, Log: stderr,
+		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, MinTimeout: *minTimeout, Jobs: *jobs, Log: stderr,
 	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {
 		return err

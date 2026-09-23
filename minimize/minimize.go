@@ -13,6 +13,7 @@
 package minimize
 
 import (
+	"container/heap"
 	"slices"
 
 	"github.com/bits-and-blooms/bitset"
@@ -54,6 +55,12 @@ type Result struct {
 }
 
 // Greedy runs the weighted greedy set cover over m.
+//
+// A test's gain only shrinks as the cover grows, so the search is lazy
+// (Minoux's accelerated greedy): candidates wait in a heap keyed by their
+// last computed gain, and only the top is recomputed. Once its fresh gain
+// still beats every other key, no other test can beat it. Ties go to the
+// test first in m.Tests, as in a plain scan.
 func Greedy(m *criteria.Matrix, o Options) Result {
 	res := Result{Selected: []Selection{}}
 	covered := bitset.New(uint(len(m.Requirements))) //nolint:gosec // a slice length
@@ -64,12 +71,11 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 		remaining[t.Name] = true
 	}
 	select_ := func(t criteria.Test, protected bool) {
-		fresh := t.Covers.Difference(covered)
 		res.Selected = append(res.Selected, Selection{
 			Name:      t.Name,
 			Protected: protected,
-			New:       int(fresh.Count()), //nolint:gosec // bounded by len(m.Requirements)
-			Gain:      gain(m, fresh, t.DurationMS),
+			New:       int(t.Covers.DifferenceCardinality(covered)), //nolint:gosec // bounded by len(m.Requirements)
+			Gain:      gain(m, t, covered),
 		})
 		covered.InPlaceUnion(t.Covers)
 		delete(remaining, t.Name)
@@ -80,21 +86,23 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 			select_(t, true)
 		}
 	}
-	for {
-		var best criteria.Test
-		bestGain := 0.0
-		for _, t := range m.Tests {
-			if !remaining[t.Name] {
-				continue
-			}
-			if g := gain(m, t.Covers.Difference(covered), t.DurationMS); g > bestGain {
-				best, bestGain = t, g
-			}
+	h := candidates{}
+	for i, t := range m.Tests {
+		if remaining[t.Name] {
+			h = append(h, candidate{i, gain(m, t, covered)})
 		}
-		if bestGain == 0 {
-			break
+	}
+	heap.Init(&h)
+	for h.Len() > 0 {
+		c := heap.Pop(&h).(candidate) //nolint:errcheck,forcetypeassert // the heap holds candidates only
+		if c.gain = gain(m, m.Tests[c.test], covered); c.gain == 0 {
+			continue
 		}
-		select_(best, false)
+		if h.Len() > 0 && h.before(h[0], c) {
+			heap.Push(&h, c)
+			continue
+		}
+		select_(m.Tests[c.test], false)
 	}
 	prune(m, byName, covered, remaining, &res, select_)
 
@@ -115,27 +123,69 @@ func Greedy(m *criteria.Matrix, o Options) Result {
 	return res
 }
 
+// candidate is a test of the matrix, by index, with an upper bound of its
+// gain: the gain it had when last computed.
+type candidate struct {
+	test int
+	gain float64
+}
+
+// candidates is a max-heap of candidates by gain, then by index.
+type candidates []candidate
+
+func (h candidates) Len() int { return len(h) }
+
+func (h candidates) Less(i, j int) bool { return h.before(h[i], h[j]) }
+
+func (candidates) before(a, b candidate) bool {
+	return a.gain > b.gain || (a.gain == b.gain && a.test < b.test)
+}
+
+func (h candidates) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+func (h *candidates) Push(x any) { *h = append(*h, x.(candidate)) } //nolint:forcetypeassert // only candidates are pushed
+
+func (h *candidates) Pop() any {
+	old := *h
+	c := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return c
+}
+
 // prune drops every selected test whose requirements the other selected
 // tests satisfy between them, later selections first, so that of two
 // tests with the same requirements the earlier, higher-gain one stays.
-// Protected tests are never dropped. The selection is then replayed so
-// that New and Gain describe the final order.
+// Protected tests are never dropped. A test is dropped when each of its
+// requirements is satisfied by at least one other kept test, which a count
+// of the kept tests per requirement answers without a union. The
+// selection is then replayed so that New and Gain describe the final
+// order.
 func prune(m *criteria.Matrix, byName map[string]criteria.Test, covered *bitset.BitSet, remaining map[string]bool, res *Result, select_ func(criteria.Test, bool)) {
 	kept := slices.Clone(res.Selected)
+	count := make([]int, len(m.Requirements))
+	for _, s := range kept {
+		covers := byName[s.Name].Covers
+		for i, ok := covers.NextSet(0); ok; i, ok = covers.NextSet(i + 1) {
+			count[i]++
+		}
+	}
 	for i := len(kept) - 1; i >= 0; i-- {
 		if kept[i].Protected {
 			continue
 		}
-		others := bitset.New(uint(len(m.Requirements))) //nolint:gosec // a slice length
-		for j, s := range kept {
-			if j != i && s.Name != "" {
-				others.InPlaceUnion(byName[s.Name].Covers)
-			}
+		covers := byName[kept[i].Name].Covers
+		shared := true
+		for j, ok := covers.NextSet(0); ok && shared; j, ok = covers.NextSet(j + 1) {
+			shared = count[j] > 1
 		}
-		if others.IsSuperSet(byName[kept[i].Name].Covers) {
-			remaining[kept[i].Name] = true
-			kept[i].Name = ""
+		if !shared {
+			continue
 		}
+		for j, ok := covers.NextSet(0); ok; j, ok = covers.NextSet(j + 1) {
+			count[j]--
+		}
+		remaining[kept[i].Name] = true
+		kept[i].Name = ""
 	}
 	res.Selected = []Selection{}
 	covered.ClearAll()
@@ -146,11 +196,14 @@ func prune(m *criteria.Matrix, byName map[string]criteria.Test, covered *bitset.
 	}
 }
 
-// gain is the weight of the requirements in fresh per millisecond.
-func gain(m *criteria.Matrix, fresh *bitset.BitSet, durationMS int64) float64 {
+// gain is the weight of the requirements t satisfies and covered does not,
+// per millisecond of t's run time.
+func gain(m *criteria.Matrix, t criteria.Test, covered *bitset.BitSet) float64 {
 	weight := 0.0
-	for i, ok := fresh.NextSet(0); ok; i, ok = fresh.NextSet(i + 1) {
-		weight += m.Requirements[i].Weight
+	for i, ok := t.Covers.NextSet(0); ok; i, ok = t.Covers.NextSet(i + 1) {
+		if !covered.Test(i) {
+			weight += m.Requirements[i].Weight
+		}
 	}
-	return weight / float64(max(durationMS, 1))
+	return weight / float64(max(t.DurationMS, 1))
 }

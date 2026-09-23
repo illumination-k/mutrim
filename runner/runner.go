@@ -16,20 +16,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/illumination-k/mutrim/mutator"
 )
 
-// MinTimeout is the floor of the derived per-mutant timeout. A short
-// baseline says little about the worst case: process startup jitter, and
-// tests that spawn the Go toolchain and miss the build cache under a
-// mutant, can exceed 3× a sub-second baseline. Mutating mutrim itself
-// produced false TIMEOUTs with a 2s floor.
-const MinTimeout = 10 * time.Second
+// DefaultMinTimeout is the floor of the derived per-mutant timeout when
+// Options.MinTimeout is zero. A short baseline says little about the worst
+// case: process startup jitter, and tests that spawn the Go toolchain and
+// miss the build cache under a mutant, can exceed 3× a sub-second
+// baseline. Mutating mutrim itself produced false TIMEOUTs with a 2s
+// floor. The floor is also what every looping mutant costs, so a package
+// of fast, self-contained tests runs much faster with a lower one.
+const DefaultMinTimeout = 10 * time.Second
 
 // DefaultTimeoutFactor multiplies the reaching tests' durations, and the
 // baseline for the cap, when Options.TimeoutFactor is zero.
@@ -97,6 +102,9 @@ type Options struct {
 	// it: TimeoutFactor × their sum + TimeoutConst, at least MinTimeout and
 	// at most TimeoutFactor × the baseline run.
 	Timeout time.Duration
+	// MinTimeout is the floor of the derived timeout, and of its cap;
+	// zero means DefaultMinTimeout.
+	MinTimeout time.Duration
 	// TimeoutFactor scales the derived timeout; zero means
 	// DefaultTimeoutFactor.
 	TimeoutFactor float64
@@ -115,7 +123,12 @@ type Options struct {
 	// ID it already contains, as long as the tests they were observed with
 	// are unchanged (see Test.Hash); the rest are executed.
 	Previous *Report
-	// Log receives one line per mutant; nil discards them.
+	// Jobs is the number of test processes run at once, while tracing and
+	// while running the mutants; zero means GOMAXPROCS. The derived
+	// timeouts come from trace runs made under the same load.
+	Jobs int
+	// Log receives one line per mutant, in the order they finish; nil
+	// discards them.
 	Log io.Writer
 
 	// bins is TestBin (with Dir and TestSrcs) followed by ExtraTests, set
@@ -219,9 +232,12 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.TimeoutFactor == 0 {
 		o.TimeoutFactor = DefaultTimeoutFactor
 	}
+	if o.MinTimeout == 0 {
+		o.MinTimeout = DefaultMinTimeout
+	}
 	maxTimeout := o.Timeout
 	if maxTimeout == 0 {
-		maxTimeout = max(o.scale(baseMS), MinTimeout)
+		maxTimeout = max(o.scale(baseMS), o.MinTimeout)
 	}
 	logger.Printf("baseline %dms, timeout at most %s, %d tests", baseMS, maxTimeout, len(names))
 
@@ -266,35 +282,53 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if len(o.Mutants) > 0 {
 		report.Pkg = o.Mutants[0].Pkg
 	}
-	for _, m := range o.Mutants {
+	// Each mutant's result is decided on its own, so they run o.Jobs at a
+	// time; results keep the order of o.Mutants.
+	results := make([]*Result, len(o.Mutants))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(o.jobs())
+	for i, m := range o.Mutants {
 		if !inShard(m.ID, o.Shard, o.Shards) {
 			continue
 		}
-		var r Result
+		r := &Result{}
+		results[i] = r
 		switch prev, cached := previous[m.ID]; {
 		case !o.InDiff.Touches(m.File, m.Line, m.EndLine):
-			r = Result{MutantID: m.ID, Status: Skipped}
+			*r = Result{MutantID: m.ID, Status: Skipped}
 		case m.Ignored != "":
-			r = Result{MutantID: m.ID, Status: Ignored}
+			*r = Result{MutantID: m.ID, Status: Ignored}
 		case m.Equivalent != "":
-			r = Result{MutantID: m.ID, Status: Equivalent}
+			*r = Result{MutantID: m.ID, Status: Equivalent}
 		case !m.Viable:
-			r = Result{MutantID: m.ID, Status: NotViable}
+			*r = Result{MutantID: m.ID, Status: NotViable}
 		case len(reachers[m.ID]) == 0:
-			r = Result{MutantID: m.ID, Status: NoCoverage}
+			*r = Result{MutantID: m.ID, Status: NoCoverage}
 			logger.Printf("%s %s %s:%d %s %q", m.ID, r.Status, m.File, m.Line, m.Func, m.Description)
 		case cached && reusable(m.ID, prev, o.qualifyAll(reachers[m.ID]), now, before):
-			r = prev
+			*r = prev
 			logger.Printf("%s %s (previous)", m.ID, r.Status)
 		default:
-			timeout := o.mutantTimeout(o.qualifyAll(reachers[m.ID]), durations, maxTimeout)
-			if r, err = o.runMutant(ctx, m.ID, reachers[m.ID], timeout, ref); err != nil {
-				return nil, err
-			}
-			logger.Printf("%s %s %s:%d %s %q (%dms, timeout %s)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, timeout, suspicion(r.SuspiciousBy))
+			g.Go(func() error {
+				timeout := o.mutantTimeout(o.qualifyAll(reachers[m.ID]), durations, maxTimeout)
+				res, err := o.runMutant(gctx, m.ID, reachers[m.ID], timeout, ref)
+				if err != nil {
+					return err
+				}
+				*r = res
+				logger.Printf("%s %s %s:%d %s %q (%dms, timeout %s)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, timeout, suspicion(r.SuspiciousBy))
+				return nil
+			})
 		}
-		r.Class = m.Class
-		report.Results = append(report.Results, r)
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	for i, r := range results {
+		if r != nil {
+			r.Class = o.Mutants[i].Class
+			report.Results = append(report.Results, *r)
+		}
 	}
 	report.total()
 	if o.InDiff != nil {
@@ -310,9 +344,18 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	return report, nil
 }
 
+// jobs is the number of test processes run at once: Options.Jobs, or
+// GOMAXPROCS when unset.
+func (o Options) jobs() int {
+	if o.Jobs > 0 {
+		return o.Jobs
+	}
+	return runtime.GOMAXPROCS(0)
+}
+
 // mutantTimeout is the timeout of a mutant reached by rows: Options.Timeout
 // when set, else TimeoutFactor × the rows' traced durations + TimeoutConst,
-// clamped to [MinTimeout, maxTimeout]. A mutant reached by one quick test
+// clamped to [Options.MinTimeout, maxTimeout]. A mutant reached by one quick test
 // then times out long before one reached by the whole suite.
 func (o Options) mutantTimeout(rows []string, durations map[string]int64, maxTimeout time.Duration) time.Duration {
 	if o.Timeout > 0 {
@@ -322,7 +365,7 @@ func (o Options) mutantTimeout(rows []string, durations map[string]int64, maxTim
 	for _, r := range rows {
 		sum += durations[r]
 	}
-	return min(max(o.scale(sum)+o.TimeoutConst, MinTimeout), maxTimeout)
+	return min(max(o.scale(sum)+o.TimeoutConst, o.MinTimeout), maxTimeout)
 }
 
 // scale is TimeoutFactor × ms milliseconds.
@@ -510,45 +553,61 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 	defer os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir is harmless
 
 	runs := max(o.ConfirmBaseline, 1)
-	tests := make([]Test, 0, len(rows))
+	tests := make([]Test, len(rows))
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(o.jobs())
 	for i, rw := range rows {
-		name := o.qualify(rw)
-		top, _, _ := strings.Cut(rw.name, "/")
-		t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg, Hash: o.hashes[rw.bin][top]}
-		if p := parent(rw.name); p != "" {
-			t.Parent = o.qualify(row{rw.bin, p})
-		}
-		sites := map[string]bool{}
-		var failures int
-		var failed *execResult
-		for run := range runs {
-			trace := filepath.Join(dir, fmt.Sprintf("%d-%d.trace", i, run))
-			res, err := o.exec(ctx, o.bins[rw.bin], "", trace, testPattern([]string{rw.name}), 0)
-			if err != nil {
-				return nil, err
-			}
-			if res.Status == RunError {
-				return nil, fmt.Errorf("runner: %s: infrastructure failure while run on its own; the tests must pass without a mutant\n%s", name, res.output)
-			}
-			if res.Status != Lived {
-				failures++
-				failed = res
-			}
-			reached, err := readTrace(trace)
-			if err != nil {
-				return nil, err
-			}
-			maps.Copy(sites, reached)
-			t.DurationMS = max(t.DurationMS, res.DurationMS)
-		}
-		if failures == runs {
-			return nil, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, failed.Status, failed.output)
-		}
-		t.Flaky = failures > 0
-		t.Sites = slices.Sorted(maps.Keys(sites))
-		tests = append(tests, t)
+		g.Go(func() error {
+			t, err := o.traceTest(ctx, rw, runs, func(run int) string {
+				return filepath.Join(dir, fmt.Sprintf("%d-%d.trace", i, run))
+			})
+			tests[i] = t
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return tests, nil
+}
+
+// traceTest runs row rw runs times on its own, tracing run k to trace(k),
+// and merges the runs as traceTests describes.
+func (o Options) traceTest(ctx context.Context, rw row, runs int, trace func(run int) string) (Test, error) {
+	name := o.qualify(rw)
+	top, _, _ := strings.Cut(rw.name, "/")
+	t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg, Hash: o.hashes[rw.bin][top]}
+	if p := parent(rw.name); p != "" {
+		t.Parent = o.qualify(row{rw.bin, p})
+	}
+	sites := map[string]bool{}
+	var failures int
+	var failed *execResult
+	for run := range runs {
+		res, err := o.exec(ctx, o.bins[rw.bin], "", trace(run), testPattern([]string{rw.name}), 0)
+		if err != nil {
+			return Test{}, err
+		}
+		if res.Status == RunError {
+			return Test{}, fmt.Errorf("runner: %s: infrastructure failure while run on its own; the tests must pass without a mutant\n%s", name, res.output)
+		}
+		if res.Status != Lived {
+			failures++
+			failed = res
+		}
+		reached, err := readTrace(trace(run))
+		if err != nil {
+			return Test{}, err
+		}
+		maps.Copy(sites, reached)
+		t.DurationMS = max(t.DurationMS, res.DurationMS)
+	}
+	if failures == runs {
+		return Test{}, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, failed.Status, failed.output)
+	}
+	t.Flaky = failures > 0
+	t.Sites = slices.Sorted(maps.Keys(sites))
+	return t, nil
 }
 
 // readTrace reads the sites a GOMUTANT_TRACE file lists and removes the

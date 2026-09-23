@@ -10,5 +10,8 @@ go_library(
     ],
     importpath = "github.com/illumination-k/mutrim/runner",
     visibility = ["//visibility:public"],
-    deps = ["//mutator"],
+    deps = [
+        "//mutator",
+        "@org_golang_x_sync//errgroup",
+    ],
 )

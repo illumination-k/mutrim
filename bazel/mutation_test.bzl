@@ -368,6 +368,8 @@ def mutation_test(
         threshold_covered = None,
         extra_tests = [],
         race = False,
+        jobs = None,
+        min_timeout = None,
         shard_count = None,
         env = {},
         **kwargs):
@@ -472,6 +474,13 @@ def mutation_test(
             also run against its mutants (`mutrim run -extra-test`).
         race: builds the test binary with the race detector (`race = "on"`
             of go_test), for the `concurrency` operator.
+        jobs: test processes each shard runs at once (`mutrim run -jobs`);
+            unset is GOMAXPROCS. Bazel counts a test as one CPU, so pair it
+            with `tags = ["cpu:N"]` when many mutation tests run together.
+        min_timeout: floor of the derived per-mutant timeout, a Go duration
+            such as `"2s"` (`mutrim run -min-timeout`); unset is 10s. Every
+            looping mutant waits it out, so fast, self-contained tests run
+            much faster with a lower one.
         shard_count: splits the mutants across this many shards.
         env: environment of the test binary.
         **kwargs: common test attributes (size, timeout, tags, data, ...),
@@ -541,6 +550,8 @@ def mutation_test(
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
                (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
                (["-count-suspect"] if count_suspect else []) +
+               (["-jobs={}".format(jobs)] if jobs != None else []) +
+               (["-min-timeout={}".format(min_timeout)] if min_timeout != None else []) +
                (["-threshold={}".format(threshold)] if threshold != None else []) +
                (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []),
         data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
