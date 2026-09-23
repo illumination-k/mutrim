@@ -190,7 +190,7 @@ func toMutant(m mutator.Mutant, res runner.Result, st Status, coveredBy []string
 	out := Mutant{
 		ID:          m.ID,
 		MutatorName: m.Operator,
-		Description: m.Func + " " + m.Description,
+		Description: description(m),
 		Replacement: replacement(m.Description),
 		Location: Location{
 			Start: Position{Line: m.Line, Column: m.Col},
@@ -219,6 +219,17 @@ func toMutant(m mutator.Mutant, res runner.Result, st Status, coveredBy []string
 		out.StatusReason = "suspect equivalent: no test failed and the tests reached the same sites"
 	}
 	return out
+}
+
+// description names the mutant's function and rewrite, followed by the
+// mutant's diff from mutants.json, which the viewer shows next to the
+// source, when it has one.
+func description(m mutator.Mutant) string {
+	d := m.Func + " " + m.Description
+	if m.Diff != "" {
+		d += "\n\n" + m.Diff
+	}
+	return d
 }
 
 // replacement is the right-hand side of a "from -> to" description, which

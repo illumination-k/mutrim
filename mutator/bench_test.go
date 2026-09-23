@@ -33,12 +33,22 @@ func loadBench(b *testing.B, pattern string) *packages.Package {
 // BenchmarkGenerate measures the full pipeline with the pre-filter on and
 // reports the cost per mutant.
 func BenchmarkGenerate(b *testing.B) {
+	benchGenerate(b, Options{TypeCheck: true})
+}
+
+// BenchmarkGenerateDiff is BenchmarkGenerate with the stmt diffs `mutrim
+// gen` records by default, which print the mutated file once per mutant.
+func BenchmarkGenerateDiff(b *testing.B) {
+	benchGenerate(b, Options{TypeCheck: true, Diff: DiffStmt})
+}
+
+func benchGenerate(b *testing.B, opts Options) {
 	for _, pattern := range benchPackages() {
 		b.Run(pattern, func(b *testing.B) {
 			pkg := loadBench(b, pattern)
 			var n int
 			for b.Loop() {
-				n = len(Generate(pkg, Options{TypeCheck: true}))
+				n = len(Generate(pkg, opts))
 			}
 			b.ReportMetric(float64(n), "mutants")
 			b.ReportMetric(b.Elapsed().Seconds()/float64(b.N)/float64(n), "sec/mutant")

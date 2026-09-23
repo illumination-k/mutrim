@@ -117,6 +117,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	excludeRE := fs.String("exclude-re", "", "drop the mutants whose \"func operator: description\" matches this regexp")
 	arid := fs.String("arid", "", aridUsage)
 	noArid := fs.Bool("no-arid", false, "turn the built-in arid rules off (-arid still applies)")
+	diffContext := fs.String("diff-context", "stmt", "context of each mutant's unified diff: \"stmt\" (the enclosing statement), \"func\" (the enclosing function) or \"none\" (no diff)")
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
@@ -126,6 +127,10 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	ops, err := mutator.Operators(*operators)
+	if err != nil {
+		return err
+	}
+	diff, err := mutator.ParseDiffContext(*diffContext)
 	if err != nil {
 		return err
 	}
@@ -161,7 +166,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	mutants := []mutator.Mutant{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
 	for _, pkg := range pkgs {
-		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter})
+		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter, Diff: diff})
 		if *schemata != "" {
 			if err := writeSchemata(*schemata, pkg, ms, &overlay); err != nil {
 				return err
@@ -191,6 +196,9 @@ func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overl
 	for i := range ms {
 		if !ms[i].Excluded() {
 			ms[i].Viable = ms[i].Viable && sch.Embedded[ms[i].ID]
+		}
+		if !ms[i].Viable {
+			ms[i].Diff = ""
 		}
 	}
 	pkgDir := filepath.Join(dir, filepath.FromSlash(pkg.PkgPath))

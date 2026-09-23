@@ -29,6 +29,21 @@ go test -overlay overlay.json ./path/to/pkg
 
 A failing `go test` means the mutant was killed.
 
+Each mutant in `mutants.json` carries `diff`, a unified diff of its rewrite, so a reviewer
+reading a survivor, or an LLM asked to write a test that kills it, need not re-apply it.
+`-diff-context stmt` (the default) shows the enclosing statement, at most three lines of it
+on each side of the change; `-diff-context func` the whole enclosing function; and
+`-diff-context none` records no diff. An ignored or not viable mutant has none, nor has a
+rewrite that prints as the original (`if true` → `if true`).
+
+```diff
+--- pkg/counter.go
++++ pkg/counter.go
+@@ -22,1 +22,1 @@
+-	c.n++
++	c.n--
+```
+
 `-match <re>` keeps only the functions whose name matches, in the `(*T).Name` form of the
 `func` field; `-files <glob,...>` keeps only the files matching one of the globs and
 `-exclude-files <re,...>` drops the files matching one of the regexps (both are tried

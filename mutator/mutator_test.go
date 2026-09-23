@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/scanner"
 	"go/token"
 	"maps"
 	"os"
@@ -350,4 +351,126 @@ func TestOperators(t *testing.T) {
 			t.Errorf("%q: expected an error", spec)
 		}
 	}
+}
+
+// A mutant's diff applies to its original file and gives the code Source
+// writes, in both contexts and for every fixture: the diff is the rewrite
+// itself. Only the code is compared, since a rewritten node has no
+// position and the printer places it and the comments around it as it
+// can. An ignored or not viable mutant has none, nor has a rewrite that
+// prints as the original.
+func TestDiffAppliesAsSource(t *testing.T) {
+	for _, fixture := range goldenFixtures {
+		ops, err := mutator.Operators(fixture.operators)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkg := load(t, fixture.name)
+		for _, dc := range []mutator.DiffContext{mutator.DiffStmt, mutator.DiffFunc} {
+			for _, m := range mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true, Diff: dc}) {
+				if m.Ignored != "" || !m.Viable {
+					if m.Diff != "" {
+						t.Errorf("%s %s %q: ignored or not viable, yet a diff", fixture.name, m.Operator, m.Description)
+					}
+					continue
+				}
+				orig, err := os.ReadFile(m.File)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, want, err := mutator.Source(pkg, m.ID, ops)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if m.Diff == "" { // a rewrite that prints as the original
+					if string(want) != string(orig) {
+						t.Errorf("%s %s %q: no diff", fixture.name, m.Operator, m.Description)
+					}
+					continue
+				}
+				if got := applyDiff(t, string(orig), m.Diff); code(t, got) != code(t, string(want)) {
+					t.Errorf("%s %s %s %q: diff\n%s\ndoes not give the Source output", fixture.name, dc, m.Operator, m.Description, m.Diff)
+				}
+			}
+		}
+	}
+}
+
+// A stmt diff shows the changed statement; a func diff the whole function.
+func TestDiffContext(t *testing.T) {
+	find := func(dc mutator.DiffContext) mutator.Mutant {
+		for _, m := range mutator.Generate(load(t, "control"), mutator.Options{Diff: dc}) {
+			if m.Func == "(*Counter).Inc" && m.Operator == "incdec" {
+				return m
+			}
+		}
+		t.Fatal("no incdec mutant in (*Counter).Inc")
+		return mutator.Mutant{}
+	}
+	stmt := find(mutator.DiffStmt)
+	want := fmt.Sprintf("--- %s\n+++ %s\n@@ -22,1 +22,1 @@\n-\tc.n++\n+\tc.n--\n", stmt.File, stmt.File)
+	if stmt.Diff != want {
+		t.Errorf("stmt diff =\n%s\nwant\n%s", stmt.Diff, want)
+	}
+	fn := find(mutator.DiffFunc)
+	want = fmt.Sprintf("--- %s\n+++ %s\n@@ -21,3 +21,3 @@\n func (c *Counter) Inc() {\n-\tc.n++\n+\tc.n--\n }\n", fn.File, fn.File)
+	if fn.Diff != want {
+		t.Errorf("func diff =\n%s\nwant\n%s", fn.Diff, want)
+	}
+	if none := find(mutator.DiffNone); none.Diff != "" {
+		t.Errorf("DiffNone recorded %q", none.Diff)
+	}
+}
+
+// code lists the tokens of src, without comments and the semicolons a
+// line break inserts, so that two layouts of one program compare equal.
+func code(t *testing.T, src string) string {
+	t.Helper()
+	var sc scanner.Scanner
+	fset := token.NewFileSet()
+	sc.Init(fset.AddFile("", -1, len(src)), []byte(src), func(pos token.Position, msg string) { t.Fatalf("%v: %s", pos, msg) }, 0)
+	var b strings.Builder
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			return b.String()
+		}
+		if tok == token.SEMICOLON && lit == "\n" {
+			continue
+		}
+		b.WriteString(tok.String() + " " + lit + "\n")
+	}
+}
+
+// applyDiff applies the single hunk of a unified diff to src.
+func applyDiff(t *testing.T, src, diff string) string {
+	t.Helper()
+	lines := strings.Split(diff, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("not a unified diff:\n%s", diff)
+	}
+	var oldStart, oldLen, newStart, newLen int
+	if _, err := fmt.Sscanf(lines[2], "@@ -%d,%d +%d,%d @@", &oldStart, &oldLen, &newStart, &newLen); err != nil {
+		t.Fatalf("hunk header %q: %v", lines[2], err)
+	}
+	var old, repl []string
+	for _, l := range lines[3 : len(lines)-1] {
+		switch l[0] {
+		case ' ':
+			old, repl = append(old, l[1:]), append(repl, l[1:])
+		case '-':
+			old = append(old, l[1:])
+		case '+':
+			repl = append(repl, l[1:])
+		}
+	}
+	if len(old) != oldLen || len(repl) != newLen {
+		t.Fatalf("hunk counts %d,%d do not match its lines %d,%d:\n%s", oldLen, newLen, len(old), len(repl), diff)
+	}
+	file := strings.Split(src, "\n")
+	at := oldStart - 1
+	if got := strings.Join(file[at:at+oldLen], "\n"); got != strings.Join(old, "\n") {
+		t.Fatalf("diff does not match the source at line %d:\n%s\nsource:\n%s", oldStart, diff, got)
+	}
+	return strings.Join(append(append(file[:at:at], repl...), file[at+oldLen:]...), "\n")
 }

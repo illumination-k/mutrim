@@ -334,3 +334,23 @@ func write(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// A mutant's diff from mutants.json follows its description in the
+// Stryker report and its message in an annotation, escaped there.
+func TestDiffIsReused(t *testing.T) {
+	ms := mutants()
+	ms[1].Diff = "--- p/a.go\n+++ p/a.go\n@@ -7,1 +7,1 @@\n-\treturn x\n+\treturn 0\n"
+	s := report.ToStryker(ms, []*runner.Report{report1()}, nil)
+	if got, want := s.Files["p/a.go"].Mutants[1].Description, "F return -> zero values\n\n"+ms[1].Diff; got != want {
+		t.Errorf("description = %q, want %q", got, want)
+	}
+	var buf bytes.Buffer
+	if err := report.WriteAnnotations(&buf, ms[:2], []*runner.Report{report1()}, 0); err != nil {
+		t.Fatal(err)
+	}
+	want := "::warning file=p/a.go,line=7,col=2,endLine=7,endColumn=14::LIVED: F return: return -> zero values%0A%0A" +
+		"--- p/a.go%0A+++ p/a.go%0A@@ -7,1 +7,1 @@%0A-\treturn x%0A+\treturn 0%0A\n"
+	if got := buf.String(); got != want {
+		t.Errorf("annotation =\n%s\nwant\n%s", got, want)
+	}
+}

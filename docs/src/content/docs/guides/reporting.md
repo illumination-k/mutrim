@@ -26,7 +26,9 @@ and `IGNORED`, `SKIPPED`, `EQUIVALENT` and `SUSPECT_EQUIVALENT` are `Ignored`, w
 directive or filter that suppressed it, `not in the diff`, or the equivalence, as its
 `statusReason` (a suspect is `Survived` under `-count-suspect`). Each mutant carries the tests that reach it (`coveredBy`) and the ones that
 killed it (`killedBy`), so the viewer shows the kill matrix per mutant. A mutant no report
-mentions is left out, so one shard's report renders that shard.
+mentions is left out, so one shard's report renders that shard. A mutant's `diff` from
+`mutants.json` follows its description in the Stryker report and its message in a GitHub
+annotation.
 
 `-format html` and `-format github` write their own text rather than JSON: GitHub reads its
 annotations from the step's stdout, and the HTML view loads the viewer from unpkg, so it
