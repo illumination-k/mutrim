@@ -61,6 +61,8 @@ commands:
             -extra-test adds the tests of a package importing it; a
             survivor that left every test's trace unchanged is reported
             SUSPECT_EQUIVALENT and scored only with -count-suspect;
+            -sample runs a fraction of the mutants, the same ones in
+            every shard and incremental run with the same -seed;
             -threshold / -threshold-covered fail the run, after writing
             the report, when its score is below them
   minimize  from report.json files (the shards of a package, or several
@@ -275,6 +277,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	testSrcs := fs.String("test-srcs", "", "comma-separated _test.go files of the package; each test's hash in report.json is read from them, so -previous re-executes the mutants whose killing or reaching tests changed")
 	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines (see -diff-expand) run, the rest are SKIPPED")
 	diffExpand := fs.Bool("diff-expand", true, "with -in-diff, also run the commit-relevant mutants: every mutant a test reaching the diff's added lines reaches, wherever it lies")
+	sample := fs.Float64("sample", 0, "run only this fraction of the mutants (0..1), selected by a hash of their ID and -seed: the rest are SKIPPED and count towards no score, so the score is computed over the sample (totals.sampled records the fraction kept); 0 runs everything")
+	seed := fs.Int64("seed", 0, "seed of the -sample selection: the same seed keeps the same mutants in every shard of the run and in every -previous run")
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between -min-timeout and -timeout-factor × the baseline run)")
 	minTimeout := fs.Duration("min-timeout", runner.DefaultMinTimeout, "floor of the derived per-mutant timeout, which every looping mutant waits out; lower it for fast, self-contained tests")
 	timeoutFactor := fs.Float64("timeout-factor", runner.DefaultTimeoutFactor, "multiplier of the derived per-mutant timeout")
@@ -313,6 +317,9 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	if *testBin == "" || *mutantsPath == "" {
 		return errors.New("run: -test-bin and -mutants are required")
 	}
+	if *sample < 0 || *sample > 1 {
+		return fmt.Errorf("run: -sample %g is out of range 0..1", *sample)
+	}
 	for pkg, files := range extraSrcs {
 		i := slices.IndexFunc(extra, func(b runner.Binary) bool { return b.Pkg == pkg })
 		if i < 0 {
@@ -328,6 +335,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	opts := runner.Options{
 		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
 		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, CountSuspect: *countSuspect,
+		Sample: *sample, Seed: *seed,
 		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, MinTimeout: *minTimeout, Jobs: *jobs, Log: stderr,
 	}
 	if err := readJSON(*mutantsPath, &opts.Mutants); err != nil {

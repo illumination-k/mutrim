@@ -366,6 +366,8 @@ def mutation_test(
         count_suspect = False,
         threshold = None,
         threshold_covered = None,
+        sample = None,
+        seed = None,
         extra_tests = [],
         race = False,
         jobs = None,
@@ -413,6 +415,13 @@ def mutation_test(
     the covered mutants) is below them. Unset, the target passes whatever
     the score. Each shard checks its own mutants; a whole-package score
     needs the shards' reports merged.
+
+    `sample` runs a fraction of the mutants, the same ones in every shard
+    and every incremental run with the same `seed`: the rest are reported
+    `SKIPPED` and count towards no score, so the score is computed over
+    the sample (`totals.sampled` records the fraction kept). A `redundant`
+    verdict over a sample is weaker than over the whole run: the
+    requirements the sample left out may have changed it.
 
     `race` builds the test binary with the race detector, which the
     opt-in `concurrency` operator needs: a data race it introduces fails
@@ -472,6 +481,12 @@ def mutation_test(
         threshold_covered: fails the test when the score over the covered
             mutants (NO_COVERAGE left out) is below this fraction
             (`mutrim run -threshold-covered`); unset is off.
+        sample: fraction of the mutants each shard runs
+            (`mutrim run -sample`); the rest are SKIPPED and count
+            towards no score. Unset runs everything.
+        seed: seed of the sample: the same seed keeps the same mutants
+            in every shard and every incremental run
+            (`mutrim run -seed`); unset is 0.
         extra_tests: go_tests of packages importing the library, whose tests
             also run against its mutants (`mutrim run -extra-test`).
         race: builds the test binary with the race detector (`race = "on"`
@@ -554,8 +569,10 @@ def mutation_test(
                (["-count-suspect"] if count_suspect else []) +
                (["-jobs={}".format(jobs)] if jobs != None else []) +
                (["-min-timeout={}".format(min_timeout)] if min_timeout != None else []) +
-               (["-threshold={}".format(threshold)] if threshold != None else []) +
-               (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []),
+                (["-threshold={}".format(threshold)] if threshold != None else []) +
+                (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []) +
+                (["-sample={}".format(sample)] if sample != None else []) +
+                (["-seed={}".format(seed)] if seed != None else []),
         data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.

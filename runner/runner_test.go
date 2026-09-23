@@ -431,6 +431,7 @@ func TestRunErrors(t *testing.T) {
 		"missing binary":   {TestBin: "/nonexistent/test.bin", Mutants: mutants},
 		"no binary":        {Mutants: mutants},
 		"bad mutant id":    {TestBin: bin, Mutants: []mutator.Mutant{{ID: "not-hex", Viable: true}}},
+		"sample above one": {TestBin: bin, Mutants: mutants, Sample: 1.5},
 		"failing baseline": {TestBin: bin, Mutants: mutants, Dir: fixtureDir, Args: []string{"-test.run", "TestSkipped", "-test.failfast=false", "-test.count=1", "-test.timeout=1ns"}},
 	}
 	for name, opts := range cases {
@@ -767,6 +768,120 @@ func TestRunDiffExpand(t *testing.T) {
 	}
 	if tot.Diff.ChangedLines.Killed == 0 || tot.Diff.CommitRelevant.Killed < tot.Diff.ChangedLines.Killed {
 		t.Errorf("totals.diff = %+v, want the changed line's kill counted in both", tot.Diff)
+	}
+}
+
+// The sample keeps a fraction of the mutants: the unselected are SKIPPED
+// and count towards no score, every shard of the run and every
+// incremental run with the same seed keeps the same mutants, and
+// totals.sampled records the fraction kept. The score is computed over
+// the sample, so it is the score of the mutants that ran.
+func TestRunSample(t *testing.T) {
+	bin, mutants := buildFixture(t)
+	// A negative shard is the unsharded run every shard is compared
+	// against; Shards is unset for it, so it runs every mutant.
+	opts := func(shard int, previous *runner.Report) runner.Options {
+		o := runner.Options{
+			TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: 3 * time.Second,
+			Sample: 0.5, Seed: 42, Previous: previous,
+		}
+		if shard >= 0 {
+			o.Shard, o.Shards = shard, 3
+		}
+		return o
+	}
+	whole, err := runner.Run(t.Context(), opts(-1, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tot := whole.Totals
+	if tot.Mutants != len(mutants) {
+		t.Fatalf("mutants = %d, want %d", tot.Mutants, len(mutants))
+	}
+	if tot.Killed+tot.Lived+tot.Timeout+tot.NoCoverage+tot.NotViable+tot.Ignored+tot.Skipped != tot.Mutants {
+		t.Errorf("totals do not add up: %+v", tot)
+	}
+	if tot.Skipped == 0 || tot.Killed+tot.Timeout == 0 {
+		t.Fatalf("the sample dropped nothing or kept nothing: %+v", tot)
+	}
+	// The score is computed over the sample: the skipped mutants stay out
+	// of its denominator, and sampled records the fraction kept.
+	if want := float64(tot.Killed+tot.Timeout) / float64(tot.Killed+tot.Timeout+tot.Lived+tot.NoCoverage); tot.Score != want {
+		t.Errorf("score = %v, want %v", tot.Score, want)
+	}
+	samplable := tot.Mutants - tot.Ignored - tot.NotViable - tot.Equivalent
+	if want := float64(samplable-tot.Skipped) / float64(samplable); tot.Sampled != want {
+		t.Errorf("sampled = %v, want %v (of %d selectable mutants, %d kept)", tot.Sampled, want, samplable, samplable-tot.Skipped)
+	}
+	// Only the mutants the sample did not drop are executed: a skipped one
+	// was never run, whatever its coverage.
+	for _, res := range whole.Results {
+		if res.Status == runner.Skipped && (res.TestsRun != 0 || res.DurationMS != 0 || len(res.KilledBy) != 0) {
+			t.Errorf("%s SKIPPED but executed: %+v", res.MutantID, res)
+		}
+	}
+
+	// Every shard keeps the same mutants of its own: its results are the
+	// unsharded run's, and the shards partition the mutants.
+	status := map[string]runner.Status{}
+	for _, res := range whole.Results {
+		status[res.MutantID] = res.Status
+	}
+	var shardIDs []string
+	for shard := range 3 {
+		sh, runErr := runner.Run(t.Context(), opts(shard, nil))
+		if runErr != nil {
+			t.Fatal(runErr)
+		}
+		for _, res := range sh.Results {
+			shardIDs = append(shardIDs, res.MutantID)
+			if res.Status != status[res.MutantID] {
+				t.Errorf("%s: shard %d reports %s, the unsharded run %s", res.MutantID, shard, res.Status, status[res.MutantID])
+			}
+		}
+	}
+	sort.Strings(shardIDs)
+	allIDs := make([]string, 0, len(mutants))
+	for _, m := range mutants {
+		allIDs = append(allIDs, m.ID)
+	}
+	sort.Strings(allIDs)
+	if strings.Join(shardIDs, ",") != strings.Join(allIDs, ",") {
+		t.Errorf("shards do not partition the mutants:\n%v\n%v", shardIDs, allIDs)
+	}
+
+	// An incremental run with the same seed copies every result forward:
+	// a skipped mutant is not copied (nothing was observed), so the sample
+	// decides it again, and decides the same.
+	same, err := runner.Run(t.Context(), opts(-1, whole))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, res := range same.Results {
+		if res.Status != whole.Results[i].Status {
+			t.Errorf("%s: %s after -previous, want %s", res.MutantID, res.Status, whole.Results[i].Status)
+		}
+	}
+
+	// A different seed samples different mutants.
+	other, err := runner.Run(t.Context(), runner.Options{
+		TestBin: bin, Mutants: mutants, Dir: fixtureDir, Timeout: 3 * time.Second,
+		Sample: 0.5, Seed: 7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipped := func(r *runner.Report) []string {
+		var out []string
+		for _, res := range r.Results {
+			if res.Status == runner.Skipped {
+				out = append(out, res.MutantID)
+			}
+		}
+		return out
+	}
+	if slices.Equal(skipped(other), skipped(whole)) {
+		t.Errorf("seed 7 dropped the same mutants as seed 42: %v", skipped(other))
 	}
 }
 

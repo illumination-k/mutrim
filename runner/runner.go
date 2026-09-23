@@ -122,6 +122,16 @@ type Options struct {
 	// a changed line's site, wherever it lies (Ojdanić et al., TOSEM
 	// 2023: most commit-relevant mutants lie outside the changed lines).
 	DiffExpand bool
+	// Sample is the fraction of the mutants the run keeps, selected by
+	// a hash of their ID and Seed below it: the rest are reported Skipped
+	// without being executed, so every score is computed over the sample
+	// (Totals.Sampled records the fraction kept). Zero or one keeps
+	// everything.
+	Sample float64
+	// Seed is the seed of the Sample selection: the same seed keeps the
+	// same mutants in every shard of a run and in every incremental run
+	// with the same seed. Zero is a seed like any other.
+	Seed int64
 	// Previous, if set, supplies results copied forward for mutants whose
 	// ID it already contains, as long as the tests they were observed with
 	// are unchanged (see Test.Hash); the rest are executed.
@@ -174,7 +184,8 @@ func (o Options) qualifyAll(rows []row) []string {
 // mutant only runs the tests that can kill it and the report holds a
 // per-test kill matrix. Options.InDiff scopes the run to the lines of a
 // diff, or with Options.DiffExpand to the mutants the tests of those lines
-// reach.
+// reach; Options.Sample keeps a fraction of the mutants, selected by a
+// hash of their ID and Seed, the rest reported Skipped.
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if err := o.setup(); err != nil {
 		return nil, err
@@ -239,12 +250,22 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	results := make([]*Result, len(o.Mutants))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(o.jobs())
+	var samplable, kept int // mutants of the shard the sample could select, and the ones it did
 	for i, m := range o.Mutants {
 		if !inShard(m.ID, o.Shard, o.Shards) {
 			continue
 		}
 		r := &Result{}
 		results[i] = r
+		// The sample selects among the mutants that pass the exclusions
+		// below it in the switch; the ones it drops are Skipped without
+		// being executed.
+		if selectable(scope, m) {
+			samplable++
+			if o.keeps(m.ID) {
+				kept++
+			}
+		}
 		switch prev, cached := previous[m.ID]; {
 		case scope != nil && !scope[m.ID]:
 			*r = Result{MutantID: m.ID, Status: Skipped}
@@ -254,6 +275,8 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			*r = Result{MutantID: m.ID, Status: Equivalent}
 		case !m.Viable:
 			*r = Result{MutantID: m.ID, Status: NotViable}
+		case !o.keeps(m.ID):
+			*r = Result{MutantID: m.ID, Status: Skipped}
 		case len(reachers[m.ID]) == 0:
 			*r = Result{MutantID: m.ID, Status: NoCoverage}
 			logger.Printf("%s %s %s:%d %s %q", m.ID, r.Status, m.File, m.Line, m.Func, m.Description)
@@ -284,6 +307,12 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		}
 	}
 	report.total()
+	if samplable > 0 {
+		report.Totals.Sampled = float64(kept) / float64(samplable)
+	}
+	if o.Sample > 0 && o.Sample < 1 {
+		logger.Printf("the sample kept %d of %d mutants", kept, samplable)
+	}
 	logSummary(logger, report)
 	return report, nil
 }
@@ -298,6 +327,9 @@ func (o *Options) setup() error {
 	}
 	if o.Log == nil {
 		o.Log = io.Discard
+	}
+	if o.Sample < 0 || o.Sample > 1 {
+		return fmt.Errorf("runner: -sample %g is out of range 0..1", o.Sample)
 	}
 	for _, m := range o.Mutants {
 		if _, err := strconv.ParseUint(m.ID, 16, 64); err != nil {

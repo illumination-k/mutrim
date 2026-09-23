@@ -36,9 +36,9 @@ const (
 	// NotViable means the mutant was never executed: it did not
 	// type-check or could not be embedded as schemata.
 	NotViable Status = "NOT_VIABLE"
-	// Skipped means a diff scoped the run (Options.InDiff) and the
-	// mutant lies outside its scope, so it was never executed; like Ignored it
-	// counts towards no score.
+	// Skipped means a diff scoped the run (Options.InDiff) or the run's
+	// sample left the mutant out (Options.Sample), so it was never
+	// executed; like Ignored it counts towards no score.
 	Skipped Status = "SKIPPED"
 	// Ignored means a gen filter or an inline //mutrim:disable directive
 	// excluded the mutant, so it was never built or executed; like
@@ -130,7 +130,9 @@ type Result struct {
 // viable mutants a test reaches: covered / (covered + no_coverage), or
 // zero when nothing is viable. It answers how much the tests reach at
 // all; Score and CoveredScore answer how well the reached ones are
-// checked (issue #34).
+// checked (issue #34). With a sample (run -sample), the mutants it did
+// not keep are Skipped and stay out of every score; Sampled records the
+// fraction of the mutants it could select that it did select.
 type Totals struct {
 	Mutants int `json:"mutants"`
 	Killed  int `json:"killed"`
@@ -157,6 +159,11 @@ type Totals struct {
 	// Coverage is the fraction of viable mutants a test reaches: covered /
 	// (covered + no_coverage), or zero when nothing is viable.
 	Coverage float64 `json:"coverage"`
+	// Sampled is the fraction of the mutants the sample could select
+	// (run -sample) that it kept: 1 without a sample or when the sample
+	// kept everything. The mutants it did not keep are Skipped, so the
+	// score is computed over the sample.
+	Sampled float64 `json:"sampled"`
 	// Classes breaks the score down by mutant class (mutator.ClassErrPath,
 	// ClassConcurrency, ClassDefault), so the score of error-handling code
 	// can be read next to the overall one.

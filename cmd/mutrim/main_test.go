@@ -505,6 +505,8 @@ func TestCommandErrors(t *testing.T) {
 		"run missing test-srcs":      {"run", "-test-srcs", missing + "_test.go", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run threshold above one":    {"run", "-threshold", "80", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run negative threshold":     {"run", "-threshold-covered", "-0.5", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run sample above one":       {"run", "-sample", "1.5", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run bad seed":               {"run", "-seed", "x", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"bazel-test bad flag":        {"bazel-test", "-bogus"},
 		"bazel-test without flags":   {"bazel-test"},
 		"bazel-test without outputs": {"bazel-test", "-test-bin", "x.test", "-mutants", mutantsFile},
