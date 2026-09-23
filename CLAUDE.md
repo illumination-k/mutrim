@@ -226,8 +226,10 @@ loading/analysis.
   main would otherwise shard, filter and report a second time.
 - Sharding via `shard_count` + `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` (`id % TOTAL == INDEX`).
 - Mutant IDs are content hashes (function name + AST path + operator), not positions, so the
-  runner can do incremental re-runs from the previous `report.json`. Weekly full run corrects
-  drift.
+  runner can do incremental re-runs from the previous `report.json`: a kill is copied forward
+  while its killers keep their `tests[].hash` (SHA-256 of the test function, `run
+  -test-srcs`), any other result while the reaching tests and their hashes are unchanged.
+  Weekly full run corrects drift (a helper a test calls is not hashed).
 - With `GOMUTANT_ID` unset, schemata source must behave identically to the original; keep a
   test that asserts this.
 - Several mutants can sit on one node (the two `assignop` mutants of `x += y`, every mutant

@@ -112,7 +112,13 @@ go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
 The schemata sources import `github.com/illumination-k/mutrim/mut`, so the target module
 needs mutrim as a dependency. `run` honors `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` and
 `TEST_UNDECLARED_OUTPUTS_DIR`, and `-previous report.json` copies earlier results forward
-so only new mutants execute.
+so only new mutants execute. With `-test-srcs` (the package's `_test.go` files;
+`-extra-test-srcs pkg=files` for an `-extra-test`) each test in `report.json` carries the
+SHA-256 of its function's source, and a result is copied forward only while its tests are
+unchanged: a KILLED / TIMEOUT while every test in `killed_by` still exists, reaches the mutant
+and has the same hash; any other result while the tests reaching the mutant and their hashes
+are the same, so a new or rewritten test gets its chance at a survivor. `mutation_test`
+passes its `srcs`.
 
 `run` first runs every top-level test on its own with `GOMUTANT_TRACE` set, which makes the
 `mut` runtime record the mutant sites the test reaches. Each mutant then runs only against

@@ -481,6 +481,9 @@ func TestCommandErrors(t *testing.T) {
 		"run bad confirm-kills":      {"run", "-confirm-kills", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad confirm-baseline":   {"run", "-confirm-baseline", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad extra-test":         {"run", "-extra-test", "x.test", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run bad extra-test-srcs":    {"run", "-extra-test-srcs", "x_test.go", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run orphan extra-test-srcs": {"run", "-extra-test-srcs", "p=x_test.go", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run missing test-srcs":      {"run", "-test-srcs", missing + "_test.go", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run threshold above one":    {"run", "-threshold", "80", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run negative threshold":     {"run", "-threshold-covered", "-0.5", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"bazel-test bad flag":        {"bazel-test", "-bogus"},
@@ -959,6 +962,9 @@ func TestRunExtraTestThenMinimize(t *testing.T) {
 	for _, tt := range bazelRep.Tests {
 		if tt.Pkg == appPkg {
 			appRows++
+			if tt.Hash == "" {
+				t.Errorf("bazel-test must hash app's test from the manifest's sources: %+v", tt)
+			}
 		}
 	}
 	if appRows != 1 {

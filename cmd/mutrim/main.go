@@ -270,7 +270,8 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	testBin := fs.String("test-bin", "", "test binary built from schemata sources (required)")
 	mutantsPath := fs.String("mutants", "", "mutants.json from gen -schemata (required)")
 	out := fs.String("out", "", "write report.json here (default: $TEST_UNDECLARED_OUTPUTS_DIR/report.json, else stdout)")
-	previous := fs.String("previous", "", "report.json of an earlier run; its results are copied forward")
+	previous := fs.String("previous", "", "report.json of an earlier run; a result is copied forward while the tests it was observed with are unchanged (see -test-srcs)")
+	testSrcs := fs.String("test-srcs", "", "comma-separated _test.go files of the package; each test's hash in report.json is read from them, so -previous re-executes the mutants whose killing or reaching tests changed")
 	inDiff := fs.String("in-diff", "", "unified diff (`git diff --merge-base main > pr.diff`); only the mutants on its added lines run, the rest are SKIPPED")
 	timeout := fs.Duration("timeout", 0, "per-mutant timeout, overriding the derived one (default: -timeout-factor × the durations of the tests reaching the mutant + -timeout-const, between 10s and -timeout-factor × the baseline run)")
 	timeoutFactor := fs.Float64("timeout-factor", runner.DefaultTimeoutFactor, "multiplier of the derived per-mutant timeout")
@@ -293,11 +294,27 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 		extra = append(extra, runner.Binary{Path: bin, Pkg: pkg, Dir: binDir})
 		return nil
 	})
+	extraSrcs := map[string][]string{}
+	fs.Func("extra-test-srcs", "`pkg=a_test.go,...`: the _test.go files of the -extra-test package pkg, as -test-srcs for its tests (repeatable)", func(v string) error {
+		pkg, files, ok := strings.Cut(v, "=")
+		if !ok || pkg == "" || files == "" {
+			return fmt.Errorf("want pkg=files, got %q", v)
+		}
+		extraSrcs[pkg] = append(extraSrcs[pkg], strings.Split(files, ",")...)
+		return nil
+	})
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *testBin == "" || *mutantsPath == "" {
 		return errors.New("run: -test-bin and -mutants are required")
+	}
+	for pkg, files := range extraSrcs {
+		i := slices.IndexFunc(extra, func(b runner.Binary) bool { return b.Pkg == pkg })
+		if i < 0 {
+			return fmt.Errorf("run: -extra-test-srcs %s: no -extra-test of that package", pkg)
+		}
+		extra[i].Srcs = files
 	}
 	th := runner.Threshold{Score: *threshold, Covered: *thresholdCovered}
 	if th.Score < 0 || th.Score > 1 || th.Covered < 0 || th.Covered > 1 {
@@ -314,6 +331,9 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	}
 	if *tests != "" {
 		opts.Tests = strings.Split(*tests, ",")
+	}
+	if *testSrcs != "" {
+		opts.TestSrcs = strings.Split(*testSrcs, ",")
 	}
 	if *previous != "" {
 		var err error
@@ -599,7 +619,7 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	testBin := fs.String("test-bin", "", "runfiles path of the schemata test binary (required)")
 	mutantsPath := fs.String("mutants", "", "runfiles path of mutants.json (required)")
 	var testSrcs []string
-	fs.Func("test-src", "runfiles path of a test source, scanned for the mutrim:keep tag (repeatable)", func(s string) error {
+	fs.Func("test-src", "runfiles path of a test source, scanned for the mutrim:keep tag and hashed for report.json (repeatable)", func(s string) error {
 		testSrcs = append(testSrcs, s)
 		return nil
 	})
@@ -635,6 +655,7 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if testSrcs, err = rlocations(rf, testSrcs); err != nil {
 		return err
 	}
+	allTestSrcs := testSrcs
 	if libSrcs, err = rlocations(rf, libSrcs); err != nil {
 		return err
 	}
@@ -645,11 +666,18 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 			return err
 		}
 		extraFlags = append(extraFlags, "-extra-test", extra)
-		testSrcs = append(testSrcs, srcs...)
+		if len(srcs) > 0 {
+			pkg, _, _ := strings.Cut(extra, "=")
+			extraFlags = append(extraFlags, "-extra-test-srcs", pkg+"="+strings.Join(srcs, ","))
+		}
+		allTestSrcs = append(allTestSrcs, srcs...)
 	}
 
 	rep := filepath.Join(out, "report.json")
 	runArgs := slices.Concat([]string{"run"}, runFlags, extraFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
+	if len(testSrcs) > 0 {
+		runArgs = append(runArgs, "-test-srcs", strings.Join(testSrcs, ","))
+	}
 	if diff := os.Getenv("MUTRIM_IN_DIFF"); diff != "" {
 		runArgs = append(runArgs, "-in-diff", diff)
 	}
@@ -664,7 +692,7 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	srcs := strings.Join(libSrcs, ",")
 	return errors.Join(
 		below,
-		run(ctx, []string{"minimize", "-mutants", mutants, "-srcs", strings.Join(testSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
+		run(ctx, []string{"minimize", "-mutants", mutants, "-srcs", strings.Join(allTestSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
 		run(ctx, []string{"report", "-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
 		run(ctx, []string{"report", "-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
 	)
