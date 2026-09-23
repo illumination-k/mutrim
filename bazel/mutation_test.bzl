@@ -575,10 +575,10 @@ def mutation_test(
                (["-count-suspect"] if count_suspect else []) +
                (["-jobs={}".format(jobs)] if jobs != None else []) +
                (["-min-timeout={}".format(min_timeout)] if min_timeout != None else []) +
-                (["-threshold={}".format(threshold)] if threshold != None else []) +
-                (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []) +
-                (["-sample={}".format(sample)] if sample != None else []) +
-                (["-seed={}".format(seed)] if seed != None else []),
+               (["-threshold={}".format(threshold)] if threshold != None else []) +
+               (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []) +
+               (["-sample={}".format(sample)] if sample != None else []) +
+               (["-seed={}".format(seed)] if seed != None else []),
         data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.
