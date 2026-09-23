@@ -65,14 +65,22 @@ func TestGenThenOverlay(t *testing.T) {
 func TestGenSchemataThenRun(t *testing.T) {
 	dir := t.TempDir()
 	mutantsPath := filepath.Join(dir, "mutants.json")
+	bin := filepath.Join(dir, "schemata.test")
 	var stdout, stderr bytes.Buffer
+	var (
+		mutants  []mutator.Mutant
+		report   runner.Report
+		args     []string
+		first    string
+		outDir   string
+		diffPath string
+	)
 	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
 		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("gen -o must not write to stdout: %s", stdout.String())
 	}
-	var mutants []mutator.Mutant
 	if err := readJSON(mutantsPath, &mutants); err != nil {
 		t.Fatal(err)
 	}
@@ -88,161 +96,171 @@ func TestGenSchemataThenRun(t *testing.T) {
 			t.Errorf("schemata source not under the package path: %s", mutated)
 		}
 	}
-
-	bin := filepath.Join(dir, "schemata.test")
 	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, schemataFixture) //nolint:gosec // test-controlled args
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test -c: %v\n%s", err, out)
 	}
 
+	// The env set here is set on the parent, not a subtest: a subtest's
+	// Setenv is undone when the subtest ends, and every phase below
+	// scopes itself to shard 1 and writes to the same outputs.
 	t.Setenv("TEST_TOTAL_SHARDS", "2")
 	t.Setenv("TEST_SHARD_INDEX", "1")
-	statusFile := filepath.Join(dir, "shard_status")
-	t.Setenv("TEST_SHARD_STATUS_FILE", statusFile)
-	stdout.Reset()
-	args := []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-timeout", "1s", "--", "-test.short"}
-	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
-		t.Fatalf("run: %v\n%s", err, stderr.String())
-	}
-	var report runner.Report
-	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-		t.Fatalf("run output is not JSON: %v\n%s", err, stdout.String())
-	}
-	if _, err := os.Stat(statusFile); err != nil {
-		t.Errorf("shard status file not touched: %v", err)
-	}
-	if n := len(report.Results); n == 0 || n >= len(mutants) {
-		t.Errorf("shard 1 of 2 ran %d of %d mutants", n, len(mutants))
-	}
-	if report.Totals.Killed == 0 || !strings.Contains(stderr.String(), "KILLED") {
-		t.Errorf("expected killed mutants and a log line per mutant:\n%s", stderr.String())
-	}
+	t.Setenv("TEST_SHARD_STATUS_FILE", filepath.Join(dir, "shard_status"))
+
+	t.Run("run", func(t *testing.T) {
+		stdout.Reset()
+		args = []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", schemataFixture, "-timeout", "1s", "--", "-test.short"}
+		if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("run: %v\n%s", err, stderr.String())
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+			t.Fatalf("run output is not JSON: %v\n%s", err, stdout.String())
+		}
+		if _, err := os.Stat(filepath.Join(dir, "shard_status")); err != nil {
+			t.Errorf("shard status file not touched: %v", err)
+		}
+		if n := len(report.Results); n == 0 || n >= len(mutants) {
+			t.Errorf("shard 1 of 2 ran %d of %d mutants", n, len(mutants))
+		}
+		if report.Totals.Killed == 0 || !strings.Contains(stderr.String(), "KILLED") {
+			t.Errorf("expected killed mutants and a log line per mutant:\n%s", stderr.String())
+		}
+	})
 
 	// Under Bazel the report goes to the undeclared outputs; with -previous
 	// every result is copied forward instead of executed.
-	outDir := filepath.Join(dir, "outputs")
+	outDir = filepath.Join(dir, "outputs")
 	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", outDir)
-	first := filepath.Join(dir, "first.json")
-	if err := writeJSON(first, nil, report); err != nil {
-		t.Fatal(err)
-	}
-	names := make([]string, len(report.Tests))
-	for i, tt := range report.Tests {
-		names[i] = tt.Name
-	}
-	stdout.Reset()
-	args = append(args[:len(args)-2], "-previous", first, "-tests", strings.Join(names, ","))
-	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
-		t.Fatalf("run -previous: %v\n%s", err, stderr.String())
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("report must go to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
-	}
-	var second runner.Report
-	if err := readJSON(filepath.Join(outDir, "report.json"), &second); err != nil {
-		t.Fatal(err)
-	}
-	if len(second.Results) != len(report.Results) {
-		t.Fatalf("second run has %d results, first %d", len(second.Results), len(report.Results))
-	}
-	if len(second.Tests) != len(names) {
-		t.Errorf("-tests named %d tests, %d ran", len(names), len(second.Tests))
-	}
-	for i, r := range second.Results {
-		if prev := report.Results[i]; r.MutantID != prev.MutantID || r.Status != prev.Status || r.DurationMS != prev.DurationMS {
-			t.Errorf("result not copied forward from -previous: %+v vs %+v", r, prev)
+
+	t.Run("previous", func(t *testing.T) {
+		first = filepath.Join(dir, "first.json")
+		if err := writeJSON(first, nil, report); err != nil {
+			t.Fatal(err)
 		}
-	}
+		names := make([]string, len(report.Tests))
+		for i, tt := range report.Tests {
+			names[i] = tt.Name
+		}
+		stdout.Reset()
+		args = append(args[:len(args)-2], "-previous", first, "-tests", strings.Join(names, ","))
+		if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("run -previous: %v\n%s", err, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("report must go to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
+		}
+		var second runner.Report
+		if err := readJSON(filepath.Join(outDir, "report.json"), &second); err != nil {
+			t.Fatal(err)
+		}
+		if len(second.Results) != len(report.Results) {
+			t.Fatalf("second run has %d results, first %d", len(second.Results), len(report.Results))
+		}
+		if len(second.Tests) != len(names) {
+			t.Errorf("-tests named %d tests, %d ran", len(names), len(second.Tests))
+		}
+		for i, r := range second.Results {
+			if prev := report.Results[i]; r.MutantID != prev.MutantID || r.Status != prev.Status || r.DurationMS != prev.DurationMS {
+				t.Errorf("result not copied forward from -previous: %+v vs %+v", r, prev)
+			}
+		}
+	})
 
 	// -in-diff scopes the run to the lines a diff adds, before -previous is
 	// consulted: a diff that touches no source of the package leaves every
 	// mutant SKIPPED and the score at zero.
-	diffPath := filepath.Join(dir, "pr.diff")
-	diff := "--- a/other/file.go\n+++ b/other/file.go\n@@ -1,1 +1,2 @@\n package other\n+var x = 1\n"
-	if err := os.WriteFile(diffPath, []byte(diff), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	scoped := filepath.Join(dir, "scoped.json")
-	stdout.Reset()
-	args = append(args[:len(args):len(args)], "-in-diff", diffPath, "-out", scoped)
-	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
-		t.Fatalf("run -in-diff: %v\n%s", err, stderr.String())
-	}
-	var third runner.Report
-	if err := readJSON(scoped, &third); err != nil {
-		t.Fatal(err)
-	}
-	if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) ||
-		third.Totals.Score != 0 || third.Totals.Coverage != 0 {
-		t.Errorf("an unrelated diff must skip every mutant: %+v", third.Totals)
-	}
+	t.Run("diff", func(t *testing.T) {
+		diffPath = filepath.Join(dir, "pr.diff")
+		diff := "--- a/other/file.go\n+++ b/other/file.go\n@@ -1,1 +1,2 @@\n package other\n+var x = 1\n"
+		if err := os.WriteFile(diffPath, []byte(diff), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		scoped := filepath.Join(dir, "scoped.json")
+		stdout.Reset()
+		args = append(args[:len(args):len(args)], "-in-diff", diffPath, "-out", scoped)
+		if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("run -in-diff: %v\n%s", err, stderr.String())
+		}
+		var third runner.Report
+		if err := readJSON(scoped, &third); err != nil {
+			t.Fatal(err)
+		}
+		if len(third.Results) != len(report.Results) || third.Totals.Skipped != len(third.Results) ||
+			third.Totals.Score != 0 || third.Totals.Coverage != 0 {
+			t.Errorf("an unrelated diff must skip every mutant: %+v", third.Totals)
+		}
+	})
 
 	// bazel-test, the test executable of mutation_test, resolves runfiles
 	// paths, reads MUTRIM_IN_DIFF, and writes every output next to
 	// report.json.
-	runfilesDir := filepath.Join(dir, "runfiles")
-	if err := os.MkdirAll(filepath.Join(runfilesDir, "_main"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	libSrc, err := filepath.Abs(filepath.Join(schemataFixture, "schemata.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{bin, mutantsPath, libSrc} {
-		if err := os.Symlink(f, filepath.Join(runfilesDir, "_main", filepath.Base(f))); err != nil {
+	t.Setenv("RUNFILES_DIR", filepath.Join(dir, "runfiles"))
+	t.Setenv("MUTRIM_IN_DIFF", diffPath)
+	t.Run("bazel-test", func(t *testing.T) {
+		if err := os.MkdirAll(filepath.Join(dir, "runfiles", "_main"), 0o750); err != nil {
 			t.Fatal(err)
 		}
-	}
-	t.Setenv("RUNFILES_DIR", runfilesDir)
-	t.Setenv("MUTRIM_IN_DIFF", diffPath)
-	stdout.Reset()
-	args = []string{"bazel-test", "-test-bin", "_main/schemata.test", "-mutants", "_main/mutants.json", "_main/schemata.go", "--", "-timeout", "1s"}
-	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
-		t.Fatalf("bazel-test: %v\n%s", err, stderr.String())
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("bazel-test must write to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
-	}
-	var fourth runner.Report
-	if err := readJSON(filepath.Join(outDir, "report.json"), &fourth); err != nil {
-		t.Fatal(err)
-	}
-	if fourth.Totals.Skipped != len(fourth.Results) {
-		t.Errorf("bazel-test must pass MUTRIM_IN_DIFF to run: %+v", fourth.Totals)
-	}
-	for _, f := range []string{"minimize.json", "mutation-report.json", "mutation-report.html"} {
-		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
-			t.Error(err)
+		libSrc, err := filepath.Abs(filepath.Join(schemataFixture, "schemata.go"))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		for _, f := range []string{bin, mutantsPath, libSrc} {
+			if err := os.Symlink(f, filepath.Join(dir, "runfiles", "_main", filepath.Base(f))); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stdout.Reset()
+		args = []string{"bazel-test", "-test-bin", "_main/schemata.test", "-mutants", "_main/mutants.json", "_main/schemata.go", "--", "-timeout", "1s"}
+		if err := run(t.Context(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("bazel-test: %v\n%s", err, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("bazel-test must write to TEST_UNDECLARED_OUTPUTS_DIR, not stdout: %s", stdout.String())
+		}
+		var fourth runner.Report
+		if err := readJSON(filepath.Join(outDir, "report.json"), &fourth); err != nil {
+			t.Fatal(err)
+		}
+		if fourth.Totals.Skipped != len(fourth.Results) {
+			t.Errorf("bazel-test must pass MUTRIM_IN_DIFF to run: %+v", fourth.Totals)
+		}
+		for _, f := range []string{"minimize.json", "mutation-report.json", "mutation-report.html"} {
+			if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
+				t.Error(err)
+			}
+		}
+	})
 
 	// A score below -threshold fails bazel-test, but only after every
 	// output is written; nothing to score (every mutant SKIPPED) passes.
-	if report.Totals.Score == 1 {
-		t.Fatalf("the fixture must leave a survivor to test -threshold: %+v", report.Totals)
-	}
-	for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
-		if err := os.Remove(filepath.Join(outDir, f)); err != nil {
-			t.Fatal(err)
+	t.Run("threshold", func(t *testing.T) {
+		if report.Totals.Score == 1 {
+			t.Fatalf("the fixture must leave a survivor to test -threshold: %+v", report.Totals)
 		}
-	}
-	if err := run(t.Context(), append(args, "-threshold", "1"), &stdout, &stderr); err != nil {
-		t.Errorf("a run with nothing to score must pass -threshold: %v", err)
-	}
-	t.Setenv("MUTRIM_IN_DIFF", "")
-	args = append(args, "-previous", first, "-threshold", "1")
-	below := run(t.Context(), args, &stdout, &stderr)
-	if below == nil || !strings.Contains(below.Error(), "is below the threshold 1") {
-		t.Errorf("bazel-test -threshold 1 = %v, want a threshold failure", below)
-	}
-	for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
-		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
-			t.Error(err)
+		for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
+			if err := os.Remove(filepath.Join(outDir, f)); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
+		if err := run(t.Context(), append(args, "-threshold", "1"), &stdout, &stderr); err != nil {
+			t.Errorf("a run with nothing to score must pass -threshold: %v", err)
+		}
+		t.Setenv("MUTRIM_IN_DIFF", "")
+		args = append(args, "-previous", first, "-threshold", "1")
+		below := run(t.Context(), args, &stdout, &stderr)
+		if below == nil || !strings.Contains(below.Error(), "is below the threshold 1") {
+			t.Errorf("bazel-test -threshold 1 = %v, want a threshold failure", below)
+		}
+		for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
+			if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
+				t.Error(err)
+			}
+		}
+	})
 }
 
 // Bazel mode: gen type-checks the given files from export data instead of

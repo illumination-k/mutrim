@@ -437,48 +437,10 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		}
 		return rowName{name: test, local: test}
 	}
-	// A flaky test's observations are not trustworthy, so it is left out
-	// of the matrix entirely: it covers nothing, is never selected and is
-	// never called redundant, and is reported on its own instead. Its
-	// suspicious pairs are out already, since the runner keeps them out of
-	// killed_by. A RUN_ERROR mutant is no requirement either: no test
-	// failed, so it keeps no test alive, and its function is a weak spot
-	// only through its other mutants.
-	flaky := map[string]bool{}
-	for i, r := range reports {
-		for _, t := range r.Tests {
-			if t.Flaky {
-				flaky[row(i, t.Name).name] = true
-			}
-		}
-	}
-	durations := map[string]int64{}
-	reached := map[string]map[string]bool{}
-	local := map[string]string{}
-	kills := criteria.Mutation{}
-	for i, r := range reports {
-		for _, t := range r.Tests {
-			n := row(i, t.Name)
-			if flaky[n.name] {
-				continue
-			}
-			local[n.name] = n.local
-			durations[n.name] = max(durations[n.name], t.DurationMS)
-			if reached[n.name] == nil {
-				reached[n.name] = map[string]bool{}
-			}
-			for _, id := range t.Sites {
-				reached[n.name][id] = true
-			}
-		}
-		for _, res := range r.Results {
-			for _, t := range res.KilledBy {
-				if n := row(i, t).name; !flaky[n] {
-					kills[n] = append(kills[n], res.MutantID)
-				}
-			}
-		}
-	}
+	// A flaky test's observations are not trustworthy, so flakyOf and
+	// inputsOf leave it out of the matrix entirely; see their comments.
+	flaky := flakyOf(reports, row)
+	durations, reached, local, kills := inputsOf(reports, row, flaky)
 	sites := criteria.SiteCoverage{}
 	for name, ids := range reached {
 		sites[name] = slices.Sorted(maps.Keys(ids))
@@ -552,6 +514,60 @@ func rowNames(reports []*runner.Report, qualify bool) []map[string]rowName {
 		}
 	}
 	return out
+}
+
+// flakyOf returns the set of matrix rows that are flaky in any report.
+// A flaky test's observations are not trustworthy, so it is left out of
+// the matrix entirely: it covers nothing, is never selected and is never
+// called redundant, and is reported on its own instead. Its suspicious
+// pairs are out already, since the runner keeps them out of killed_by.
+func flakyOf(reports []*runner.Report, row func(i int, test string) rowName) map[string]bool {
+	flaky := map[string]bool{}
+	for i, r := range reports {
+		for _, t := range r.Tests {
+			if t.Flaky {
+				flaky[row(i, t.Name).name] = true
+			}
+		}
+	}
+	return flaky
+}
+
+// inputsOf collects the inputs of the minimize matrix from the reports,
+// skipping every flaky row: the running time and reached sites per test,
+// the name the protection rules match, and the mutants each test kills.
+// A RUN_ERROR mutant is no requirement either: no test failed, so it
+// keeps no test alive, and its function is a weak spot only through its
+// other mutants.
+func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, flaky map[string]bool) (durations map[string]int64, reached map[string]map[string]bool, local map[string]string, kills criteria.Mutation) {
+	durations = map[string]int64{}
+	reached = map[string]map[string]bool{}
+	local = map[string]string{}
+	kills = criteria.Mutation{}
+	for i, r := range reports {
+		for _, t := range r.Tests {
+			n := row(i, t.Name)
+			if flaky[n.name] {
+				continue
+			}
+			local[n.name] = n.local
+			durations[n.name] = max(durations[n.name], t.DurationMS)
+			if reached[n.name] == nil {
+				reached[n.name] = map[string]bool{}
+			}
+			for _, id := range t.Sites {
+				reached[n.name][id] = true
+			}
+		}
+		for _, res := range r.Results {
+			for _, t := range res.KilledBy {
+				if n := row(i, t).name; !flaky[n] {
+					kills[n] = append(kills[n], res.MutantID)
+				}
+			}
+		}
+	}
+	return durations, reached, local, kills
 }
 
 // runReport is `mutrim report`: it renders the reports of a run (the
@@ -679,7 +695,10 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 
 	rep := filepath.Join(out, "report.json")
-	runArgs := slices.Concat([]string{"run"}, runFlags, extraFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
+	// The run, minimize and report handlers are called directly, not
+	// through run: bazel-test is itself dispatched by run, and a call back
+	// into it would recurse.
+	runArgs := slices.Concat(runFlags, extraFlags, []string{"-test-bin", bin, "-mutants", mutants, "-out", rep})
 	if len(testSrcs) > 0 {
 		runArgs = append(runArgs, "-test-srcs", strings.Join(testSrcs, ","))
 	}
@@ -688,7 +707,7 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	// A score below the threshold still wrote report.json, so the other
 	// outputs are written before the test fails.
-	below := run(ctx, runArgs, stdout, stderr)
+	below := runRun(ctx, runArgs, stdout, stderr)
 	if below != nil && !errors.As(below, new(thresholdError)) {
 		return below
 	}
@@ -697,9 +716,9 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	srcs := strings.Join(libSrcs, ",")
 	return errors.Join(
 		below,
-		run(ctx, []string{"minimize", "-mutants", mutants, "-srcs", strings.Join(allTestSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
-		run(ctx, []string{"report", "-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
-		run(ctx, []string{"report", "-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
+		runMinimize([]string{"-mutants", mutants, "-srcs", strings.Join(allTestSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
+		runReport([]string{"-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
+		runReport([]string{"-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
 	)
 }
 
