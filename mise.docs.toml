@@ -1,0 +1,18 @@
+[tools]
+node = "22.23.2"
+pnpm = "10.33.0"
+
+[tasks."docs:dev"]
+description = "Serve the documentation site with live reload"
+dir = "docs"
+run = ["pnpm install --frozen-lockfile", "pnpm dev"]
+
+[tasks."test:docs"]
+description = "Build the documentation site"
+dir = "docs"
+env = { ASTRO_TELEMETRY_DISABLED = "1" }
+run = ["pnpm install --frozen-lockfile", "pnpm build"]
+
+[tasks."ci:docs"]
+description = "Run docs tasks"
+depends = ["test:docs"]

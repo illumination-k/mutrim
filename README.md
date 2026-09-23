@@ -3,8 +3,8 @@
 Bazel-native mutation testing for Go that also uses the results to minimize test suites.
 Pre-alpha.
 
-**Documentation: <https://illumination-k.github.io/mutrim/>** (sources in [`docs/`](docs/), an
-Astro Starlight site).
+**Documentation: <https://illumination-k.github.io/mutrim/>** (English / 日本語; sources in
+[`docs/`](docs/), an Astro Starlight site).
 
 ## Usage (non-Bazel dev loop)
 
@@ -45,11 +45,12 @@ See [Development](https://illumination-k.github.io/mutrim/reference/development/
 
 ## Documentation site
 
+The site is written in English and Japanese (`docs/src/content/docs/` and its `ja/` mirror).
+
 ```bash
-cd docs
-npm ci
-npm run dev    # http://localhost:4321/mutrim/
+MISE_ENV=docs mise install
+MISE_ENV=docs mise run docs:dev    # http://localhost:4321/mutrim/
 ```
 
-Pages live in `docs/src/content/docs/`; `.github/workflows/docs.yml` builds the site on every
-change and publishes it to GitHub Pages from `main`.
+`.github/workflows/docs.yml` builds it (`mise run ci:docs`) on every change and publishes it to
+GitHub Pages from `main`.

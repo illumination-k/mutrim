@@ -7,6 +7,11 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "mutrim",
+      defaultLocale: "root",
+      locales: {
+        root: { label: "English", lang: "en" },
+        ja: { label: "日本語", lang: "ja" },
+      },
       description: "Bazel-native mutation testing for Go that also minimizes test suites.",
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/illumination-k/mutrim" },
@@ -17,6 +22,7 @@ export default defineConfig({
       sidebar: [
         {
           label: "Guides",
+          translations: { ja: "ガイド" },
           items: [
             "guides/getting-started",
             "guides/inline-directives",
@@ -31,7 +37,11 @@ export default defineConfig({
             "guides/reporting",
           ],
         },
-        { label: "Reference", items: [{ autogenerate: { directory: "reference" } }] },
+        {
+          label: "Reference",
+          translations: { ja: "リファレンス" },
+          items: [{ autogenerate: { directory: "reference" } }],
+        },
       ],
     }),
   ],

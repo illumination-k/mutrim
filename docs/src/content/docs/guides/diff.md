@@ -17,7 +17,7 @@ them (they exercise the change), and every mutant those tests reach, in whicheve
 the package. Most commit-relevant mutants lie outside the changed lines (Ojdanić et al.,
 TOSEM 2023), so the lines alone miss them; `-diff-expand=false` keeps the lines alone.
 
-Every other mutant is reported `SKIPPED`: it is not executed and counts towards no score,
+Every other mutant is reported `SKIPPED`: it is not executed and counts towards no score.
 
 Only the new side of the diff is read. A removed line holds no mutant, and a context line
 is code the diff did not change, so a mutant is kept when its span overlaps an added line;
