@@ -11,9 +11,11 @@ import (
 // Return replaces the results of a return statement: each result on its own
 // with its zero value and with one other value of its type (`return x, err`
 // becomes `return x, nil`, the untested error path), and every result at
-// once with its zero value. A result that already has the value is skipped,
-// as are bare returns, `return f()` with a multi-value f, and result types
-// without a spellable zero value (structs, arrays, type parameters).
+// once with its zero value. A result replaced by nil (an error, pointer,
+// map, slice, func or interface) is of ClassErrPath. A result that already
+// has the value is skipped, as are bare returns, `return f()` with a
+// multi-value f, and result types without a spellable zero value (structs,
+// arrays, type parameters).
 //
 // The rewrite is well-typed by construction; if it leaves an import or
 // variable unused, the build fails and the runner counts the mutant as not
@@ -52,8 +54,11 @@ func (Return) Sites(ctx *Context, n ast.Node) []Site {
 			}
 			mutated := slices.Clone(ret.Results)
 			mutated[i] = v
-			sites = append(sites, returnSite(ret, mutated,
-				"result "+strconv.Itoa(i+1)+" -> "+types.ExprString(v)))
+			s := returnSite(ret, mutated, "result "+strconv.Itoa(i+1)+" -> "+types.ExprString(v))
+			if types.ExprString(v) == "nil" {
+				s.Class = ClassErrPath // `return x, err` -> `return x, nil`, a nil pointer or map
+			}
+			sites = append(sites, s)
 		}
 	}
 	// With a single result the all-zero rewrite is the per-result one.

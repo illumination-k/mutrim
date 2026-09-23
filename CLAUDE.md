@@ -115,6 +115,7 @@ run on the result.
   | `string`      | `"s"` → `""`, `""` → `"mutrim"`; a printf format is ignored as `printf-format`                                                                                 |
   | `composite`   | a slice or map literal loses its elements                                                                                                                      |
   | `method`      | same-signature library swaps (`strings.HasPrefix` → `HasSuffix`, `math.Floor` → `Ceil`)                                                                        |
+  | `errpath`     | `fmt.Errorf` `%w` → `%v` / → `err`, `errors.Is`/`As` → `true`/`false`, `panic(x)` removed (not a terminating one), `recover()` → `nil`                         |
   | `call`        | a non-void call → the zero value of its result (**opt-in**)                                                                                                    |
   | `return`      | each result → its zero value and one other value of its type; all results at once                                                                              |
   | `concurrency` | defer removed / run at once, `go f()` → `f()`, send removed, chan buffer, select case never ready, atomic add/store → plain, `once.Do(f)` → `f()` (**opt-in**) |
@@ -128,6 +129,11 @@ run on the result.
   `mutation_test`, and `run -confirm-kills`); `gen -operators` (the `operators` attribute of
   `mutation_test`) selects a subset or adds an opt-in one, e.g. `default,-constant` or
   `default,call`.
+- Every mutant has a class (`mutator.Class*`, `class` in `mutants.json` and `report.json`):
+  its operator's (`errpath`, `concurrency`, else `default`) unless the site sets
+  `Site.Class`, as a `return` result → `nil` and a forced nil check (`condition`) do for
+  `errpath` (Lima et al. 2021: error-handling code is the least tested). `Totals.Classes`
+  scores each class on its own.
 - Site selection is separate from operator selection: `gen -match` (function names),
   `-files` / `-exclude-files` (globs and regexps over the file path), `-exclude-re`
   (over `func operator: description`) and `-arid` (globs over the callee, which cover the

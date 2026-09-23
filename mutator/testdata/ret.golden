@@ -4,17 +4,17 @@ ret.go:13:29 Str return "result 1 -> \"\"" viable=true | func Str(s string) stri
 ret.go:13:29 Str return "result 1 -> \"mutrim\"" viable=true | func Str(s string) string { return "mutrim" }
 ret.go:14:29 Bool return "result 1 -> false" viable=true | func Bool(b bool) bool    { return false }
 ret.go:14:29 Bool return "result 1 -> true" viable=true | func Bool(b bool) bool    { return true }
-ret.go:15:29 Ptr return "result 1 -> nil" viable=true | func Ptr(p *int) *int     { return nil }
-ret.go:16:29 Slice return "result 1 -> nil" viable=true | func Slice(s []int) []int { return nil }
-ret.go:20:48 Err return "result 1 -> nil" viable=true | func Err() error                             { return nil }
+ret.go:15:29 Ptr return "result 1 -> nil" viable=true class=errpath | func Ptr(p *int) *int     { return nil }
+ret.go:16:29 Slice return "result 1 -> nil" viable=true class=errpath | func Slice(s []int) []int { return nil }
+ret.go:20:48 Err return "result 1 -> nil" viable=true class=errpath | func Err() error                             { return nil }
 ret.go:20:66 Err string "\"x\" -> \"\"" viable=true | func Err() error                             { return errors.New("") }
 ret.go:21:48 Named return "result 1 -> 0" viable=true | func Named(x ID) ID                          { return 0 }
 ret.go:21:48 Named return "result 1 -> 1" viable=true | func Named(x ID) ID                          { return 1 }
 ret.go:22:48 Multi return "result 1 -> 0" viable=true | func Multi(x int) (int, error)               { return 0, nil }
 ret.go:22:48 Multi return "result 1 -> 1" viable=true | func Multi(x int) (int, error)               { return 1, nil }
 ret.go:22:48 Multi return "return -> zero values" viable=true | func Multi(x int) (int, error)               { return 0, nil }
-ret.go:23:48 Fn return "result 1 -> nil" viable=true | func Fn() func()                             { return nil }
-ret.go:24:48 Unsafe return "result 1 -> nil" viable=true | func Unsafe(p unsafe.Pointer) unsafe.Pointer { return nil }
+ret.go:23:48 Fn return "result 1 -> nil" viable=true class=errpath | func Fn() func()                             { return nil }
+ret.go:24:48 Unsafe return "result 1 -> nil" viable=true class=errpath | func Unsafe(p unsafe.Pointer) unsafe.Pointer { return nil }
 ret.go:30:36 AlreadyZero return "result 1 -> 1" viable=true | func AlreadyZero() (int, error)  { return 1, nil }
 ret.go:30:43 AlreadyZero constant "0 -> 1" viable=true | func AlreadyZero() (int, error)  { return 1, nil }
 ret.go:31:36 EmptyStr return "result 1 -> \"mutrim\"" viable=true | func EmptyStr() string           { return "mutrim" }

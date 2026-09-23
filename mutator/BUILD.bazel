@@ -17,6 +17,7 @@ go_library(
         "ops_call.go",
         "ops_concurrency.go",
         "ops_const.go",
+        "ops_errpath.go",
         "ops_literal.go",
         "ops_loop.go",
         "ops_return.go",

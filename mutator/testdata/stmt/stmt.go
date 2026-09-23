@@ -16,7 +16,7 @@ func Step(x int) int {
 	}
 	count() // not void: no site
 	if x == 0 {
-		panic("zero") // panic is kept: the function must still terminate
+		panic("zero") // no voidcall site; errpath removes it, since the if does not terminate the function
 	}
 	return x
 }

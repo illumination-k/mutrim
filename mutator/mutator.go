@@ -47,6 +47,9 @@ type Mutant struct {
 	// applies. Like an ignored mutant it is neither embedded nor
 	// executed, and it counts towards no score.
 	Equivalent string `json:"equivalent,omitempty"`
+	// Class groups the mutant for the per-class score of report.json:
+	// ClassErrPath, ClassConcurrency or ClassDefault.
+	Class string `json:"class"`
 
 	site site
 }
@@ -67,6 +70,16 @@ func (s site) position() token.Pos {
 		return s.Pos
 	}
 	return s.Node.Pos()
+}
+
+func (s site) class() string {
+	if s.Class != "" {
+		return s.Class
+	}
+	if c, ok := operatorClass[s.Operator]; ok {
+		return c
+	}
+	return ClassDefault
 }
 
 func (s site) end() token.Pos {
@@ -121,6 +134,7 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			Operator:    s.Operator,
 			Description: s.Description,
 			Viable:      true,
+			Class:       s.class(),
 			site:        s,
 		}
 		// A directive states the author's intent at the site, so it is

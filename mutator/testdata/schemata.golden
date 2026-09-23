@@ -504,9 +504,9 @@ func SkipNamedBoolOperands(a, b Flag) Flag {
 func SkipRecover(f func()) (caught bool) {
 	defer func() {
 		if mut.Active("2506888744c4656f") {
-			_ = caught || mut.Not("03e96412b880e329", recover() != nil)
+			_ = caught || mut.Not("03e96412b880e329", mut.Const("de2bcdfc13c799a8", recover(), nil) != nil)
 		} else {
-			caught = caught || mut.Not("03e96412b880e329", recover() != nil)
+			caught = caught || mut.Not("03e96412b880e329", mut.Const("de2bcdfc13c799a8", recover(), nil) != nil)
 		}
 	}()
 	if !mut.Active("3a8a0d011d82b906") {

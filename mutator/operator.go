@@ -41,7 +41,13 @@ func (c *Context) parent(n int) ast.Node {
 // existing type information. It is the local pre-filter for expression
 // mutants: no whole-package re-check is needed.
 func (c *Context) CheckExpr(e ast.Expr) error {
-	return types.CheckExpr(c.Fset, c.Pkg, e.Pos(), e, &types.Info{})
+	return c.checkExprAt(e, e.Pos())
+}
+
+// checkExprAt is CheckExpr in the scope at pos, for a rewrite whose new
+// nodes have no position of their own.
+func (c *Context) checkExprAt(e ast.Expr, pos token.Pos) error {
+	return types.CheckExpr(c.Fset, c.Pkg, pos, e, &types.Info{})
 }
 
 // isBool reports whether e has type bool or untyped bool. Defined boolean
@@ -140,6 +146,9 @@ type Site struct {
 	// Equivalent names the rule proving that the rewrite computes what
 	// the original does (see equivalent.go); empty when none does.
 	Equivalent string
+	// Class overrides the operator's class (see ClassDefault) for a site
+	// on the error path; empty keeps the operator's.
+	Class string
 }
 
 // Operators selects operators by name from a comma-separated spec: a name
@@ -206,6 +215,7 @@ var AllOperators = []Operator{
 	String{},
 	Composite{},
 	Method{},
+	ErrPath{},
 	Call{},
 	Concurrency{},
 	Return{},

@@ -30,16 +30,17 @@ calls.go:34:21 Widths constant "0 -> 1" viable=true | out := make([]int, 1, len(
 calls.go:35:23 Widths loopcond "range -> no iteration" viable=true | for _, x := range xs {
 calls.go:36:3 Widths assign "store -> dropped" viable=true | _ = append(out, int(int64(width(x))))
 calls.go:36:31 Widths call "call -> 0" viable=true | out = append(out, int(int64(func() int {
-calls.go:38:2 Widths return "result 1 -> nil" viable=true | return nil
+calls.go:38:2 Widths return "result 1 -> nil" viable=true class=errpath | return nil
 calls.go:41:69 Split string "\"=\" -> \"\"" viable=true | func Split(s string) (string, string, bool) { return strings.Cut(s, "") }
 calls.go:48:2 Deferred return "result 1 -> 0" viable=true | return 0
 calls.go:48:2 Deferred return "result 1 -> 1" viable=true | return 1
 calls.go:48:9 Deferred call "call -> 0" viable=true | return func() int {
 calls.go:52:17 Recovered assign "store -> dropped" viable=true | defer func() { _ = boxed(recover()) }()
+calls.go:52:27 Recovered errpath "recover() -> nil" viable=true class=errpath | defer func() {
 calls.go:53:8 Recovered string "\"boom\" -> \"\"" viable=true | panic("")
 calls.go:57:5 boxed negation "cond -> !(cond)" viable=true | if !(v == nil) {
-calls.go:57:5 boxed condition "cond -> true" viable=true | if true {
-calls.go:57:5 boxed condition "cond -> false" viable=true | if false {
+calls.go:57:5 boxed condition "cond -> true" viable=true class=errpath | if true {
+calls.go:57:5 boxed condition "cond -> false" viable=true class=errpath | if false {
 calls.go:57:14 boxed branch "if body -> empty" viable=true | if v == nil {
 calls.go:57:7 boxed relational "== -> !=" viable=true | if v != nil {
 calls.go:58:3 boxed return "result 1 -> 1" viable=true | return 1

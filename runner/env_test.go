@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -158,14 +159,45 @@ func TestTotals(t *testing.T) {
 		{Status: NotViable},
 	}}
 	r.total()
-	want := Totals{Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6}
-	if r.Totals != want {
+	want := Totals{
+		Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6,
+		Classes: map[string]ClassTotals{"default": {Mutants: 8, Killed: 3, Survived: 2, Score: 0.6}},
+	}
+	if !reflect.DeepEqual(r.Totals, want) {
 		t.Errorf("totals = %+v, want %+v", r.Totals, want)
 	}
 	r = &Report{Results: []Result{{Status: NotViable}}}
 	r.total()
 	if r.Totals.Score != 0 || r.Totals.Mutants != 1 {
 		t.Errorf("totals of nothing viable = %+v", r.Totals)
+	}
+}
+
+// The class breakdown scores each mutant class on its own, as the
+// overall score does: suspect equivalents only when counted.
+func TestTotalsByClass(t *testing.T) {
+	r := &Report{Results: []Result{
+		{Status: Killed, Class: "errpath"},
+		{Status: Lived, Class: "errpath"},
+		{Status: NoCoverage, Class: "errpath"},
+		{Status: SuspectEquivalent, Class: "errpath"},
+		{Status: Timeout, Class: "concurrency"},
+		{Status: Ignored, Class: "concurrency"},
+		{Status: Lived},
+	}}
+	r.total()
+	want := map[string]ClassTotals{
+		"errpath":     {Mutants: 4, Killed: 1, Survived: 2, Score: 1.0 / 3},
+		"concurrency": {Mutants: 2, Killed: 1, Score: 1},
+		"default":     {Mutants: 1, Survived: 1},
+	}
+	if !reflect.DeepEqual(r.Totals.Classes, want) {
+		t.Errorf("classes = %+v, want %+v", r.Totals.Classes, want)
+	}
+	r.CountSuspect = true
+	r.total()
+	if got := r.Totals.Classes["errpath"]; got.Survived != 3 || got.Score != 0.25 {
+		t.Errorf("errpath with CountSuspect = %+v", got)
 	}
 }
 

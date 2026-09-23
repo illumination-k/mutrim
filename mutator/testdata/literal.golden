@@ -22,20 +22,20 @@ literal.go:34:2 Flags return "result 2 -> true" viable=true | return true, true
 literal.go:34:2 Flags return "return -> zero values" viable=true | return false, false
 literal.go:34:9 Flags boolean "true -> false" viable=true | return false, false
 literal.go:34:15 Flags boolean "false -> true" viable=true | return true, true
-literal.go:41:2 Table return "result 1 -> nil" viable=true | return nil
+literal.go:41:2 Table return "result 1 -> nil" viable=true class=errpath | return nil
 literal.go:41:9 Table composite "elements -> none" viable=true | return map[string][]int{}
 literal.go:41:26 Table string "\"a\" -> \"\"" viable=true | return map[string][]int{"": {1, 2}}
 literal.go:41:31 Table composite "elements -> none" viable=true | return map[string][]int{"a": {}}
 literal.go:41:32 Table constant "1 -> 2" viable=true | return map[string][]int{"a": {2, 2}}
 literal.go:41:35 Table constant "2 -> 3" viable=true | return map[string][]int{"a": {1, 3}}
-literal.go:44:22 Defined return "result 1 -> nil" viable=true | func Defined() IDs { return nil }
+literal.go:44:22 Defined return "result 1 -> nil" viable=true class=errpath | func Defined() IDs { return nil }
 literal.go:44:29 Defined composite "elements -> none" viable=true | func Defined() IDs { return IDs{} }
 literal.go:44:33 Defined constant "1 -> 2" viable=true | func Defined() IDs { return IDs{2, 2} }
 literal.go:44:36 Defined constant "2 -> 3" viable=true | func Defined() IDs { return IDs{1, 3} }
-literal.go:47:2 Structs return "result 1 -> nil" viable=true | return nil
+literal.go:47:2 Structs return "result 1 -> nil" viable=true class=errpath | return nil
 literal.go:47:9 Structs composite "elements -> none" viable=true | return []struct{ N int }{}
 literal.go:47:31 Structs constant "1 -> 2" viable=true | return []struct{ N int }{{N: 2}}
-printf.go:12:2 Errors return "result 1 -> nil" viable=true | return nil
+printf.go:12:2 Errors return "result 1 -> nil" viable=true class=errpath | return nil
 printf.go:12:9 Errors composite "elements -> none" viable=true | return []error{}
 printf.go:13:14 Errors string "\"boom\" -> \"\"" viable=true ignored=printf-format("") | fmt.Errorf(""),
 printf.go:14:20 Errors arithmetic "+ -> -" viable=false | fmt.Errorf(("n=" - "%d"), n),
@@ -45,4 +45,4 @@ printf.go:15:14 Errors string "\"%s\" -> \"\"" viable=true ignored=printf-format
 printf.go:15:20 Errors string "\"arg\" -> \"\"" viable=true | fmt.Errorf("%s", ""),
 printf.go:16:14 Errors string "\"plain\" -> \"\"" viable=true | errors.New(""),
 printf.go:17:8 Errors string "\"wrapped\" -> \"\"" viable=true ignored=printf-format("") | logf(""),
-printf.go:21:47 logf return "result 1 -> nil" viable=true | func logf(format string, args ...any) error { return nil }
+printf.go:21:47 logf return "result 1 -> nil" viable=true class=errpath | func logf(format string, args ...any) error { return nil }

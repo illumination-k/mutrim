@@ -20,7 +20,7 @@ constant.go:13:35 Named return "result 1 -> 0" viable=true | func Named(l Level)
 constant.go:13:35 Named return "result 1 -> 1" viable=true | func Named(l Level) Level       { return 1 }
 constant.go:13:44 Named arithmetic "+ -> -" viable=true | func Named(l Level) Level       { return l - 1 }
 constant.go:13:46 Named constant "1 -> 2" viable=true | func Named(l Level) Level       { return l + 2 }
-constant.go:14:35 Untyped return "result 1 -> nil" viable=true | func Untyped() any              { return nil }
+constant.go:14:35 Untyped return "result 1 -> nil" viable=true class=errpath | func Untyped() any              { return nil }
 constant.go:14:42 Untyped constant "7 -> 8" viable=true | func Untyped() any              { return 8 }
 constant.go:15:35 Wait return "result 1 -> false" viable=true | func Wait(d time.Duration) bool { return false }
 constant.go:15:35 Wait return "result 1 -> true" viable=true | func Wait(d time.Duration) bool { return true }

@@ -153,6 +153,7 @@ schemata.go:105 SkipNamedBoolOperands "&& -> ||" NOT_VIABLE
 schemata.go:108 SkipRecover "store -> dropped" KILLED by TestSkipped
 schemata.go:108 SkipRecover "|| -> &&" NOT_VIABLE
 schemata.go:108 SkipRecover "!= -> ==" KILLED by TestSkipped
+schemata.go:108 SkipRecover "recover() -> nil" KILLED by TestSkipped
 schemata.go:109 SkipRecover "call -> removed" KILLED by TestSkipped
 schemata.go:110 SkipRecover "result 1 -> true" KILLED by TestSkipped
 schemata.go:110 SkipRecover "false -> true" KILLED by TestSkipped

@@ -271,11 +271,16 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 			}
 			logger.Printf("%s %s %s:%d %s %q (%dms, timeout %s)%s", m.ID, r.Status, m.File, m.Line, m.Func, m.Description, r.DurationMS, timeout, suspicion(r.SuspiciousBy))
 		}
+		r.Class = m.Class
 		report.Results = append(report.Results, r)
 	}
 	report.total()
 	if o.InDiff != nil {
 		logger.Printf("%d of %d mutants skipped: not in the diff", report.Totals.Skipped, report.Totals.Mutants)
+	}
+	for _, class := range slices.Sorted(maps.Keys(report.Totals.Classes)) {
+		c := report.Totals.Classes[class]
+		logger.Printf("%s: %.0f%% killed (%d of %d scored)", class, 100*c.Score, c.Killed, c.Killed+c.Survived)
 	}
 	if report.Totals.Suspicious > 0 {
 		logger.Printf("%d of %d mutants have an unconfirmed kill; see suspicious_by", report.Totals.Suspicious, report.Totals.Mutants)
