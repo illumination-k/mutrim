@@ -10,7 +10,7 @@ Follow the YANGI, SOLID, DRY, and KISS principles in all code and documentation.
 ## Development Process
 
 Run `mise install` first to install the toolchain and project tools. Task files are selected
-by `MISE_ENV` (`base`, `golang`, `bazel`; `.claude/settings.json` enables all of them), so the
+by `MISE_ENV` (`base`, `golang`, `bazel`, `docs`; `.claude/settings.json` enables all of them), so the
 tasks below cover Go and Bazel alike.
 
 At the end of a session, run `mise run ci` and make sure it passes. Use the narrower tasks while iterating:
@@ -300,6 +300,9 @@ exported JSON matrix (`-matrix`) + an external MIP solver.
 
 ### Conventions
 
+- User documentation is the Astro Starlight site in `docs/` (pnpm, `MISE_ENV=docs`), in English
+  (`docs/src/content/docs/`) and Japanese (its `ja/` mirror; update both together), published to GitHub Pages by `.github/workflows/docs.yml`; keep
+  `README.md` to a short overview that links there.
 - Generated artifacts (`mutants.json`, `report.json`, `mutation-report.json`, coverage
   matrices) are never committed.
 - Output on stdout is JSON only; logs go to stderr.

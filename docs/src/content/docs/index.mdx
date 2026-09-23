@@ -1,0 +1,39 @@
+---
+title: mutrim
+description: Bazel-native mutation testing for Go that also minimizes test suites.
+template: splash
+hero:
+  tagline: Bazel-native mutation testing for Go that also uses the results to minimize test suites.
+  actions:
+    - text: Get started
+      link: guides/getting-started/
+      icon: right-arrow
+    - text: Bazel
+      link: guides/bazel/
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+mutrim (mutation + trim) builds a test × requirement bit matrix, where requirements are the
+union of the mutant sites a test reaches and the mutants it kills, and runs a weighted greedy
+set cover over it to report redundant tests and functions no test can kill. Pre-alpha.
+
+<CardGrid>
+  <Card title="Type-checked mutants" icon="approve-check">
+    Every expression mutant is checked with `go/types` in its original scope before it is
+    ever built, so non-compiling mutants are rare.
+  </Card>
+  <Card title="One build per package" icon="rocket">
+    Mutant schemata embed every mutant into one source, selected at run time by
+    `GOMUTANT_ID`; a `mutation_test` target shards like any Bazel test.
+  </Card>
+  <Card title="Per-test kill matrix" icon="list-format">
+    Each test is traced once, each mutant runs only against the tests reaching it, and
+    `report.json` records who killed what.
+  </Card>
+  <Card title="Test suite minimization" icon="setting">
+    `mutrim minimize` reports redundant, essential and protected tests plus weak spots, and
+    never deletes anything.
+  </Card>
+</CardGrid>
