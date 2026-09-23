@@ -1,8 +1,11 @@
-# Implementation plan
+---
+title: Implementation plan
+description: "The phased plan mutrim was built by."
+---
 
 This is the initial plan for building mutrim from the current scaffold. It orders the work so
 that every phase leaves `mise run ci` green and produces something testable on its own.
-Architecture and conventions are fixed in [CLAUDE.md](../CLAUDE.md); this document only
+Architecture and conventions are fixed in [CLAUDE.md](https://github.com/illumination-k/mutrim/blob/main/CLAUDE.md); this document only
 decides _what to build in which order_ and what "done" means for each step.
 
 ## Scope of the first release

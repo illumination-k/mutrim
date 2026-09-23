@@ -300,6 +300,9 @@ exported JSON matrix (`-matrix`) + an external MIP solver.
 
 ### Conventions
 
+- User documentation is the Astro Starlight site in `docs/` (pages under
+  `docs/src/content/docs/`), published to GitHub Pages by `.github/workflows/docs.yml`; keep
+  `README.md` to a short overview that links there.
 - Generated artifacts (`mutants.json`, `report.json`, `mutation-report.json`, coverage
   matrices) are never committed.
 - Output on stdout is JSON only; logs go to stderr.
