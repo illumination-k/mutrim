@@ -217,6 +217,31 @@ func TestGenSchemataThenRun(t *testing.T) {
 			t.Error(err)
 		}
 	}
+
+	// A score below -threshold fails bazel-test, but only after every
+	// output is written; nothing to score (every mutant SKIPPED) passes.
+	if report.Totals.Score == 1 {
+		t.Fatalf("the fixture must leave a survivor to test -threshold: %+v", report.Totals)
+	}
+	for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
+		if err := os.Remove(filepath.Join(outDir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := run(t.Context(), append(args, "-threshold", "1"), &stdout, &stderr); err != nil {
+		t.Errorf("a run with nothing to score must pass -threshold: %v", err)
+	}
+	t.Setenv("MUTRIM_IN_DIFF", "")
+	args = append(args, "-previous", first, "-threshold", "1")
+	below := run(t.Context(), args, &stdout, &stderr)
+	if below == nil || !strings.Contains(below.Error(), "is below the threshold 1") {
+		t.Errorf("bazel-test -threshold 1 = %v, want a threshold failure", below)
+	}
+	for _, f := range []string{"report.json", "minimize.json", "mutation-report.json", "mutation-report.html"} {
+		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
+			t.Error(err)
+		}
+	}
 }
 
 // Bazel mode: gen type-checks the given files from export data instead of
@@ -456,6 +481,8 @@ func TestCommandErrors(t *testing.T) {
 		"run bad confirm-kills":      {"run", "-confirm-kills", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad confirm-baseline":   {"run", "-confirm-baseline", "many", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"run bad extra-test":         {"run", "-extra-test", "x.test", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run threshold above one":    {"run", "-threshold", "80", "-test-bin", "x.test", "-mutants", mutantsFile},
+		"run negative threshold":     {"run", "-threshold-covered", "-0.5", "-test-bin", "x.test", "-mutants", mutantsFile},
 		"bazel-test bad flag":        {"bazel-test", "-bogus"},
 		"bazel-test without flags":   {"bazel-test"},
 		"bazel-test without outputs": {"bazel-test", "-test-bin", "x.test", "-mutants", mutantsFile},

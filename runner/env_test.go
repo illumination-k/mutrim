@@ -3,6 +3,7 @@ package runner
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -160,7 +161,7 @@ func TestTotals(t *testing.T) {
 	}}
 	r.total()
 	want := Totals{
-		Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6,
+		Mutants: 8, Killed: 2, Lived: 1, Timeout: 1, RunError: 1, NoCoverage: 1, NotViable: 2, Score: 0.6, CoveredScore: 0.75,
 		Classes: map[string]ClassTotals{"default": {Mutants: 8, Killed: 3, Survived: 2, Score: 0.6}},
 	}
 	if !reflect.DeepEqual(r.Totals, want) {
@@ -170,6 +171,56 @@ func TestTotals(t *testing.T) {
 	r.total()
 	if r.Totals.Score != 0 || r.Totals.Mutants != 1 {
 		t.Errorf("totals of nothing viable = %+v", r.Totals)
+	}
+}
+
+// A threshold fails a run whose score, or covered score, is below it,
+// and passes one with nothing to score.
+func TestThreshold(t *testing.T) {
+	r := &Report{Results: []Result{{Status: Killed}, {Status: Lived}, {Status: NoCoverage}, {Status: NoCoverage}}}
+	r.total()
+	cases := []struct {
+		th   Threshold
+		want []string
+	}{
+		{Threshold{}, nil},
+		{Threshold{Score: 0.25}, nil},
+		{Threshold{Score: 0.3}, []string{"score 0.2500 (1 of 4 killed)"}},
+		{Threshold{Covered: 0.5}, nil},
+		{Threshold{Covered: 0.6}, []string{"covered score 0.5000 (1 of 2 covered killed)"}},
+		{Threshold{Score: 1, Covered: 1}, []string{"score 0.2500", "covered score 0.5000"}},
+	}
+	for _, c := range cases {
+		err := c.th.Check(r)
+		if (err != nil) != (c.want != nil) {
+			t.Errorf("%+v: err = %v", c.th, err)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%+v: %v does not mention %q", c.th, err, w)
+			}
+		}
+	}
+
+	// Suspects join both denominators only when counted.
+	r = &Report{Results: []Result{{Status: Killed}, {Status: SuspectEquivalent}}}
+	r.total()
+	if err := (Threshold{Score: 1, Covered: 1}).Check(r); err != nil {
+		t.Errorf("uncounted suspect failed the threshold: %v", err)
+	}
+	r.CountSuspect = true
+	r.total()
+	if r.Totals.CoveredScore != 0.5 || (Threshold{Covered: 1}).Check(r) == nil {
+		t.Errorf("counted suspect: %+v", r.Totals)
+	}
+
+	// An empty shard, or a run whose every mutant was skipped, passes.
+	for _, r := range []*Report{{}, {Results: []Result{{Status: Skipped}, {Status: NotViable}}}} {
+		r.total()
+		if err := (Threshold{Score: 1, Covered: 1}).Check(r); err != nil {
+			t.Errorf("nothing to score failed the threshold: %v", err)
+		}
 	}
 }
 

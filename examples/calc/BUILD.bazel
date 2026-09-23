@@ -22,4 +22,7 @@ mutation_test(
     extra_tests = ["//examples/stats:stats_test"],
     shard_count = 2,
     subtests = True,
+    # A gate well under the current score, so the target fails on a
+    # regression rather than on the next added mutant.
+    threshold = 0.5,
 )
