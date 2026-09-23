@@ -27,6 +27,8 @@ mutrim report -format github -max-per-line 1 -mutants mutants.json report.json
 `Survived`)。各ミュータントはそれに到達するテスト (`coveredBy`) と、それを kill したテスト
 (`killedBy`) を持つので、ビューアはミュータントごとに kill 行列を表示する。どのレポートにも現れない
 ミュータントは除外されるので、1 つのシャードのレポートはそのシャードをレンダリングする。
+`mutants.json` のミュータントの `diff` は、Stryker レポートでは説明の後に、GitHub アノテーション
+ではメッセージの後に続く。
 
 `-format html` と `-format github` は JSON ではなく独自のテキストを書き出す。GitHub はステップの
 stdout からアノテーションを読み、HTML ビューは unpkg からビューアを読み込むので、表示時に

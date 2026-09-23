@@ -29,6 +29,21 @@ go test -overlay overlay.json ./path/to/pkg
 
 `go test` が失敗すれば、そのミュータントは kill されたことになる。
 
+`mutants.json` の各ミュータントは書き換えの unified diff である `diff` を持つので、生き残りを
+読むレビュアーも、それを kill するテストを書く LLM も、ミュータントを適用し直す必要がない。
+`-diff-context stmt` (デフォルト) は囲む文を、変更の前後それぞれ最大 3 行まで表示し、
+`-diff-context func` は囲む関数全体を表示し、`-diff-context none` は diff を記録しない。
+無視されたミュータントと viable でないミュータント、および元と同じに印字される書き換え
+(`if true` → `if true`) は diff を持たない。
+
+```diff
+--- pkg/counter.go
++++ pkg/counter.go
+@@ -22,1 +22,1 @@
+-	c.n++
++	c.n--
+```
+
 `-match <re>` は、`func` フィールドの `(*T).Name` 形式の名前がマッチする関数だけを残す。
 `-files <glob,...>` はいずれかの glob にマッチするファイルだけを残し、`-exclude-files <re,...>`
 はいずれかの正規表現にマッチするファイルを除外する (どちらも、報告されたままのパス、作業

@@ -166,6 +166,12 @@ and never committed (see Conventions).
   lookup, `panic("unreachable")`, `init` and `String`/`Error`/`GoString` bodies) are on
   unless `-no-arid`; `-arid` adds callee globs. Callees resolve through `types.Info.Uses`
   and match with and without the package path. `report -max-per-line` caps annotations.
+- Every kept, viable mutant records `diff` in `mutants.json` (`gen -diff-context stmt|func|none`,
+  `Options.Diff`): a unified diff of the enclosing statement or function, which `report`
+  appends to the Stryker description and the GitHub annotation. Printing the whole file per
+  mutant would dominate `Generate`, so only the enclosing function is printed and spliced
+  into the file printed once; a function that prints differently alone (gofmt aligns
+  consecutive one-line functions) falls back to the whole file.
 - Inline directives are those flags' in-source counterpart, for a single site or function:
   `//mutrim:disable [op,...] [reason]` (until `//mutrim:enable`), `//mutrim:disable-next-line`
   and `//mutrim:disable-func` in a doc comment. They are read from the raw comment lines,

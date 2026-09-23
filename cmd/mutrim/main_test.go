@@ -387,6 +387,42 @@ func TestGenOperators(t *testing.T) {
 	}
 }
 
+// gen records a stmt diff per mutant by default, the enclosing function
+// with -diff-context func, none with -diff-context none, and rejects any
+// other context.
+func TestGenDiffContext(t *testing.T) {
+	gen := func(t *testing.T, args ...string) []mutator.Mutant {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if err := run(t.Context(), append(append([]string{"gen", "-operators", "relational"}, args...), fixture), &stdout, &stderr); err != nil {
+			t.Fatalf("gen %v: %v\n%s", args, err, stderr.String())
+		}
+		var mutants []mutator.Mutant
+		if err := json.Unmarshal(stdout.Bytes(), &mutants); err != nil {
+			t.Fatal(err)
+		}
+		if len(mutants) == 0 {
+			t.Fatal("no mutants")
+		}
+		return mutants
+	}
+	stmt, fn := gen(t), gen(t, "-diff-context", "func")
+	for i, m := range stmt {
+		if !strings.Contains(m.Diff, "\n@@ -") || len(fn[i].Diff) <= len(m.Diff) {
+			t.Errorf("%s %q: stmt diff\n%s\nfunc diff\n%s", m.Func, m.Description, m.Diff, fn[i].Diff)
+		}
+	}
+	for _, m := range gen(t, "-diff-context", "none") {
+		if m.Diff != "" {
+			t.Errorf("-diff-context none recorded %q", m.Diff)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-diff-context", "file", fixture}, &stdout, &stderr); err == nil {
+		t.Error("-diff-context file: expected an error")
+	}
+}
+
 // The gen filters reject sites without dropping them: a filtered mutant
 // stays in mutants.json, marked with the rule that ignored it.
 func TestGenFilters(t *testing.T) {

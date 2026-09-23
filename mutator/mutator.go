@@ -50,6 +50,10 @@ type Mutant struct {
 	// Class groups the mutant for the per-class score of report.json:
 	// ClassErrPath, ClassConcurrency or ClassDefault.
 	Class string `json:"class"`
+	// Diff is the unified diff of the rewrite (Options.Diff), so a
+	// reviewer or a test-writing LLM need not re-apply the mutant. It is
+	// omitted for an ignored or not viable mutant.
+	Diff string `json:"diff,omitempty"`
 
 	site site
 }
@@ -58,8 +62,12 @@ type Mutant struct {
 type site struct {
 	Site
 	file     *ast.File
+	fn       *ast.FuncDecl
 	funcName string
 	astPath  string
+	// stmt is the innermost statement enclosing the site other than a
+	// block, the span of a stmt diff; nil when there is none.
+	stmt ast.Stmt
 	// arid marks a site on or inside a node the Filter's arid rules
 	// cover; only the walk knows the enclosing nodes.
 	arid bool
@@ -99,6 +107,8 @@ type Options struct {
 	// Filter selects the sites to mutate; the zero Filter keeps all of
 	// them. Rejected sites are still reported, marked Ignored.
 	Filter Filter
+	// Diff records Mutant.Diff with this much context; DiffNone skips it.
+	Diff DiffContext
 }
 
 // Generate enumerates the mutants of pkg.
@@ -119,6 +129,7 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 		sites = append(sites, collectSites(f, ctx, ops, opts.Filter)...)
 	}
 
+	d := &differ{fset: pkg.Fset, ctx: opts.Diff, files: map[*ast.File][]string{}, funcs: map[*ast.FuncDecl][]string{}}
 	mutants := make([]Mutant, 0, len(sites))
 	for _, s := range sites {
 		pos, end := pkg.Fset.Position(s.position()), pkg.Fset.Position(s.end())
@@ -153,6 +164,9 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 			s.Apply()
 			m.Viable = s.Check() == nil
 			s.Undo()
+		}
+		if opts.Diff != DiffNone && m.Ignored == "" && m.Viable {
+			m.Diff = d.diff(m.File, s)
 		}
 		mutants = append(mutants, m)
 	}
@@ -189,6 +203,7 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator, filter Filter) []si
 			ctx:      ctx,
 			ops:      ops,
 			file:     f,
+			fn:       fn,
 			funcName: funcName(fn),
 			arid:     filter.aridNodes(ctx.Info, fn),
 			sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
@@ -204,6 +219,7 @@ type walker struct {
 	ctx      *Context
 	ops      []Operator
 	file     *ast.File
+	fn       *ast.FuncDecl
 	funcName string
 	// arid holds the arid nodes of the function; aridDepth counts the
 	// enclosing ones, so that every site under an arid node is ignored.
@@ -234,8 +250,10 @@ func (w *walker) visit(n ast.Node) bool {
 			w.out = append(w.out, site{
 				Site:     s,
 				file:     w.file,
+				fn:       w.fn,
 				funcName: w.funcName,
 				astPath:  astPath,
+				stmt:     w.stmt(),
 				// A site may sit on a child of n, like the body a branch
 				// site empties, so its own node is looked up too.
 				arid: w.aridDepth > 0 || w.arid[s.Node],
@@ -243,6 +261,19 @@ func (w *walker) visit(n ast.Node) bool {
 		}
 	}
 	return true
+}
+
+// stmt returns the innermost statement on the walk's path other than a
+// block, or nil.
+func (w *walker) stmt() ast.Stmt {
+	for i := len(w.nodes) - 1; i >= 0; i-- {
+		if s, ok := w.nodes[i].(ast.Stmt); ok {
+			if _, block := s.(*ast.BlockStmt); !block {
+				return s
+			}
+		}
+	}
+	return nil
 }
 
 func (w *walker) push(n ast.Node) {
