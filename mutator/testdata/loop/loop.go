@@ -65,6 +65,57 @@ func Forever(stop func() bool) int {
 	}
 }
 
+// continue -> break is not a site in an unconditional for that no break
+// leaves: the loop is the terminating statement of the function.
+func Retry(next func() (int, bool)) int {
+	for {
+		v, ok := next()
+		if !ok {
+			return 0
+		}
+		if v < 0 {
+			continue
+		}
+		if v > 10 {
+			return v
+		}
+	}
+}
+
+// It is one where a conditional for, or a break, already needs the return.
+func RetryBreaks(next func() (int, bool)) int {
+	for {
+		v, ok := next()
+		if !ok {
+			break
+		}
+		if v < 0 {
+			continue
+		}
+	}
+	return 0
+}
+
+func RetryLabeled(next func() (int, bool)) int {
+outer:
+	for {
+		for {
+			v, ok := next()
+			if !ok {
+				break outer
+			}
+			if v < 0 {
+				continue outer
+			}
+			break
+		}
+		if _, ok := next(); ok {
+			continue
+		}
+	}
+	return 0
+}
+
 // A range loop breaks before its first iteration instead.
 func Sum(xs []int) int {
 	total := 0
