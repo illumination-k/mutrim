@@ -124,12 +124,23 @@ func TestGenerateGolden(t *testing.T) {
 	}
 }
 
+// Load reports an unknown package, a package with type errors, a bad
+// working directory and a pattern matching nothing, rather than returning
+// an empty package list or a nil error.
 func TestLoadErrors(t *testing.T) {
-	if _, err := mutator.Load(".", "./testdata/does-not-exist"); err == nil {
-		t.Error("unknown package: expected an error")
-	}
-	if _, err := mutator.Load(".", "./testdata/broken"); err == nil {
-		t.Error("package with type errors: expected an error")
+	for _, tt := range []struct {
+		name    string
+		dir     string
+		pattern string
+	}{
+		{"unknown package", ".", "./testdata/does-not-exist"},
+		{"package with type errors", ".", "./testdata/broken"},
+		{"missing working directory", filepath.Join(t.TempDir(), "missing"), "."},
+		{"pattern matching no package", ".", "./testdata/does-not-exist/..."},
+	} {
+		if _, err := mutator.Load(tt.dir, tt.pattern); err == nil {
+			t.Errorf("%s: expected an error", tt.name)
+		}
 	}
 }
 
@@ -265,17 +276,6 @@ func goTest(t *testing.T, args ...string) ([]byte, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "go", append(append([]string{"test"}, args...), "./testdata/killable")...) //nolint:gosec // test-controlled args
 	return cmd.CombinedOutput()
-}
-
-// Load reports a bad working directory and a pattern that matches nothing
-// rather than returning an empty package list.
-func TestLoadNoPackages(t *testing.T) {
-	if _, err := mutator.Load(filepath.Join(t.TempDir(), "missing"), "."); err == nil {
-		t.Error("missing directory: expected an error")
-	}
-	if _, err := mutator.Load(".", "./testdata/does-not-exist/..."); err == nil {
-		t.Error("pattern matching no package: expected an error")
-	}
 }
 
 // A custom operator table is lowered like the built-in ones as long as a

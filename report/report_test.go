@@ -97,43 +97,35 @@ func TestToStryker(t *testing.T) {
 	}
 }
 
-// A mutant a diff left out is Ignored in the schema, the status for a
-// mutant deliberately kept out of the score, and says why. It is not a
-// survivor either, so it is not annotated.
-func TestToStrykerSkipped(t *testing.T) {
-	ms := mutants()
-	r := &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.Skipped}}}
-	s := report.ToStryker(ms, []*runner.Report{r}, nil)
-	got := s.Files["p/a.go"].Mutants[0]
-	if got.Status != report.Ignored || got.StatusReason != "not in the diff" || got.TestsCompleted != nil {
-		t.Errorf("skipped mutant = %+v, want Ignored, never run, with its reason", got)
+// A mutant a diff left out is Ignored in the schema, a RUN_ERROR a
+// RuntimeError: both stay out of the score — one was never run, the
+// other died from infrastructure — and neither is a survivor, so
+// neither is annotated.
+func TestToStrykerNotScored(t *testing.T) {
+	tests := []struct {
+		name         string
+		r            *runner.Report
+		wantStatus   report.Status
+		wantReason   string
+		wantDuration int64
+	}{
+		{"Skipped", &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.Skipped}}}, report.Ignored, "not in the diff", 0},
+		{"RunError", &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.RunError, DurationMS: 4}}}, report.RuntimeError, "", 4},
 	}
-	var buf bytes.Buffer
-	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}, 0); err != nil {
-		t.Fatal(err)
-	}
-	if buf.Len() != 0 {
-		t.Errorf("a skipped mutant must not be annotated: %s", buf.String())
-	}
-}
-
-// A RUN_ERROR is a RuntimeError in the schema, which keeps it out of the
-// score. It is no survivor — the run died from infrastructure — so it
-// is not annotated either.
-func TestToStrykerRunError(t *testing.T) {
-	ms := mutants()
-	r := &runner.Report{Pkg: "p", Results: []runner.Result{{MutantID: "1", Status: runner.RunError, DurationMS: 4}}}
-	s := report.ToStryker(ms, []*runner.Report{r}, nil)
-	got := s.Files["p/a.go"].Mutants[0]
-	if got.Status != report.RuntimeError || got.TestsCompleted != nil || got.Duration != 4 {
-		t.Errorf("run error mutant = %+v, want RuntimeError, never run", got)
-	}
-	var buf bytes.Buffer
-	if err := report.WriteAnnotations(&buf, ms, []*runner.Report{r}, 0); err != nil {
-		t.Fatal(err)
-	}
-	if buf.Len() != 0 {
-		t.Errorf("a run error mutant must not be annotated: %s", buf.String())
+	for _, tt := range tests {
+		ms := mutants()
+		s := report.ToStryker(ms, []*runner.Report{tt.r}, nil)
+		got := s.Files["p/a.go"].Mutants[0]
+		if got.Status != tt.wantStatus || got.StatusReason != tt.wantReason || got.TestsCompleted != nil || got.Duration != tt.wantDuration {
+			t.Errorf("%s mutant = %+v, want %v, never run", tt.name, got, tt.wantStatus)
+		}
+		var buf bytes.Buffer
+		if err := report.WriteAnnotations(&buf, ms, []*runner.Report{tt.r}, 0); err != nil {
+			t.Fatal(err)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("a %s mutant must not be annotated: %s", tt.name, buf.String())
+		}
 	}
 }
 
