@@ -370,6 +370,7 @@ mutation_test(
     name = "mutant_calc",
     srcs = ["calc_test.go"],
     embed = [":calc"],
+    embedsrcs = ["testdata/golden.txt"],   # optional; files the tests' //go:embed name
     operators = ["default", "-constant"],  # optional; see `mutrim gen -operators`
     match = "^Compute",                    # optional; the gen filters, per attribute
     exclude_files = ["_gen\\.go$"],
@@ -401,8 +402,10 @@ its dependencies, so no `go` command runs inside the sandbox. `extra_tests` name
 target must be visible to the `mutation_test`'s package, and `race` cannot be set with it yet. Passing
 `--test_env=MUTRIM_IN_DIFF=$PWD/pr.diff` scopes the run to a diff, as above.
 
-Not supported yet: cgo packages and `//go:embed` directives in the library under test (the
-schemata sources live in a generated directory). `examples/` dogfoods the macro; run
+`//go:embed` works on both sides: the library's `embedsrcs` come with `embed` (rules_go
+resolves the patterns against the embedded files, wherever the schemata sources live), and
+the tests' are passed as `embedsrcs`, as to `go_test`. Not supported yet: cgo packages.
+`examples/` dogfoods the macro; run
 `bazel test //...` here to see it work.
 
 ## Development

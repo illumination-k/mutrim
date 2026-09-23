@@ -236,7 +236,7 @@ at runtime via `GOMUTANT_ID`. One build per package; target count = packages × 
 Do **not** expand one `go_test` per mutant — tens of thousands of targets break Bazel
 loading/analysis.
 
-- `mutation_test(name, srcs, embed, deps, shard_count)` mirrors the package's `go_test`:
+- `mutation_test(name, srcs, embed, deps, embedsrcs, shard_count)` mirrors the package's `go_test`:
   `mutrim_schemata` lowers the embedded library (one `MutrimGen` action) and provides it as a
   `GoInfo` with the same import path; a `go_test` embeds it (the identity check); a test rule
   whose executable is `mutrim` itself (`mutrim bazel-test`, no shell) re-execs that binary per
