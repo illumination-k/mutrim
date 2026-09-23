@@ -41,7 +41,12 @@ Tracing and the mutants' runs execute `-jobs` test processes at once (default GO
 results keep the order of `mutants.json` whatever order the runs finish in.
 
 `minimize` composes that matrix (reached sites weighted 1, kills weighted 5, per millisecond
-of test time; `-w-site` / `-w-kill`) and runs a greedy set cover, then drops every selected
+of test time; `-w-site` / `-w-kill`) and runs a greedy set cover over it. The kill requirements
+are the dominator mutants only (Ammann–Delamaro–Offutt; Kurtz et al.): a mutant every killer
+of another kills too is subsumed and dropped, and mutants with the same killers are one
+requirement, so a test killing every variant of one `if` is not over-rewarded. `totals`
+counts the `killed` mutants, the `dominators` among them, the `survived` ones and
+`dominator_score` = dominators / (dominators + survived). The cover then drops every selected
 test whose requirements the other selected tests satisfy between them. `selected` lists the
 tests kept with their gain, the essential ones first: a test that satisfies a requirement no
 other test in the whole suite does is `essential` (Harrold–Gupta–Soffa; Chen & Lau) and comes
@@ -53,7 +58,8 @@ matching `-keep` (default `^TestRegression_`) or tagged `//mutrim:keep` in their
 (`-srcs` names the `_test.go` files or directories to scan) are always kept; `-keep` sees the
 full `TestX/case` name of a subtest row, and a tag on the parent keeps every one of its
 subtests; with qualified rows both match the name within its package. `-matrix` exports
-the composed test × requirement matrix as JSON for an exact solver. The shards of one package
+the composed test × requirement matrix as JSON for an exact solver, with every killed mutant
+instead of the dominators under `-raw-matrix`. The shards of one package
 can be passed together, and so can the reports of several packages: each bare test name is
 then qualified with its report's package, so a test is one row wherever it appears — the
 tests of `app` that ran against `pkg`'s mutants with `-extra-test` and against `app`'s own

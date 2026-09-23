@@ -390,20 +390,40 @@ type thresholdError struct{ error }
 // minimizeOutput is the JSON of `mutrim minimize`.
 type minimizeOutput struct {
 	minimize.Result
-	WeakSpots []runner.Spot `json:"weak_spots"`
+	Totals    minimizeTotals `json:"totals"`
+	WeakSpots []runner.Spot  `json:"weak_spots"`
 	// Flaky lists the tests `run -confirm-baseline` found unreliable.
 	// They take no part in the cover, so they are neither selected nor
 	// called redundant; deciding about them needs the flakiness fixed first.
 	Flaky []string `json:"flaky_tests"`
 }
 
+// minimizeTotals counts the kill requirements before and after the
+// subsumed mutants are dropped (criteria.Mutation.Dominators).
+type minimizeTotals struct {
+	// Killed counts the mutants some test kills.
+	Killed int `json:"killed"`
+	// Dominators counts the killed mutants no other one subsumes, a
+	// class of mutants with one kill set counting once.
+	Dominators int `json:"dominators"`
+	// Survived counts the mutants the reports score as survivors.
+	Survived int `json:"survived"`
+	// DominatorScore is dominators / (dominators + survived): the score
+	// with each survivor its own dominator, so the trivial variants of a
+	// site a test kills together no longer inflate it.
+	DominatorScore float64 `json:"dominator_score"`
+}
+
 // runMinimize is `mutrim minimize`: it composes the site-coverage and
 // kill matrices of the given reports, runs the weighted greedy set cover,
-// and reports. Nothing is deleted. A row is one test wherever it appears:
-// the shards of a package share their rows, and so do the reports of
-// several packages once each row is qualified by its package (see
-// rowNames), so a test of package b that `run -extra-test` ran against
-// package a's mutants is one row with the sites and kills of both.
+// and reports. The kill requirements are the dominator mutants only
+// (criteria.Mutation.Dominators); -raw-matrix exports every killed mutant
+// instead, for an exact solver to choose. Nothing is deleted. A row is
+// one test wherever it appears: the shards of a package share their rows,
+// and so do the reports of several packages once each row is qualified by
+// its package (see rowNames), so a test of package b that `run
+// -extra-test` ran against package a's mutants is one row with the sites
+// and kills of both.
 func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("minimize", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -415,6 +435,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	wSite := fs.Float64("w-site", 1, "weight of a reached mutant site")
 	wKill := fs.Float64("w-kill", 5, "weight of a killed mutant")
 	matrixPath := fs.String("matrix", "", "also write the composed test × requirement matrix here, for an exact solver")
+	rawMatrix := fs.Bool("raw-matrix", false, "write every killed mutant to -matrix, not the dominator mutants the cover uses")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -453,12 +474,20 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	for name, ids := range reached {
 		sites[name] = slices.Sorted(maps.Keys(ids))
 	}
-	matrix := criteria.Compose(durations,
-		criteria.Weighted{Criterion: sites, Weight: *wSite},
-		criteria.Weighted{Criterion: kills, Weight: *wKill},
-	)
+	dominators := kills.Dominators()
+	compose := func(kills criteria.Mutation) *criteria.Matrix {
+		return criteria.Compose(durations,
+			criteria.Weighted{Criterion: sites, Weight: *wSite},
+			criteria.Weighted{Criterion: kills, Weight: *wKill},
+		)
+	}
+	matrix := compose(dominators)
 	if *matrixPath != "" {
-		if err := writeJSON(*matrixPath, nil, matrix); err != nil {
+		export := matrix
+		if *rawMatrix {
+			export = compose(kills)
+		}
+		if err := writeJSON(*matrixPath, nil, export); err != nil {
 			return err
 		}
 	}
@@ -485,6 +514,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	minimize.Exclusives(matrix, &res)
 	result := minimizeOutput{
 		Result:    res,
+		Totals:    totalsOf(reports, kills, dominators),
 		WeakSpots: []runner.Spot{},
 		Flaky:     slices.Sorted(maps.Keys(flaky)),
 	}
@@ -496,6 +526,25 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		result.WeakSpots = runner.WeakSpots(mutants, reports...)
 	}
 	return writeJSON(*out, stdout, result)
+}
+
+// totalsOf counts the killed mutants, the dominators among them and the
+// survivors of the reports, each mutant once however many reports carry it.
+func totalsOf(reports []*runner.Report, kills, dominators criteria.Mutation) minimizeTotals {
+	killed := kills.Mutants()
+	survived := map[string]bool{}
+	for _, r := range reports {
+		for _, res := range r.Results {
+			if r.Survived(res.Status) {
+				survived[res.MutantID] = true
+			}
+		}
+	}
+	t := minimizeTotals{Killed: len(killed), Dominators: len(dominators.Mutants()), Survived: len(survived)}
+	if t.Dominators+t.Survived > 0 {
+		t.DominatorScore = float64(t.Dominators) / float64(t.Dominators+t.Survived)
+	}
+	return t
 }
 
 // rowName is a row of the minimize matrix: its name there, and its name
