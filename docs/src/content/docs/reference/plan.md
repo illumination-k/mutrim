@@ -249,7 +249,7 @@ Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
 Done: the schemata fixture has a redundant test, a `TestRegression_*` test and a tagged test;
 the runner golden shows complete `killed_by` lists and `NO_COVERAGE` for the untested
 function, and the CLI test checks the minimize verdict end to end. `criteria` and `minimize`
-run `mutation_test` on themselves under Bazel, next to `examples/`.
+run `mutation_test` on themselves under Bazel, next to `examples/`. Tag `v0.2.0`.
 
 ## Testing approach
 
@@ -270,6 +270,5 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 
 ## Immediate next steps
 
-1. Tag `v0.2.0` once the Bazel workflow is green on `main`.
-2. Merge shard reports inside the Bazel test tree (a `mutrim_minimize` rule over the shards'
+1. Merge shard reports inside the Bazel test tree (a `mutrim_minimize` rule over the shards'
    outputs) instead of asking the user to pass them together.

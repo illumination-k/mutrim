@@ -245,7 +245,7 @@ defs.bzl, MODULE.bazel
 完了: schemata フィクスチャは冗長なテスト、`TestRegression_*` テスト、タグ付きテストを持つ。
 runner のゴールデンは完全な `killed_by` リストと、テストされていない関数に対する `NO_COVERAGE`
 を示し、CLI テストは minimize の判定をエンドツーエンドで確認する。`criteria` と `minimize` は
-Bazel 下で `examples/` と並んで自身に `mutation_test` を実行する。
+Bazel 下で `examples/` と並んで自身に `mutation_test` を実行する。`v0.2.0` をタグ付けした。
 
 ## テスト方針
 
@@ -267,6 +267,5 @@ go-mutesting (MIT) からは何もコピーしていない。
 
 ## 直近の次のステップ
 
-1. `main` で Bazel ワークフローがグリーンになったら `v0.2.0` をタグ付けする。
-2. ユーザーにシャードのレポートをまとめて渡してもらう代わりに、Bazel のテストツリー内でそれらを
+1. ユーザーにシャードのレポートをまとめて渡してもらう代わりに、Bazel のテストツリー内でそれらを
    マージする (シャードの出力に対する `mutrim_minimize` ルール)。
