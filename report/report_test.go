@@ -2,7 +2,7 @@ package report_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +64,7 @@ func TestToStryker(t *testing.T) {
 		Status:         report.Killed,
 		CoveredBy:      []string{"TestF"},
 		KilledBy:       []string{"TestF"},
-		TestsCompleted: ptr(1),
+		TestsCompleted: new(1),
 		Duration:       7,
 	}
 	if !equalMutant(first, want) {
@@ -292,8 +292,6 @@ func TestLocationWithoutAnEnd(t *testing.T) {
 		t.Errorf("location = %+v, want the end at the start", got)
 	}
 }
-
-func ptr(n int) *int { return &n }
 
 func equalMutant(got, want report.Mutant) bool {
 	if got.TestsCompleted == nil || want.TestsCompleted == nil {

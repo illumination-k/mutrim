@@ -1,7 +1,8 @@
 package report
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 )
@@ -37,7 +38,7 @@ document.querySelector('mutation-test-report-app').report =
 
 // WriteHTML writes the single-file HTML view of s.
 func WriteHTML(w io.Writer, s *Stryker) error {
-	data, err := json.Marshal(s) // escaping HTML, unlike the JSON output
+	data, err := json.Marshal(s, json.Deterministic(true), jsontext.EscapeForHTML(true))
 	if err != nil {
 		return err
 	}

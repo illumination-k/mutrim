@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -274,8 +275,8 @@ func panicSites(ctx *Context, s *ast.ExprStmt) []Site {
 // funcBody returns the body of the innermost function enclosing the node
 // being visited.
 func (c *Context) funcBody() *ast.BlockStmt {
-	for i := len(c.Path) - 1; i >= 0; i-- {
-		if lit, ok := c.Path[i].(*ast.FuncLit); ok {
+	for _, v := range slices.Backward(c.Path) {
+		if lit, ok := v.(*ast.FuncLit); ok {
 			return lit.Body
 		}
 	}

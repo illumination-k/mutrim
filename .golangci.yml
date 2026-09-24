@@ -22,6 +22,7 @@ linters:
     - govet
     - ineffassign
     - misspell
+    - modernize
     - nilerr
     - noctx
     - prealloc

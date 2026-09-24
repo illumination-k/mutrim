@@ -1,7 +1,7 @@
 package mutator_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"go/scanner"
