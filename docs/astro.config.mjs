@@ -35,6 +35,7 @@ export default defineConfig({
             "guides/flaky-tests",
             "guides/diff",
             "guides/sampling",
+            "guides/kubernetes",
             "guides/reporting",
           ],
         },

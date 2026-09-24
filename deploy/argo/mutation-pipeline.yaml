@@ -1,0 +1,269 @@
+# mutrim as an Argo Workflows DAG: the non-Bazel pipeline of tools/dogfood.sh
+# (gen -schemata, go test -c, run, minimize, report), fanned out over packages
+# and shards on Kubernetes.
+#
+#   checkout ─┬─ package(criteria) ─┐
+#             ├─ package(minimize) ─┼─ suite (one cross-package minimize)
+#             └─ ...               ─┘
+#   package(pkg) = prepare ─┬─ shard 0 ─┬─ summarize
+#                           ├─ shard 1 ─┤
+#                           └─ ...     ─┘
+#
+# Artifacts go to the default artifact repository, which must be S3-compatible
+# (S3, MinIO, GCS through its S3 API): the shard reports are key-only artifacts
+# under {{workflow.name}}/reports/<pkg>/, read back as one directory per package
+# and one for the whole suite. Results land under {{workflow.name}}/results/.
+#
+#   kubectl apply -f deploy/argo/mutation-pipeline.yaml
+#   argo submit --from workflowtemplate/mutrim-mutation-pipeline \
+#     -p repo=https://github.com/you/yours.git -p packages='["pkg/a","pkg/b"]' -p shards=8
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: mutrim-mutation-pipeline
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: repo
+        value: https://github.com/illumination-k/mutrim.git
+      - name: revision
+        value: main
+      # Package directories relative to the module root, as a JSON list.
+      - name: packages
+        value: '["criteria", "minimize", "mutator", "runner"]'
+      # Shards per package (TEST_SHARD_INDEX / TEST_TOTAL_SHARDS of mutrim run).
+      - name: shards
+        value: "4"
+      # Test processes per shard pod, and the CPUs the pod requests.
+      - name: jobs
+        value: "2"
+      # mutrim run -sample / -seed; 0 runs every mutant.
+      - name: sample
+        value: "0"
+      - name: seed
+        value: "0"
+      # Version of mutrim to go install (a tag, a commit or a branch).
+      - name: mutrim-version
+        value: main
+      - name: image
+        value: golang:1.27
+  podGC:
+    strategy: OnPodSuccess
+  ttlStrategy:
+    secondsAfterCompletion: 604800
+
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: checkout
+            template: checkout
+          - name: package
+            depends: checkout
+            template: package
+            withParam: "{{workflow.parameters.packages}}"
+            arguments:
+              parameters:
+                - name: pkg
+                  value: "{{item}}"
+          - name: suite
+            depends: package
+            template: suite
+
+    - name: package
+      inputs:
+        parameters:
+          - name: pkg
+      dag:
+        tasks:
+          - name: prepare
+            template: prepare
+            arguments:
+              parameters:
+                - name: pkg
+                  value: "{{inputs.parameters.pkg}}"
+          - name: shard
+            depends: prepare
+            template: run-shard
+            withSequence:
+              count: "{{workflow.parameters.shards}}"
+            arguments:
+              parameters:
+                - name: pkg
+                  value: "{{inputs.parameters.pkg}}"
+                - name: shard
+                  value: "{{item}}"
+          - name: summarize
+            depends: shard
+            template: summarize
+            arguments:
+              parameters:
+                - name: pkg
+                  value: "{{inputs.parameters.pkg}}"
+
+    # The source tree, its module cache and the mutrim binary, shared by every
+    # later step so that none of them downloads anything.
+    - name: checkout
+      inputs:
+        artifacts:
+          - name: src
+            path: /work/src
+            git:
+              repo: "{{workflow.parameters.repo}}"
+              revision: "{{workflow.parameters.revision}}"
+              depth: 1
+      outputs:
+        artifacts:
+          - name: workspace
+            path: /work
+            s3:
+              key: "{{workflow.name}}/workspace.tgz"
+      script:
+        image: "{{workflow.parameters.image}}"
+        env: &goenv
+          - name: GOMODCACHE
+            value: /work/gomod
+          - name: GOBIN
+            value: /work/bin
+        workingDir: /work/src
+        command: [bash, -euo, pipefail]
+        source: |
+          go mod download
+          go install github.com/illumination-k/mutrim/cmd/mutrim@{{workflow.parameters.mutrim-version}}
+
+    # gen -schemata and the schemata test binary: one build per package.
+    - name: prepare
+      inputs:
+        parameters:
+          - name: pkg
+        artifacts:
+          - &workspace
+            name: workspace
+            path: /work
+            s3:
+              key: "{{workflow.name}}/workspace.tgz"
+      outputs:
+        artifacts:
+          - name: prepared
+            path: /prepared
+            s3:
+              key: "{{workflow.name}}/prepared/{{inputs.parameters.pkg}}.tgz"
+      script:
+        image: "{{workflow.parameters.image}}"
+        env: *goenv
+        workingDir: /work/src
+        command: [bash, -euo, pipefail]
+        source: |
+          pkg=./{{inputs.parameters.pkg}}
+          /work/bin/mutrim gen -schemata /prepared/schemata -blocks /prepared/blocks.json \
+            -o /prepared/mutants.json "$pkg"
+          go test -c -overlay /prepared/schemata/overlay.json -o /prepared/pkg.test "$pkg"
+
+    - name: run-shard
+      inputs:
+        parameters:
+          - name: pkg
+          - name: shard
+        artifacts:
+          - *workspace
+          - &prepared
+            name: prepared
+            path: /prepared
+            s3:
+              key: "{{workflow.name}}/prepared/{{inputs.parameters.pkg}}.tgz"
+      outputs:
+        artifacts:
+          - name: report
+            path: /out/report.json
+            archive:
+              none: {}
+            s3:
+              key: "{{workflow.name}}/reports/{{inputs.parameters.pkg}}/{{inputs.parameters.shard}}.json"
+      # One CPU per test process; a quantity field cannot hold a parameter.
+      podSpecPatch: '{"containers": [{"name": "main", "resources": {"requests": {"cpu": "{{workflow.parameters.jobs}}"}}}]}'
+      retryStrategy:
+        limit: 1
+        retryPolicy: OnError
+      script:
+        image: "{{workflow.parameters.image}}"
+        env:
+          - name: GOMODCACHE
+            value: /work/gomod
+          - name: TEST_SHARD_INDEX
+            value: "{{inputs.parameters.shard}}"
+          - name: TEST_TOTAL_SHARDS
+            value: "{{workflow.parameters.shards}}"
+        workingDir: /work/src
+        command: [bash, -euo, pipefail]
+        source: |
+          mkdir -p /out
+          /work/bin/mutrim run -test-bin /prepared/pkg.test -mutants /prepared/mutants.json \
+            -dir ./{{inputs.parameters.pkg}} -jobs {{workflow.parameters.jobs}} \
+            -sample {{workflow.parameters.sample}} -seed {{workflow.parameters.seed}} \
+            -out /out/report.json
+
+    # The package's minimize.json (with its weak spots and uncovered functions)
+    # and its Stryker JSON and HTML reports.
+    - name: summarize
+      inputs:
+        parameters:
+          - name: pkg
+        artifacts:
+          - *workspace
+          - *prepared
+          - name: reports
+            path: /reports
+            s3:
+              key: "{{workflow.name}}/reports/{{inputs.parameters.pkg}}"
+      outputs:
+        artifacts:
+          - name: results
+            path: /results
+            archive:
+              none: {}
+            s3:
+              key: "{{workflow.name}}/results/{{inputs.parameters.pkg}}"
+      script:
+        image: "{{workflow.parameters.image}}"
+        workingDir: /work/src
+        command: [bash, -euo, pipefail]
+        source: |
+          pkg=./{{inputs.parameters.pkg}}
+          m=/prepared/mutants.json
+          mkdir -p /results
+          /work/bin/mutrim minimize -mutants "$m" -blocks /prepared/blocks.json -srcs "$pkg" \
+            -o /results/minimize.json /reports/*.json
+          /work/bin/mutrim report -format stryker -mutants "$m" -srcs "$pkg" \
+            -o /results/mutation-report.json /reports/*.json
+          /work/bin/mutrim report -format html -mutants "$m" -srcs "$pkg" \
+            -o /results/mutation-report.html /reports/*.json
+
+    # One test × requirement matrix over every package's reports, so a test of
+    # one package is judged by what it covers and kills across the suite.
+    - name: suite
+      inputs:
+        artifacts:
+          - *workspace
+          - name: reports
+            path: /reports
+            s3:
+              key: "{{workflow.name}}/reports"
+      outputs:
+        artifacts:
+          - name: results
+            path: /results
+            archive:
+              none: {}
+            s3:
+              key: "{{workflow.name}}/results/suite"
+      script:
+        image: "{{workflow.parameters.image}}"
+        workingDir: /work/src
+        command: [bash, -euo, pipefail]
+        source: |
+          srcs=$(echo '{{workflow.parameters.packages}}' | tr -d '[]" ')
+          mkdir -p /results
+          find /reports -name '*.json' -print0 | sort -z |
+            xargs -0 /work/bin/mutrim minimize -srcs "$srcs" \
+              -matrix /results/matrix.json -o /results/minimize.json

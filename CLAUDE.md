@@ -321,6 +321,9 @@ it left out may have changed the verdicts, so a redundant test is weaker under i
   `mutator/testdata` are excluded from Bazel in the root `BUILD.bazel`; `go test ./...` covers
   them. `lint:bazel` runs `gazelle -mode=diff` and buildifier, `test:bazel` runs
   `bazel test //...`.
+- `deploy/argo/mutation-pipeline.yaml` is the same non-Bazel pipeline as `tools/dogfood.sh`
+  as an Argo Workflows DAG for Kubernetes: `prepare` per package, `run` per shard, then
+  `minimize` / `report` per package and one cross-package `minimize` (guide: `kubernetes`).
 - Bazel CI runs in its own workflow on `ubuntu-latest` (compute-bound); the Go lint/test
   workflow stays on the template defaults.
 
