@@ -88,6 +88,9 @@ type Test struct {
 	// Sites lists the IDs of the mutants whose site the test reaches; only
 	// these can be killed by it.
 	Sites []string `json:"sites"`
+	// Blocks lists the IDs of the blocks (mutator.Block) the test reaches:
+	// the rest of its trace, which covers code with no mutant site too.
+	Blocks []string `json:"blocks"`
 	// Flaky says the test failed in some of the Options.ConfirmBaseline
 	// runs against the unmutated package and passed in others. Its
 	// failures are no kills (they land in Result.SuspiciousBy), and
@@ -388,6 +391,64 @@ func WeakSpots(mutants []mutator.Mutant, reports ...*Report) []Spot {
 	slices.SortFunc(out, func(a, b Spot) int {
 		// Same-named functions of two packages are told apart by file.
 		return cmp.Or(cmp.Compare(b.Lived+b.NoCoverage, a.Lived+a.NoCoverage), cmp.Compare(a.Func, b.Func), cmp.Compare(a.File, b.File))
+	})
+	return out
+}
+
+// Gap is a function with blocks no test reaches: code that no test
+// executes at all, which site coverage cannot see when it holds no
+// mutant site.
+type Gap struct {
+	Func string `json:"func"`
+	File string `json:"file"`
+	// Line is the first line of the first unreached block.
+	Line int `json:"line"`
+	// Blocks counts the function's blocks, Unreached those no test reaches.
+	Blocks    int `json:"blocks"`
+	Unreached int `json:"unreached"`
+}
+
+// Uncovered lists the functions with a block no test of reports reaches,
+// most unreached blocks first. Only the blocks of the reports' packages
+// count, so blocks.json may list more packages than were run. A flaky
+// test's trace still counts: it did execute the code.
+func Uncovered(blocks []mutator.Block, reports ...*Report) []Gap {
+	reached, pkgs := map[string]bool{}, map[string]bool{}
+	for _, r := range reports {
+		pkgs[r.Pkg] = true
+		for _, t := range r.Tests {
+			for _, id := range t.Blocks {
+				reached[id] = true
+			}
+		}
+	}
+	funcs := map[string]*Gap{} // keyed by package and function, like WeakSpots
+	for _, b := range blocks {
+		if !pkgs[b.Pkg] {
+			continue
+		}
+		key := b.Pkg + "." + b.Func
+		u, ok := funcs[key]
+		if !ok {
+			u = &Gap{Func: b.Func, File: b.File}
+			funcs[key] = u
+		}
+		u.Blocks++
+		if !reached[b.ID] {
+			if u.Unreached == 0 || b.Line < u.Line {
+				u.Line = b.Line
+			}
+			u.Unreached++
+		}
+	}
+	out := []Gap{}
+	for _, u := range funcs {
+		if u.Unreached > 0 {
+			out = append(out, *u)
+		}
+	}
+	slices.SortFunc(out, func(a, b Gap) int {
+		return cmp.Or(cmp.Compare(b.Unreached, a.Unreached), cmp.Compare(a.Func, b.Func), cmp.Compare(a.File, b.File))
 	})
 	return out
 }

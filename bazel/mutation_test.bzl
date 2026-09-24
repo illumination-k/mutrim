@@ -67,6 +67,7 @@ def _mutrim_schemata_impl(ctx):
     if ctx.attr.no_arid:
         args.add("-no-arid")
     args.add("-schemata", overlay.dirname)
+    args.add("-blocks", ctx.outputs.blocks)
     args.add("-o", ctx.outputs.mutants)
     args.add_all(go_srcs)
     ctx.actions.run(
@@ -75,7 +76,7 @@ def _mutrim_schemata_impl(ctx):
         executable = ctx.executable._mutrim,
         arguments = [args],
         inputs = depset(go_srcs + exports + [importcfg], transitive = [go.stdlib.libs]),
-        outputs = schemata + [overlay, ctx.outputs.mutants],
+        outputs = schemata + [overlay, ctx.outputs.mutants, ctx.outputs.blocks],
         env = go.env_for_path_mapping,
         toolchain = None,
     )
@@ -118,6 +119,10 @@ mutrim_schemata = go_rule(
         "mutants": attr.output(
             mandatory = True,
             doc = "Where mutants.json is written.",
+        ),
+        "blocks": attr.output(
+            mandatory = True,
+            doc = "Where blocks.json, the blocks the schemata sources trace, is written.",
         ),
         "operators": attr.string_list(
             doc = """Operators to apply, as `mutrim gen -operators` takes them: names,
@@ -384,14 +389,16 @@ def mutation_test(
     come with `embed`. The macro defines
 
     - `<name>_schemata`: the library with every mutant embedded and
-      `<name>.mutants.json` listing them,
+      every block traced, `<name>.mutants.json` and `<name>.blocks.json`
+      listing them,
     - `<name>_schemata_test`: a go_test of those sources with no mutant
       selected, which must pass like the original tests do,
     - `<name>`: a test that re-executes that binary once per mutant against
       the tests reaching it, writes `report.json` (the per-test kill matrix)
       to its undeclared outputs, and next to it `minimize.json` (the tests a
-      greedy set cover over that matrix finds redundant, and the functions
-      whose mutants survive) and `mutation-report.json` / `.html` (the same
+      greedy set cover over that matrix finds redundant, the functions
+      whose mutants survive, and those with blocks no test reaches) and
+      `mutation-report.json` / `.html` (the same
       run in the Stryker mutation-testing-elements schema, and its
       single-file viewer). Tests named `TestRegression_*` or tagged
       `//mutrim:keep` in their doc comment are never called redundant.
@@ -516,10 +523,12 @@ def mutation_test(
         fail("mutation_test: race and extra_tests cannot be combined yet")
     schemata = name + "_schemata"
     mutants = name + ".mutants.json"
+    blocks = name + ".blocks.json"
     mutrim_schemata(
         name = schemata,
         library = embed[0],
         mutants = mutants,
+        blocks = blocks,
         operators = operators,
         match = match,
         files = files,
@@ -565,7 +574,7 @@ def mutation_test(
         # Flags of `mutrim bazel-test`; the arguments are the library
         # sources, which the Stryker report quotes, and flags after "--" go
         # to `mutrim run`.
-        args = ["bazel-test", "-test-bin", "$(rlocationpath :{}_test)".format(schemata), "-mutants", "$(rlocationpath :{})".format(mutants)] +
+        args = ["bazel-test", "-test-bin", "$(rlocationpath :{}_test)".format(schemata), "-mutants", "$(rlocationpath :{})".format(mutants), "-blocks", "$(rlocationpath :{})".format(blocks)] +
                ["-test-src=$(rlocationpath {})".format(src) for src in srcs] +
                ["-extra-test=$(rlocationpath {})".format(t) for t in extra] +
                ["$(rlocationpaths :{})".format(lib_srcs), "--"] +
@@ -579,7 +588,7 @@ def mutation_test(
                (["-threshold-covered={}".format(threshold_covered)] if threshold_covered != None else []) +
                (["-sample={}".format(sample)] if sample != None else []) +
                (["-seed={}".format(seed)] if seed != None else []),
-        data = [":" + schemata + "_test", ":" + mutants, ":" + lib_srcs] + srcs + extra,
+        data = [":" + schemata + "_test", ":" + mutants, ":" + blocks, ":" + lib_srcs] + srcs + extra,
         # Makes the rules_go test binary change to its package directory
         # under the runfiles tree, as it does when Bazel runs it directly.
         env = {"GO_TEST_RUN_FROM_BAZEL": "1"} | env,

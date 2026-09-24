@@ -163,6 +163,15 @@ func TestUnknownOperatorPanics(t *testing.T) {
 
 // A trace file that cannot be opened is a runner bug, not something to
 // silently ignore: the process must not start.
+// Reach without GOMUTANT_TRACE does nothing, so schemata sources behave
+// like the original.
+func TestReachUntraced(t *testing.T) {
+	prev := trace
+	trace = nil
+	t.Cleanup(func() { trace = prev })
+	Reach("a")
+}
+
 func TestTraceUnopenablePanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -173,7 +182,8 @@ func TestTraceUnopenablePanics(t *testing.T) {
 }
 
 // With GOMUTANT_TRACE set, every reached site is written once, whichever
-// helper reaches it and whether or not its mutant is active.
+// helper reaches it and whether or not its mutant is active; a block Reach
+// records is traced alike.
 func TestTraceRecordsReachedSites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "trace")
 	prev := trace
@@ -186,12 +196,14 @@ func TestTraceRecordsReachedSites(t *testing.T) {
 	Arith("c", 1, 2, "+", "-")
 	Active("a")
 	Not("d", true)
+	Reach("e")
+	Reach("a")
 
 	data, err := os.ReadFile(path) //nolint:gosec // test-controlled path
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.Fields(string(data)), []string{"a", "b", "c", "d"}; !slices.Equal(got, want) {
+	if got, want := strings.Fields(string(data)), []string{"a", "b", "c", "d", "e"}; !slices.Equal(got, want) {
 		t.Errorf("trace = %v, want %v", got, want)
 	}
 	if newTracer("") != nil {

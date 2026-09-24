@@ -182,8 +182,13 @@ func (m Mutant) Excluded() bool {
 // mutantID hashes everything that identifies a mutant except its source
 // position, so that edits elsewhere in the file keep the ID stable.
 func mutantID(pkgPath string, s site) string {
+	return hashID(pkgPath, s.funcName, s.astPath, s.Operator, s.Description)
+}
+
+// hashID is the 64-bit hex hash of parts, the form of every site ID.
+func hashID(parts ...string) string {
 	h := sha256.New()
-	for _, part := range []string{pkgPath, s.funcName, s.astPath, s.Operator, s.Description} {
+	for _, part := range parts {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
 	}
@@ -199,20 +204,24 @@ func collectSites(f *ast.File, ctx *Context, ops []Operator, filter Filter) []si
 		if !ok || fn.Body == nil {
 			continue
 		}
-		w := &walker{
-			ctx:      ctx,
-			ops:      ops,
-			file:     f,
-			fn:       fn,
-			funcName: funcName(fn),
-			arid:     filter.aridNodes(ctx.Info, fn),
-			sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
-			counters: []int{0},
-		}
+		w := newWalker(ctx, ops, f, fn, filter)
 		ast.Inspect(fn.Body, w.visit)
 		out = append(out, w.out...)
 	}
 	return out
+}
+
+func newWalker(ctx *Context, ops []Operator, f *ast.File, fn *ast.FuncDecl, filter Filter) *walker {
+	return &walker{
+		ctx:      ctx,
+		ops:      ops,
+		file:     f,
+		fn:       fn,
+		funcName: funcName(fn),
+		arid:     filter.aridNodes(ctx.Info, fn),
+		sigs:     []*types.Signature{signatureOf(ctx.Info, fn.Name)},
+		counters: []int{0},
+	}
 }
 
 type walker struct {
@@ -231,6 +240,8 @@ type walker struct {
 	counters []int
 	sigs     []*types.Signature
 	out      []site
+	// blocks receives the heads of the blocks walked (see Blocks).
+	blocks []block
 }
 
 func (w *walker) visit(n ast.Node) bool {
@@ -244,6 +255,9 @@ func (w *walker) visit(n ast.Node) bool {
 	ctx.Sig = w.sigs[len(w.sigs)-1]
 	ctx.Path = w.nodes[:len(w.nodes)-1]
 	astPath := strings.Join(w.path, "/")
+	if isBlock(n, ctx.parent(1)) {
+		w.blocks = append(w.blocks, block{node: n, astPath: astPath})
+	}
 	for _, op := range w.ops {
 		for _, s := range op.Sites(&ctx, n) {
 			s.Operator = op.Name()

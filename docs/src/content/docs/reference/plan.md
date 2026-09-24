@@ -199,7 +199,10 @@ Goal: a per-test kill matrix, and `mutrim minimize` reporting what it implies.
    runner lists the binary's tests (`-test.list`), runs each on its own that way, and records
    per test its duration and reached sites (`report.json` → `tests`). This is _site coverage_:
    exact for narrowing, identical under Bazel and `go test`, blind only to code with no mutant
-   site at all. Block coverage can still be added as another `Criterion` later.
+   site at all. Block coverage closes that gap the same way (issue #39): the schemata
+   sources call `mut.Reach(id)` at the head of every block, a trace-only site that is never a
+   mutant, so `tests[].blocks` is per-test block coverage and `criteria.BlockCoverage` its
+   `Criterion` (`minimize -w-block`, `-blocks blocks.json` for the `uncovered` listing).
 2. **Narrowed runner.** Each mutant runs only against the tests that reach its site, without
    failfast, so `killed_by` is the complete kill matrix (a timed-out mutant is attributed to the
    tests that started and never finished). A mutant no test reaches is `NO_COVERAGE`, never
@@ -268,7 +271,5 @@ scratch, and nothing is copied from gremlins (Apache-2.0) or go-mutesting (MIT).
 ## Immediate next steps
 
 1. Tag `v0.2.0` once the Bazel workflow is green on `main`.
-2. A block-coverage `Criterion` for code without mutant sites, once a build-agnostic source of
-   per-test cover profiles exists (rules_go instrumented builds outside `bazel coverage`).
-3. Merge shard reports inside the Bazel test tree (a `mutrim_minimize` rule over the shards'
+2. Merge shard reports inside the Bazel test tree (a `mutrim_minimize` rule over the shards'
    outputs) instead of asking the user to pass them together.

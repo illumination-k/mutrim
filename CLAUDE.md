@@ -80,10 +80,10 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 | Package    | Responsibility                                                                                                                                                                                                                                                                                                             | Depends on                          |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` output, schemata lowering. Bazel-independent                                                                                                                                                            | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites                                                                                                                                                                                                | stdlib only                         |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` / `blocks.json` output, schemata lowering. Bazel-independent                                                                                                                                            | `go/ast`, `go/types`, `go/packages` |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites, and blocks through `Reach`                                                                                                                                                                    | stdlib only                         |
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, random sampling (`-sample`), `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
-| `criteria` | `Criterion` interface with `SiteCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                            | `bits-and-blooms/bitset`            |
+| `criteria` | `Criterion` interface with `SiteCoverage` / `BlockCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                          | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                  | `criteria`, `bitset`, `go/parser`   |
 | `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                                                                                 | `mutator`, `runner`                 |
 
@@ -98,11 +98,13 @@ run on the result.
 
 `gen` writes `mutants.json`, the inventory every other step consumes: `run` lowers
 schemata from it and needs it to select mutants; `minimize` needs it for the weak spots
-(`WeakSpots`); `report` reads it for the source text and positions of the HTML view. `run`
+(`WeakSpots`); `report` reads it for the source text and positions of the HTML view.
+`gen -blocks` writes `blocks.json`, the blocks the schemata sources trace, which `minimize
+-blocks` needs for the functions no test reaches (`Uncovered`). `run`
 writes `report.json`, one per run (a shard, a package): `Results` carries each mutant's
-status and the tests that killed it, `Tests` the rows with the sites they reached.
+status and the tests that killed it, `Tests` the rows with the sites and blocks they reached.
 `minimize` joins several reports into one `test × requirement` matrix (`criteria.Compose`
-over `SiteCoverage` and `Mutation`), and `report` renders the same reports for humans
+over `SiteCoverage`, `BlockCoverage` and `Mutation`), and `report` renders the same reports for humans
 (Stryker JSON, HTML, GitHub annotations). Every artifact in this chain is per-run output
 and never committed (see Conventions).
 
@@ -202,7 +204,11 @@ and never committed (see Conventions).
   the overlay when instrumenting, and under Bazel coverage instrumentation only exists in
   `bazel coverage`. Site coverage is exact for narrowing (a test that reaches no site of a
   mutant cannot kill it, reported `NO_COVERAGE`) and build-agnostic; its blind spot is code
-  with no mutant site at all.
+  with no mutant site at all, which block coverage closes (issue #39): `Lower` puts
+  `mut.Reach(id)` at the head of every block (`mutator.Blocks`: function and literal bodies,
+  `if`/`else`/`for`/`range` bodies, `case` and `select` clauses), a trace-only site that is
+  never a mutant. The runner files a traced ID that is no mutant's under `tests[].blocks`; the
+  suspect-equivalent check compares sites and blocks. Blocks ignore every gen filter.
 - The rows of the matrix are the top-level tests, or with `run -subtests` (the `subtests`
   attribute of `mutation_test`) every subtest, so `minimize` can judge a table row. The
   baseline's `-test.v` output names the rows; a row is traced with an element-wise
@@ -276,7 +282,8 @@ loading/analysis.
 
 ### Minimizer
 
-Gain = (w_site × new sites reached + w_kill × new kills) / test time, default weights 1 : 5.
+Gain = (w_site × new sites reached + w_block × new blocks reached + w_kill × new kills) / test
+time, default weights 1 : 1 : 5.
 Gains only shrink as the cover grows, so the greedy is lazy (a heap of stale gains, only the
 top recomputed); it selects exactly what a full scan would, ties to the first test by name.
 Coverage is the cheap first pass (it narrows which tests run per mutant); kills are the
@@ -288,7 +295,8 @@ exports the uncollapsed kills. The tool never deletes tests; `mutrim minimize` r
 redundant test with the selected tests that subsume it and how many other tests share its requirements (`shared_with`;
 one is a single deletion away from essential), each essential test (it satisfies a requirement no
 other test in the whole suite does, reported with the label of each such requirement) ahead of the
-rest by gain, and the functions whose mutants survive (weak spots), and
+rest by gain, the functions whose mutants survive (weak spots), and with `-blocks` the
+functions with a block no test reaches (`uncovered`, which a function without mutants can be), and
 leaves the decision to a human or LLM. That reporting is a separate `minimize.Exclusives` call,
 not part of `Greedy`: it builds the transpose of the matrix (requirements × tests bits, as large
 as the matrix itself), so `Greedy` stays the cover only; `BenchmarkExclusives` measures it next to

@@ -51,3 +51,26 @@ func BenchmarkSite(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkReach is the cost of the block trace at the head of every
+// block of a schemata source: untraced, as in the identity build, and
+// traced, as every trace and mutant run is.
+func BenchmarkReach(b *testing.B) {
+	ids := make([]string, 64)
+	for i := range ids {
+		ids[i] = strconv.FormatUint(0xfedcba9876543210+uint64(i), 16)
+	}
+	for _, traced := range []bool{false, true} {
+		b.Run(map[bool]string{false: "untraced", true: "traced"}[traced], func(b *testing.B) {
+			prev := trace
+			b.Cleanup(func() { trace = prev })
+			trace = nil
+			if traced {
+				trace = newTracer(filepath.Join(b.TempDir(), "trace"))
+			}
+			for i := 0; b.Loop(); i++ {
+				Reach(ids[i&63])
+			}
+		})
+	}
+}

@@ -62,7 +62,7 @@ func buildPkgOverlay(t testing.TB, dir string) (bin string, mutants []mutator.Mu
 	}
 	pkg := pkgs[0]
 	mutants = mutator.Generate(pkg, mutator.Options{TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants)
+	sch, err := mutator.Lower(pkg, mutants, mutator.Blocks(pkg))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,15 +127,23 @@ func TestRunReportGolden(t *testing.T) {
 		if !strings.Contains(logs.String(), "timeout at most 3s, 14 tests\n") {
 			t.Errorf("the baseline must run every test:\n%s", logs.String())
 		}
-		// Every top-level test ran on its own and reached some sites.
+		// Every top-level test ran on its own and reached some sites, and
+		// the blocks of the code it ran, which are no mutant's.
 		reached := map[string]map[string]bool{}
+		sites := map[string]bool{}
+		for _, m := range mutants {
+			sites[m.ID] = true
+		}
 		for _, tt := range report.Tests {
 			reached[tt.Name] = map[string]bool{}
 			for _, id := range tt.Sites {
 				reached[tt.Name][id] = true
 			}
-			if len(tt.Sites) == 0 || tt.DurationMS < 0 {
+			if len(tt.Sites) == 0 || len(tt.Blocks) == 0 || tt.DurationMS < 0 {
 				t.Errorf("test row %+v", tt)
+			}
+			if slices.ContainsFunc(tt.Blocks, func(id string) bool { return sites[id] }) {
+				t.Errorf("%s: a mutant site among the blocks %v", tt.Name, tt.Blocks)
 			}
 		}
 		if len(reached) != 14 {

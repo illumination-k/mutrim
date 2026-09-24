@@ -47,7 +47,8 @@ commands:
             -arid narrow the sites (a filtered mutant is reported, and
             ignored); mutants inside arid nodes (logging, sleeps, ...) are
             ignored unless -no-arid;
-            -schemata also writes sources with every mutant embedded;
+            -schemata also writes sources with every mutant embedded
+            and every block traced, which -blocks lists;
             -importpath type-checks the given files from export data
             (Bazel mode)
   overlay   write one mutant and print a go build -overlay file for it;
@@ -66,8 +67,10 @@ commands:
             -threshold / -threshold-covered fail the run, after writing
             the report, when its score is below them
   minimize  from report.json files (the shards of a package, or several
-            packages), list the tests a greedy set cover finds redundant,
-            the functions whose mutants survive, and the tests found flaky
+            packages), list the tests a greedy set cover over the sites,
+            blocks and kills finds redundant, the functions whose mutants
+            survive, those with blocks no test reaches (-blocks), and the
+            tests found flaky
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations
@@ -119,6 +122,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	noArid := fs.Bool("no-arid", false, "turn the built-in arid rules off (-arid still applies)")
 	diffContext := fs.String("diff-context", "stmt", "context of each mutant's unified diff: \"stmt\" (the enclosing statement), \"func\" (the enclosing function) or \"none\" (no diff)")
 	schemata := fs.String("schemata", "", "write schemata sources under this directory, plus overlay.json for go build")
+	blocksPath := fs.String("blocks", "", "write blocks.json here: the blocks the schemata sources trace, for minimize -blocks")
 	importPath := fs.String("importpath", "", "type-check the argument files as this package from export data instead of running go list (Bazel mode)")
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
 	stdlib := fs.String("stdlib", "", "directory of compiled standard-library packages, <dir>/<goos_goarch>/<path>.a (with -importpath)")
@@ -163,19 +167,26 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 	}
-	mutants := []mutator.Mutant{}
+	mutants, blocks := []mutator.Mutant{}, []mutator.Block{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
 	for _, pkg := range pkgs {
 		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter, Diff: diff})
+		bs := mutator.Blocks(pkg)
 		if *schemata != "" {
-			if err := writeSchemata(*schemata, pkg, ms, &overlay); err != nil {
+			if err := writeSchemata(*schemata, pkg, ms, bs, &overlay); err != nil {
 				return err
 			}
 		}
 		mutants = append(mutants, ms...)
+		blocks = append(blocks, bs...)
 	}
 	if *schemata != "" {
 		if err := writeJSON(filepath.Join(*schemata, "overlay.json"), nil, overlay); err != nil {
+			return err
+		}
+	}
+	if *blocksPath != "" {
+		if err := writeJSON(*blocksPath, nil, blocks); err != nil {
 			return err
 		}
 	}
@@ -187,9 +198,10 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // excluded by build constraints) are copied as they are, so the directory
 // can replace the package. Mutants the lowering declined are marked not
 // viable, so the runner never selects them; ignored and equivalent
-// mutants are not embedded either, but keep their status.
-func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, overlay *mutator.Overlay) error {
-	sch, err := mutator.Lower(pkg, ms)
+// mutants are not embedded either, but keep their status. Every block
+// records itself when reached, so the runner's traces hold block coverage.
+func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, blocks []mutator.Block, overlay *mutator.Overlay) error {
+	sch, err := mutator.Lower(pkg, ms, blocks)
 	if err != nil {
 		return err
 	}
@@ -400,6 +412,8 @@ type minimizeOutput struct {
 	minimize.Result
 	Totals    minimizeTotals `json:"totals"`
 	WeakSpots []runner.Spot  `json:"weak_spots"`
+	// Uncovered lists the functions with blocks no test reaches (-blocks).
+	Uncovered []runner.Gap `json:"uncovered"`
 	// Flaky lists the tests `run -confirm-baseline` found unreliable.
 	// They take no part in the cover, so they are neither selected nor
 	// called redundant; deciding about them needs the flakiness fixed first.
@@ -422,8 +436,8 @@ type minimizeTotals struct {
 	DominatorScore float64 `json:"dominator_score"`
 }
 
-// runMinimize is `mutrim minimize`: it composes the site-coverage and
-// kill matrices of the given reports, runs the weighted greedy set cover,
+// runMinimize is `mutrim minimize`: it composes the site-coverage,
+// block-coverage and kill matrices of the given reports, runs the weighted greedy set cover,
 // and reports. The kill requirements are the dominator mutants only
 // (criteria.Mutation.Dominators); -raw-matrix exports every killed mutant
 // instead, for an exact solver to choose. Nothing is deleted. A row is
@@ -437,11 +451,13 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	out := fs.String("o", "", "write the result here instead of stdout")
 	mutantsPath := fs.String("mutants", "", "mutants.json of the reports; enables the weak_spots listing")
+	blocksPath := fs.String("blocks", "", "blocks.json of the reports (gen -blocks); enables the uncovered listing")
 	keep := fs.String("keep", `^TestRegression_`, "regexp of test names (TestX/case for a subtest, without the package) that are always kept")
 	tag := fs.String("tag", "mutrim:keep", "tests whose doc comment contains this are always kept, with their subtests (needs -srcs)")
 	srcs := fs.String("srcs", "", "comma-separated _test.go files or directories to scan for -tag")
 	wSite := fs.Float64("w-site", 1, "weight of a reached mutant site")
 	wKill := fs.Float64("w-kill", 5, "weight of a killed mutant")
+	wBlock := fs.Float64("w-block", 1, "weight of a reached block")
 	matrixPath := fs.String("matrix", "", "also write the composed test × requirement matrix here, for an exact solver")
 	rawMatrix := fs.Bool("raw-matrix", false, "write every killed mutant to -matrix, not the dominator mutants the cover uses")
 	if err := fs.Parse(args); err != nil {
@@ -477,15 +493,13 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	// A flaky test's observations are not trustworthy, so flakyOf and
 	// inputsOf leave it out of the matrix entirely; see their comments.
 	flaky := flakyOf(reports, row)
-	durations, reached, local, kills := inputsOf(reports, row, flaky)
-	sites := criteria.SiteCoverage{}
-	for name, ids := range reached {
-		sites[name] = slices.Sorted(maps.Keys(ids))
-	}
+	in := inputsOf(reports, row, flaky)
+	kills := in.kills
 	dominators := kills.Dominators()
 	compose := func(kills criteria.Mutation) *criteria.Matrix {
-		return criteria.Compose(durations,
-			criteria.Weighted{Criterion: sites, Weight: *wSite},
+		return criteria.Compose(in.durations,
+			criteria.Weighted{Criterion: criteria.SiteCoverage(in.sites.sorted()), Weight: *wSite},
+			criteria.Weighted{Criterion: criteria.BlockCoverage(in.blocks.sorted()), Weight: *wBlock},
 			criteria.Weighted{Criterion: kills, Weight: *wKill},
 		)
 	}
@@ -514,7 +528,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	// regexp sees the full name within its package, so ^TestRegression_
 	// matches those too.
 	protected := func(name string) bool {
-		name = local[name]
+		name = in.local[name]
 		top, _, _ := strings.Cut(name, "/")
 		return tagged[top] || keepRE.MatchString(name)
 	}
@@ -524,6 +538,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		Result:    res,
 		Totals:    totalsOf(reports, kills, dominators),
 		WeakSpots: []runner.Spot{},
+		Uncovered: []runner.Gap{},
 		Flaky:     slices.Sorted(maps.Keys(flaky)),
 	}
 	if *mutantsPath != "" {
@@ -532,6 +547,13 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		result.WeakSpots = runner.WeakSpots(mutants, reports...)
+	}
+	if *blocksPath != "" {
+		var blocks []mutator.Block
+		if err := readJSON(*blocksPath, &blocks); err != nil {
+			return err
+		}
+		result.Uncovered = runner.Uncovered(blocks, reports...)
 	}
 	return writeJSON(*out, stdout, result)
 }
@@ -600,41 +622,63 @@ func flakyOf(reports []*runner.Report, row func(i int, test string) rowName) map
 	return flaky
 }
 
+// inputs are the inputs of the minimize matrix, per row.
+type inputs struct {
+	durations map[string]int64
+	// sites and blocks are the mutant sites and blocks each row reaches.
+	sites, blocks reached
+	// local is the name the protection rules match.
+	local map[string]string
+	kills criteria.Mutation
+}
+
+// reached holds the IDs each row reaches, as a set.
+type reached map[string]map[string]bool
+
+func (r reached) add(name string, ids []string) {
+	if r[name] == nil {
+		r[name] = map[string]bool{}
+	}
+	for _, id := range ids {
+		r[name][id] = true
+	}
+}
+
+// sorted lists each row's IDs in order, a criterion's rows.
+func (r reached) sorted() map[string][]string {
+	out := map[string][]string{}
+	for name, ids := range r {
+		out[name] = slices.Sorted(maps.Keys(ids))
+	}
+	return out
+}
+
 // inputsOf collects the inputs of the minimize matrix from the reports,
-// skipping every flaky row: the running time and reached sites per test,
-// the name the protection rules match, and the mutants each test kills.
-// A RUN_ERROR mutant is no requirement either: no test failed, so it
-// keeps no test alive, and its function is a weak spot only through its
-// other mutants.
-func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, flaky map[string]bool) (durations map[string]int64, reached map[string]map[string]bool, local map[string]string, kills criteria.Mutation) {
-	durations = map[string]int64{}
-	reached = map[string]map[string]bool{}
-	local = map[string]string{}
-	kills = criteria.Mutation{}
+// skipping every flaky row. A RUN_ERROR mutant is no requirement either:
+// no test failed, so it keeps no test alive, and its function is a weak
+// spot only through its other mutants.
+func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, flaky map[string]bool) inputs {
+	in := inputs{durations: map[string]int64{}, sites: reached{}, blocks: reached{}, local: map[string]string{}, kills: criteria.Mutation{}}
 	for i, r := range reports {
 		for _, t := range r.Tests {
 			n := row(i, t.Name)
 			if flaky[n.name] {
 				continue
 			}
-			local[n.name] = n.local
-			durations[n.name] = max(durations[n.name], t.DurationMS)
-			if reached[n.name] == nil {
-				reached[n.name] = map[string]bool{}
-			}
-			for _, id := range t.Sites {
-				reached[n.name][id] = true
-			}
+			in.local[n.name] = n.local
+			in.durations[n.name] = max(in.durations[n.name], t.DurationMS)
+			in.sites.add(n.name, t.Sites)
+			in.blocks.add(n.name, t.Blocks)
 		}
 		for _, res := range r.Results {
 			for _, t := range res.KilledBy {
 				if n := row(i, t).name; !flaky[n] {
-					kills[n] = append(kills[n], res.MutantID)
+					in.kills[n] = append(in.kills[n], res.MutantID)
 				}
 			}
 		}
 	}
-	return durations, reached, local, kills
+	return in
 }
 
 // runReport is `mutrim report`: it renders the reports of a run (the
@@ -706,6 +750,7 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	fs.SetOutput(stderr)
 	testBin := fs.String("test-bin", "", "runfiles path of the schemata test binary (required)")
 	mutantsPath := fs.String("mutants", "", "runfiles path of mutants.json (required)")
+	blocksPath := fs.String("blocks", "", "runfiles path of blocks.json, for the uncovered listing of minimize.json")
 	var testSrcs []string
 	fs.Func("test-src", "runfiles path of a test source, scanned for the mutrim:keep tag and hashed for report.json (repeatable)", func(s string) error {
 		testSrcs = append(testSrcs, s)
@@ -781,9 +826,17 @@ func runBazelTest(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	// Each output reads only report.json, so one failing leaves the others
 	// written.
 	srcs := strings.Join(libSrcs, ",")
+	minimizeArgs := []string{"-mutants", mutants, "-srcs", strings.Join(allTestSrcs, ","), "-o", filepath.Join(out, "minimize.json")}
+	if *blocksPath != "" {
+		blocks, err := rlocations(rf, []string{*blocksPath})
+		if err != nil {
+			return errors.Join(below, err)
+		}
+		minimizeArgs = append(minimizeArgs, "-blocks", blocks[0])
+	}
 	return errors.Join(
 		below,
-		runMinimize([]string{"-mutants", mutants, "-srcs", strings.Join(allTestSrcs, ","), "-o", filepath.Join(out, "minimize.json"), rep}, stdout, stderr),
+		runMinimize(append(minimizeArgs, rep), stdout, stderr),
 		runReport([]string{"-format", "stryker", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.json"), rep}, stdout, stderr),
 		runReport([]string{"-format", "html", "-mutants", mutants, "-srcs", srcs, "-o", filepath.Join(out, "mutation-report.html"), rep}, stdout, stderr),
 	)

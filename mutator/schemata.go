@@ -73,22 +73,28 @@ type Schemata struct {
 }
 
 // Lower rewrites pkg so that every viable mutant in mutants that is not Excluded
-// is embedded and selected by GOMUTANT_ID. The package's syntax trees are
+// is embedded and selected by GOMUTANT_ID, and every block in blocks (see
+// Blocks) records itself through mut.Reach. The package's syntax trees are
 // rewritten in place and must not be reused afterwards.
-func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
+func Lower(pkg *packages.Package, mutants []Mutant, blocks []Block) (*Schemata, error) {
 	out := &Schemata{Files: map[string][]byte{}, Embedded: map[string]bool{}}
 	if pkg.PkgPath == RuntimePath {
 		return out, nil // the runtime cannot import itself
 	}
 
 	byNode := map[ast.Node][]Mutant{}
-	byFile := map[*ast.File][]Mutant{}
+	lowered := map[*ast.File]bool{} // the files to rewrite
 	for _, m := range mutants {
 		if m.Excluded() || !m.Viable || m.site.Schemata == nil {
 			continue
 		}
 		byNode[m.site.Node] = append(byNode[m.site.Node], m)
-		byFile[m.site.file] = append(byFile[m.site.file], m)
+		lowered[m.site.file] = true
+	}
+	blockAt := map[ast.Node]string{}
+	for _, b := range blocks {
+		blockAt[b.node] = b.ID
+		lowered[b.file] = true
 	}
 	for _, ms := range byNode {
 		// The rewrite that rebuilds the node first, then the ones that wrap
@@ -99,7 +105,7 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 	}
 
 	for _, f := range pkg.Syntax {
-		if len(byFile[f]) == 0 {
+		if !lowered[f] {
 			continue
 		}
 		name := pkg.Fset.Position(f.Package).Filename
@@ -118,6 +124,11 @@ func Lower(pkg *packages.Package, mutants []Mutant) (*Schemata, error) {
 					lowered = true
 					out.Embedded[m.ID] = true
 				}
+			}
+			// The block is entered even when a mutant embedded above
+			// skips its statements, so Reach goes ahead of them.
+			if id, ok := blockAt[c.Node()]; ok {
+				(&Lowering{ID: id, runtime: runtime}).reach(current)
 			}
 			return true
 		})

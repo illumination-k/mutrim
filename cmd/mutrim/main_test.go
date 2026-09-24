@@ -627,12 +627,13 @@ func TestShardEnvRejectsBadValues(t *testing.T) {
 
 // The Phase 4 pipeline: run writes the per-test kill matrix, minimize
 // composes it and reports the redundant test, the protected ones and the
-// function no test reaches.
+// function no test reaches, by its mutants and by its blocks.
 func TestMinimize(t *testing.T) {
 	dir := t.TempDir()
 	mutantsPath := filepath.Join(dir, "mutants.json")
+	blocksPath := filepath.Join(dir, "blocks.json")
 	var stdout, stderr bytes.Buffer
-	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
+	if err := run(t.Context(), []string{"gen", "-schemata", dir, "-blocks", blocksPath, "-o", mutantsPath, schemataFixture}, &stdout, &stderr); err != nil {
 		t.Fatalf("gen -schemata: %v\n%s", err, stderr.String())
 	}
 	bin := filepath.Join(dir, "schemata.test")
@@ -646,7 +647,7 @@ func TestMinimize(t *testing.T) {
 	}
 
 	matrixPath := filepath.Join(dir, "matrix.json")
-	args := []string{"minimize", "-mutants", mutantsPath, "-srcs", schemataFixture, "-matrix", matrixPath, reportPath}
+	args := []string{"minimize", "-mutants", mutantsPath, "-blocks", blocksPath, "-srcs", schemataFixture, "-matrix", matrixPath, reportPath}
 	if err := run(t.Context(), args, &stdout, &stderr); err != nil {
 		t.Fatalf("minimize: %v\n%s", err, stderr.String())
 	}
@@ -672,6 +673,17 @@ func TestMinimize(t *testing.T) {
 	if len(result.WeakSpots) != 1 || result.WeakSpots[0].Func != "Untested" || result.WeakSpots[0].NoCoverage != 4 {
 		t.Errorf("weak_spots = %+v, want Untested", result.WeakSpots)
 	}
+	// Disabled has no mutant to be a weak spot with, but its block shows
+	// that no test runs it either.
+	uncovered := map[string]runner.Gap{}
+	for _, g := range result.Uncovered {
+		uncovered[g.Func] = g
+	}
+	for _, fn := range []string{"Untested", "Disabled"} {
+		if g := uncovered[fn]; g.Blocks != 1 || g.Unreached != 1 {
+			t.Errorf("uncovered[%s] = %+v, want its one block unreached; uncovered = %+v", fn, g, result.Uncovered)
+		}
+	}
 	if tot := result.Totals; tot.Killed == 0 || tot.Dominators == 0 || tot.Dominators >= tot.Killed || tot.Survived != 4 ||
 		tot.DominatorScore != float64(tot.Dominators)/float64(tot.Dominators+4) {
 		t.Errorf("totals = %+v, want fewer dominators than kills and the 4 survivors of Untested", tot)
@@ -684,19 +696,21 @@ func TestMinimize(t *testing.T) {
 	if len(matrix.Tests) != 14 || len(matrix.Requirements) == 0 {
 		t.Errorf("matrix has %d tests and %d requirements", len(matrix.Tests), len(matrix.Requirements))
 	}
-	kills, sites := 0, 0
+	kills, sites, blocks := 0, 0, 0
 	for _, r := range matrix.Requirements {
 		switch {
 		case strings.HasPrefix(r.Label, "kill:") && r.Weight == 5:
 			kills++
 		case strings.HasPrefix(r.Label, "site:") && r.Weight == 1:
 			sites++
+		case strings.HasPrefix(r.Label, "block:") && r.Weight == 1:
+			blocks++
 		default:
 			t.Errorf("unexpected requirement %+v", r)
 		}
 	}
-	if kills != result.Totals.Dominators || sites < kills {
-		t.Errorf("matrix has %d kills and %d sites, want the %d dominators", kills, sites, result.Totals.Dominators)
+	if kills != result.Totals.Dominators || sites < kills || blocks == 0 {
+		t.Errorf("matrix has %d kills, %d sites and %d blocks, want the %d dominators", kills, sites, blocks, result.Totals.Dominators)
 	}
 
 	// -raw-matrix exports every killed mutant.

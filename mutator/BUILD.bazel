@@ -4,6 +4,7 @@ go_library(
     name = "mutator",
     srcs = [
         "arid.go",
+        "block.go",
         "diff.go",
         "directive.go",
         "equivalent.go",

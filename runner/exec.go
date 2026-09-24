@@ -21,7 +21,7 @@ import (
 )
 
 // traceTests runs every row on its own with GOMUTANT_TRACE set and
-// returns, per row, its duration and the sites it reached. Options.
+// returns, per row, its duration and the sites and blocks it reached. Options.
 // ConfirmBaseline repeats each row, and the results are merged: the sites
 // of every run, the longest duration, and Flaky when the row failed in
 // some runs but not all. A row that fails every run is an error, like a
@@ -89,7 +89,15 @@ func (o Options) traceTest(ctx context.Context, rw row, runs int, trace func(run
 		return Test{}, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, failed.Status, failed.output)
 	}
 	t.Flaky = failures > 0
-	t.Sites = slices.Sorted(maps.Keys(sites))
+	// A traced ID that is no mutant's is a block's (mut.Reach).
+	t.Sites, t.Blocks = []string{}, []string{}
+	for _, id := range slices.Sorted(maps.Keys(sites)) {
+		if o.sites[id] {
+			t.Sites = append(t.Sites, id)
+		} else {
+			t.Blocks = append(t.Blocks, id)
+		}
+	}
 	return t, nil
 }
 
@@ -128,9 +136,9 @@ func readTrace(path string) (map[string]bool, error) {
 // nothing was observed to pass either.
 //
 // Every process is traced, and a LIVED mutant no row failed against, not
-// even suspiciously, and whose processes reached exactly the sites their
-// rows reach without it is SUSPECT_EQUIVALENT: it changed neither an
-// outcome nor the path taken. The trace is the union over a process's
+// even suspiciously, and whose processes reached exactly the sites and
+// blocks their rows reach without it is SUSPECT_EQUIVALENT: it changed
+// neither an outcome nor the path taken. The trace is the union over a process's
 // rows, compared with the union of their own.
 func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout time.Duration, ref baseline) (Result, error) {
 	r := Result{MutantID: id, Status: Lived, TimeoutMS: timeout.Milliseconds()}
@@ -162,8 +170,8 @@ func (o Options) runMutant(ctx context.Context, id string, rows []row, timeout t
 type baseline struct {
 	// flaky holds the rows Test.Flaky marks, by their name in the report.
 	flaky map[string]bool
-	// sites holds the sites each row reaches (Test.Sites), by its name in
-	// the report.
+	// sites holds the sites and blocks each row reaches (Test.Sites and
+	// Test.Blocks), by its name in the report.
 	sites map[string][]string
 	// traceDir receives the traces of the mutants' runs.
 	traceDir string

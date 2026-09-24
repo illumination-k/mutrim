@@ -71,3 +71,35 @@ func TestWeakSpots(t *testing.T) {
 		}
 	}
 }
+
+// Uncovered lists the functions with a block no test of any report
+// reaches, keyed by package, most unreached blocks first, each at its
+// first unreached line; a package no report ran is left out.
+func TestUncovered(t *testing.T) {
+	blocks := []mutator.Block{
+		{ID: "a", Pkg: "p", Func: "Part", File: "p.go", Line: 10},
+		{ID: "b", Pkg: "p", Func: "Part", File: "p.go", Line: 12},
+		{ID: "c", Pkg: "p", Func: "Part", File: "p.go", Line: 11},
+		{ID: "d", Pkg: "p", Func: "None", File: "p.go", Line: 20},
+		{ID: "e", Pkg: "p", Func: "None", File: "p.go", Line: 21},
+		{ID: "f", Pkg: "p", Func: "Full", File: "p.go", Line: 30},
+		{ID: "g", Pkg: "q", Func: "Part", File: "q.go", Line: 1},
+		{ID: "h", Pkg: "r", Func: "NotRun", File: "r.go", Line: 1},
+	}
+	r0 := &runner.Report{Pkg: "p", Tests: []runner.Test{{Name: "TestA", Blocks: []string{"a"}}}}
+	r1 := &runner.Report{Pkg: "q", Tests: []runner.Test{{Name: "q.TestB", Blocks: []string{"f"}, Flaky: true}}}
+	got := runner.Uncovered(blocks, r0, r1)
+	want := []runner.Gap{
+		{Func: "None", File: "p.go", Line: 20, Blocks: 2, Unreached: 2},
+		{Func: "Part", File: "p.go", Line: 11, Blocks: 3, Unreached: 2},
+		{Func: "Part", File: "q.go", Line: 1, Blocks: 1, Unreached: 1},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("uncovered = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("uncovered[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
