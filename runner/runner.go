@@ -534,7 +534,7 @@ func testPattern(tests []string) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, elem := range strings.Split(parent(tests[0]), "/") {
+	for elem := range strings.SplitSeq(parent(tests[0]), "/") {
 		if elem != "" {
 			b.WriteString("^" + regexp.QuoteMeta(elem) + "$/")
 		}

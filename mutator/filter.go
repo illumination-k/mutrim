@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -198,12 +199,7 @@ func matchesGlob(globs, paths []string) bool {
 }
 
 func matchesAny(match func(string) bool, paths []string) bool {
-	for _, p := range paths {
-		if match(p) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(paths, match)
 }
 
 // workDir is read once; a file filter is matched against paths relative

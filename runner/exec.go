@@ -109,7 +109,7 @@ func readTrace(path string) (map[string]bool, error) {
 		return nil, err
 	}
 	sites := map[string]bool{}
-	for _, id := range strings.Fields(string(data)) {
+	for id := range strings.FieldsSeq(string(data)) {
 		sites[id] = true
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {

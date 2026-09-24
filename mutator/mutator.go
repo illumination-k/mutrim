@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -280,8 +281,8 @@ func (w *walker) visit(n ast.Node) bool {
 // stmt returns the innermost statement on the walk's path other than a
 // block, or nil.
 func (w *walker) stmt() ast.Stmt {
-	for i := len(w.nodes) - 1; i >= 0; i-- {
-		if s, ok := w.nodes[i].(ast.Stmt); ok {
+	for _, v := range slices.Backward(w.nodes) {
+		if s, ok := v.(ast.Stmt); ok {
 			if _, block := s.(*ast.BlockStmt); !block {
 				return s
 			}
@@ -354,10 +355,5 @@ func excluded(pkg *packages.Package, f *ast.File) bool {
 			return true
 		}
 	}
-	for _, g := range pkg.GoFiles {
-		if g == name {
-			return false
-		}
-	}
-	return true
+	return !slices.Contains(pkg.GoFiles, name)
 }

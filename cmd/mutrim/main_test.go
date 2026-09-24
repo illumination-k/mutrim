@@ -181,7 +181,7 @@ func TestGenSchemataThenRun(t *testing.T) {
 		}
 		scoped := filepath.Join(dir, "scoped.json")
 		stdout.Reset()
-		args = append(args[:len(args):len(args)], "-in-diff", diffPath, "-out", scoped)
+		args = append(slices.Clip(args), "-in-diff", diffPath, "-out", scoped)
 		if err := run(t.Context(), args, &stdout, &stderr); err != nil {
 			t.Fatalf("run -in-diff: %v\n%s", err, stderr.String())
 		}
