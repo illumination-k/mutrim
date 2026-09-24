@@ -305,7 +305,7 @@ func TestCustomOperatorSchemata(t *testing.T) {
 	if want := map[string]bool{"<< -> >>": true, "+ -> <": false}; !maps.Equal(viable, want) {
 		t.Errorf("mutants = %v, want %v", viable, want)
 	}
-	sch, err := mutator.Lower(pkg, mutants)
+	sch, err := mutator.Lower(pkg, mutants, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,11 +3,13 @@
 // requirements that test satisfies; Compose unions several criteria, each
 // with a weight, into one Matrix that the minimize package works on.
 //
-// Two criteria come from the runner's report: SiteCoverage (the mutant
-// sites a test reaches: cheap, and what narrows the mutation run) and
-// Mutation (the mutants a test kills: the real objective). Surviving
-// mutants are no requirement at all, so they never keep a test, and
-// Mutation.Dominators drops the killed mutants another one subsumes.
+// Three criteria come from the runner's report: SiteCoverage (the mutant
+// sites a test reaches: cheap, and what narrows the mutation run),
+// BlockCoverage (the blocks a test reaches, which also sees code without a
+// mutant site) and Mutation (the mutants a test kills: the real
+// objective). Surviving mutants are no requirement at all, so they never
+// keep a test, and Mutation.Dominators drops the killed mutants another
+// one subsumes.
 package criteria
 
 import (
@@ -37,6 +39,18 @@ func (SiteCoverage) Name() string { return "site" }
 
 // Rows returns the map itself.
 func (c SiteCoverage) Rows() map[string][]string { return c }
+
+// BlockCoverage maps each test to the IDs of the blocks it reaches
+// (mutator.Block). A function of straight-line calls and assignments has
+// no mutant site, so a test exercising only it satisfies no site
+// requirement; its block keeps that test.
+type BlockCoverage map[string][]string
+
+// Name returns "block".
+func (BlockCoverage) Name() string { return "block" }
+
+// Rows returns the map itself.
+func (c BlockCoverage) Rows() map[string][]string { return c }
 
 // Mutation maps each test to the IDs of the mutants it kills.
 type Mutation map[string][]string

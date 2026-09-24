@@ -27,22 +27,25 @@ func covers(m *criteria.Matrix, t criteria.Test) string {
 func TestCompose(t *testing.T) {
 	sites := criteria.SiteCoverage{"TestB": {"m2", "m1"}, "TestA": {"m1"}}
 	kills := criteria.Mutation{"TestB": {"m2"}}
-	m := criteria.Compose(map[string]int64{"TestA": 3, "TestB": 0, "TestC": 7},
+	// TestC reaches code without a mutant site: only its block sees it.
+	blocks := criteria.BlockCoverage{"TestB": {"b1"}, "TestC": {"b2"}}
+	m := criteria.Compose(map[string]int64{"TestA": 3, "TestB": 0, "TestC": 7, "TestD": 1},
 		criteria.Weighted{Criterion: sites, Weight: 1},
 		criteria.Weighted{Criterion: kills, Weight: 5},
+		criteria.Weighted{Criterion: blocks, Weight: 2},
 	)
 
-	if got, want := strings.Join(labels(m), " "), "kill:m2 site:m1 site:m2"; got != want {
+	if got, want := strings.Join(labels(m), " "), "block:b1 block:b2 kill:m2 site:m1 site:m2"; got != want {
 		t.Errorf("requirements = %q, want %q", got, want)
 	}
-	if m.Requirements[0].Weight != 5 || m.Requirements[1].Weight != 1 {
+	if m.Requirements[0].Weight != 2 || m.Requirements[2].Weight != 5 || m.Requirements[3].Weight != 1 {
 		t.Errorf("weights not taken from the criterion: %+v", m.Requirements)
 	}
-	want := map[string]string{"TestA": "site:m1", "TestB": "kill:m2 site:m1 site:m2", "TestC": ""}
-	if len(m.Tests) != 3 {
+	want := map[string]string{"TestA": "site:m1", "TestB": "block:b1 kill:m2 site:m1 site:m2", "TestC": "block:b2", "TestD": ""}
+	if len(m.Tests) != 4 {
 		t.Fatalf("tests = %+v", m.Tests)
 	}
-	for i, name := range []string{"TestA", "TestB", "TestC"} {
+	for i, name := range []string{"TestA", "TestB", "TestC", "TestD"} {
 		if m.Tests[i].Name != name {
 			t.Errorf("tests[%d] = %s, want %s (sorted by name)", i, m.Tests[i].Name, name)
 		}

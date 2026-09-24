@@ -12,6 +12,8 @@
 // With GOMUTANT_TRACE naming a file, every site the process reaches
 // appends its ID to that file once. The runner uses it to learn which
 // tests execute which mutant, so each mutant is run only against those.
+// Reach records a block the same way; it is a trace-only site, never a
+// mutant, which gives the runner per-test block coverage.
 package mut
 
 import (
@@ -32,6 +34,15 @@ func Active(id string) bool {
 		trace.record(id)
 	}
 	return active == id
+}
+
+// Reach records that the block id was entered. Schemata sources call it at
+// the head of every block (mutator.Block), so code without a mutant site
+// is traced too; with GOMUTANT_TRACE unset it does nothing.
+func Reach(id string) {
+	if trace != nil {
+		trace.record(id)
+	}
 }
 
 // tracer appends each reached site ID to a file, once per process. A site

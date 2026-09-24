@@ -4,8 +4,9 @@ description: "全ミュータントを埋め込んで一度だけビルドし、
 ---
 
 ```bash
-# Write sources with every mutant embedded, plus overlay.json and mutants.json.
-go run ./cmd/mutrim gen -schemata out -o mutants.json ./path/to/pkg
+# Write sources with every mutant embedded and every block traced, plus
+# overlay.json, mutants.json and blocks.json.
+go run ./cmd/mutrim gen -schemata out -blocks blocks.json -o mutants.json ./path/to/pkg
 
 # Build the test binary once from the schemata sources.
 go test -c -overlay out/overlay.json -o pkg.test ./path/to/pkg
@@ -13,8 +14,9 @@ go test -c -overlay out/overlay.json -o pkg.test ./path/to/pkg
 # Re-execute it once per mutant and write report.json.
 go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -dir ./path/to/pkg -out report.json
 
-# Report redundant tests and functions whose mutants survive. Never deletes anything.
-go run ./cmd/mutrim minimize -mutants mutants.json -srcs ./path/to/pkg report.json
+# Report redundant tests, functions whose mutants survive and functions no test
+# runs. Never deletes anything.
+go run ./cmd/mutrim minimize -mutants mutants.json -blocks blocks.json -srcs ./path/to/pkg report.json
 
 # Render the run for another tool: Stryker JSON, its HTML viewer, CI annotations.
 go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
@@ -34,8 +36,21 @@ TIMEOUT は `killed_by` の各テストがまだ存在し、ミュータント�
 `run` はまず、`GOMUTANT_TRACE` を設定した状態で各トップレベルテストを単独で実行する。これにより
 `mut` ランタイムが、そのテストが到達したミュータントサイトを記録する。その後、各ミュータントは
 それに到達するテストに対してだけ実行され、`report.json` にはテストごとの kill 行列が保持される。
-すなわち `tests` (名前、所要時間、到達したサイト) と、ミュータントごとにそれを kill したすべての
-テストである。どのテストも到達しないミュータントは `NO_COVERAGE` であり、実行されない。
+すなわち `tests` (名前、所要時間、到達したサイトとブロック) と、ミュータントごとにそれを kill した
+すべてのテストである。どのテストも到達しないミュータントは `NO_COVERAGE` であり、実行されない。
+
+サイトカバレッジはミュータントサイトのないコードを見られない。関数呼び出しと代入だけが並ぶ
+関数にはサイトがないので、それだけを実行するテストは何も満たさず、冗長と判定されてしまう。
+そこでスキーマタのソースは、すべてのブロックの先頭 (関数と関数リテラルの本体、`if` / `else` /
+`for` / `range` の本体、`case` 節と `select` 節) でも `mut.Reach(id)` を呼ぶ。これはトレース専用の
+サイトで、ミュータントにはならない。トレースしなければ何もせず、トレース時にはサイトと同じように
+ブロックを記録するので、`tests[].blocks` は `-cover` を使わずに `go test` でも Bazel でも正確な
+テストごとのブロックカバレッジになる。`gen -blocks` はブロックの一覧 (`blocks.json`: ID、関数、
+位置) を書き出す。`minimize` は到達したブロックをそれぞれ要件に加え (`-w-block`、既定 1。
+`-w-site` 1、`-w-kill` 5 と並ぶ)、`-blocks blocks.json` を指定すると、どのテストも到達しない
+ブロックを持つ関数を `weak_spots` と並べて `uncovered` に列挙する (`blocks`、`unreached`、
+最初の未到達ブロックの `line`)。ミュータントのない関数は weak spot にはならないが、uncovered には
+なり得る。
 
 `totals` はカウントと並べて実行のスコアを報告する。`score` はミューテーションスコア
 (killed + timeout) / (killed + timeout + lived + no_coverage) であり、どれだけテストされていないか

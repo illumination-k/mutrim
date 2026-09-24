@@ -17,6 +17,7 @@ type Flag bool
 var ErrTarget = errors.New("target")
 
 func Less(a, b int) bool {
+	mut.Reach("1744a5373c8c751b")
 	{
 		if mut.Active("fd555defc2fee05d") {
 			return true
@@ -30,6 +31,7 @@ func Less(a, b int) bool {
 	}
 }
 func LessEq(a, b float64) bool {
+	mut.Reach("8b0f5abf9def9aa5")
 	{
 		if mut.Active("ad354992a548bd74") {
 			return true
@@ -43,6 +45,7 @@ func LessEq(a, b float64) bool {
 	}
 }
 func Greater(a, b string) bool {
+	mut.Reach("5129c270f9ca5da7")
 	{
 		if mut.Active("479ba6fdd6b56747") {
 			return true
@@ -56,6 +59,7 @@ func Greater(a, b string) bool {
 	}
 }
 func GreaterEq(a Celsius) bool {
+	mut.Reach("7f87d267d6deebfc")
 	{
 		if mut.Active("4c92819c64d1137d") {
 			return true
@@ -69,6 +73,7 @@ func GreaterEq(a Celsius) bool {
 	}
 }
 func ConstLeft(x int) bool {
+	mut.Reach("e7ce129ba5ab7ed8")
 	{
 		if mut.Active("95cfe14f48182a19") {
 			return true
@@ -82,6 +87,7 @@ func ConstLeft(x int) bool {
 	}
 }
 func IsNil(p *int) bool {
+	mut.Reach("ca4b29ca7802c7bb")
 	{
 		if mut.Active("b65c9b23fff9b12c") {
 			return true
@@ -95,6 +101,7 @@ func IsNil(p *int) bool {
 	}
 }
 func NotNil(s []int) bool {
+	mut.Reach("6a758486c6c6457b")
 	{
 		if mut.Active("3f447a022e87d6cf") {
 			return true
@@ -108,6 +115,7 @@ func NotNil(s []int) bool {
 	}
 }
 func IsTarget(err error) bool {
+	mut.Reach("ee3fe0d3fce50487")
 	{
 		if mut.Active("43e038ca8ecbcf1e") {
 			return true
@@ -121,6 +129,7 @@ func IsTarget(err error) bool {
 	}
 }
 func SameInterface(a, b any) bool {
+	mut.Reach("b654f9ce28b9650f")
 	{
 		if mut.Active("66dbebac595c1789") {
 			return true
@@ -135,6 +144,7 @@ func SameInterface(a, b any) bool {
 }
 
 func Add(a, b int) int {
+	mut.Reach("1e3ea8a86e9eff1d")
 	{
 		if mut.Active("fd10d75fd9385104") {
 			return 1
@@ -148,6 +158,7 @@ func Add(a, b int) int {
 	}
 }
 func Sub(a, b float64) float64 {
+	mut.Reach("7bec3f55b8fcaadb")
 	{
 		if mut.Active("1c869f3ed5a18f39") {
 			return 1
@@ -161,6 +172,7 @@ func Sub(a, b float64) float64 {
 	}
 }
 func Scale(d time.Duration) time.Duration {
+	mut.Reach("b5cfec494bc7c9a0")
 	{
 		if mut.Active("770161b518b5fcfb") {
 			return 1
@@ -174,6 +186,7 @@ func Scale(d time.Duration) time.Duration {
 	}
 }
 func Div(a, b int) int {
+	mut.Reach("e1c65964c7450575")
 	{
 		if mut.Active("3e55ad3593cf184a") {
 			return 1
@@ -187,6 +200,7 @@ func Div(a, b int) int {
 	}
 }
 func Mod(a, b int) int {
+	mut.Reach("7c558ab614739f87")
 	{
 		if mut.Active("08c1e5310d9584a4") {
 			return 1
@@ -200,6 +214,7 @@ func Mod(a, b int) int {
 	}
 }
 func MulComplex(a, b complex128) complex128 {
+	mut.Reach("ad0fa63c684a73ad")
 	{
 		if mut.Active("0c55cbd0e00c895b") {
 			return 1
@@ -213,6 +228,7 @@ func MulComplex(a, b complex128) complex128 {
 	}
 }
 func Half(x float64) float64 {
+	mut.Reach("b893821e07dc03b4")
 	{
 		if mut.Active("fe0ce2faf79b088d") {
 			return 1
@@ -225,8 +241,12 @@ func Half(x float64) float64 {
 		}
 	}
 }
-func Sum[T int | float64](a, b T) T { return mut.Arith("8300bc4c99bc1d49", a, b, "+", "-") }
+func Sum[T int | float64](a, b T) T {
+	mut.Reach("2c0628c778c964cf")
+	return mut.Arith("8300bc4c99bc1d49", a, b, "+", "-")
+}
 func Shift(n uint) int {
+	mut.Reach("72097dce806616a2")
 	{
 		if mut.Active("22d7724c6e775f32") {
 			return 1
@@ -241,6 +261,7 @@ func Shift(n uint) int {
 }
 
 func And(a bool, b func() bool) bool {
+	mut.Reach("9452b48a13aae172")
 	{
 		if mut.Active("831cf1e5a316ef5d") {
 			return true
@@ -256,6 +277,7 @@ func And(a bool, b func() bool) bool {
 	}
 }
 func Or(a bool, b func() bool) bool {
+	mut.Reach("0eb0a20c3e1949b2")
 	{
 		if mut.Active("2b24517bc5488237") {
 			return true
@@ -271,6 +293,7 @@ func Or(a bool, b func() bool) bool {
 	}
 }
 func Between(a, b, c int) bool {
+	mut.Reach("5880d73737499324")
 	{
 		if mut.Active("bff3cb5a192204bb") {
 			return true
@@ -289,7 +312,9 @@ func Between(a, b, c int) bool {
 }
 
 func Sign(x int) int {
+	mut.Reach("a4cbb25a4984643b")
 	if mut.Not("ce944a6297477124", mut.Cond("b7dcf851e4d2ebd8", mut.Cond("324d964330019e1b", mut.Not("51cbeca836048be9", mut.Cmp("b09516393067b7c9", x, mut.Const("8fdd8f886b9db127", int(0), 1), ">", ">=")), true), false)) {
+		mut.Reach("e5c5f72a965f4783")
 		if !mut.Active("b8c9915fbd6863b9") {
 			{
 				if mut.Active("93f8df02015b4ae0") {
@@ -313,8 +338,10 @@ func Sign(x int) int {
 }
 
 func CountTo(n int) int {
+	mut.Reach("a95a7c17b4db3a1a")
 	c := mut.Const("36766ecd38bd6931", int(0), 1)
 	for i := mut.Const("84a2c361b94b85ea", int(0), 1); mut.Not("4e9c7e10c69b6dd2", mut.Cond("e730ff4031b69c92", mut.Not("5adc5ee4ed84265b", mut.Cmp("10bc891894f8cba2", i, n, "<", "<=")), false)); mut.Inc("ee70f52e628e38ee", &i) {
+		mut.Reach("8413d69d6d674cb1")
 		mut.Inc("fa46b33096c8373e", &c)
 	}
 	{
@@ -331,6 +358,7 @@ func CountTo(n int) int {
 }
 
 func Tally(m map[string]int, k string) {
+	mut.Reach("324d2bfbbde3ced5")
 	if mut.Active("da745f827d2edfe9") {
 		m[k]--
 	} else {
@@ -338,15 +366,17 @@ func Tally(m map[string]int, k string) {
 	}
 }
 
-func Decrement(p *int) { mut.Dec("c10b48e649030625", p) }
+func Decrement(p *int) { mut.Reach("be37f7c148ee4ce0"); mut.Dec("c10b48e649030625", p) }
 
 type Counter struct{ n int }
 
-func (c *Counter) Inc() { mut.Inc("1cda4f2b33620015", &c.n) }
+func (c *Counter) Inc() { mut.Reach("dd838e3a833157fb"); mut.Inc("1cda4f2b33620015", &c.n) }
 
 func Classify(x int) string {
+	mut.Reach("2778b05e37bb738f")
 	switch {
 	case mut.Not("34707c5f67de1d42", mut.Cmp("cd9dbacb2034e5e3", x, mut.Const("5f5a3eed71e5ba20", int(0), 1), "<", "<=")):
+		mut.Reach("a776b1b626839706")
 		{
 			if mut.Active("de44dda349b3b224") {
 				return "mutrim"
@@ -373,6 +403,7 @@ func Classify(x int) string {
 }
 
 func Pair(x int) (int, error) {
+	mut.Reach("d0713ee9a8759ed8")
 	{
 		if mut.Active("2681283d672fa8cd") {
 			return 0, nil
@@ -392,7 +423,9 @@ func Pair(x int) (int, error) {
 }
 
 func Halve(x int) (int, error) {
+	mut.Reach("91b55f8fce60c245")
 	if mut.Not("e7a02783778866cb", mut.Cond("7dabe873ceb707d4", mut.Cond("9767a5f8f8130569", mut.Not("ca30a9b7e9932d2c", mut.ArithInt("fa712c42bd650c8b", x, mut.Const("f1ff3e6a599658e6", int(2), 3), "%", "*") != mut.Const("1cf1cd9be599201f", int(0), 1)), true), false)) {
+		mut.Reach("87b82fb56fbd366c")
 		if !mut.Active("9f698bf367b861dc") {
 			{
 				if mut.Active("24cd475ed1de6960") {
@@ -431,6 +464,7 @@ func Halve(x int) (int, error) {
 }
 
 func IsEmpty(s []int) bool {
+	mut.Reach("fc394788874f5acb")
 	{
 		if mut.Active("f0f24f85303f1bb0") {
 			return true
@@ -445,6 +479,7 @@ func IsEmpty(s []int) bool {
 }
 
 func NotEmpty(s []int) bool {
+	mut.Reach("654c8f0b1f00d8b3")
 	{
 		if mut.Active("6b241867a32bd4c3") {
 			return true
@@ -459,6 +494,7 @@ func NotEmpty(s []int) bool {
 }
 
 func SkipConst() int {
+	mut.Reach("bca24e882d9bd60b")
 	const c = 2 * 3
 	{
 		if mut.Active("2e03a825dd95bfc1") {
@@ -474,6 +510,7 @@ func SkipConst() int {
 }
 
 func SkipNamedBool(a, b int) Flag {
+	mut.Reach("0fc756aea4529d9d")
 	{
 		if mut.Active("d211f157cd98bcc9") {
 			return true
@@ -488,6 +525,7 @@ func SkipNamedBool(a, b int) Flag {
 }
 
 func SkipNamedBoolOperands(a, b Flag) Flag {
+	mut.Reach("84cc44184d4fd98f")
 	{
 		if mut.Active("0e3c412313ea79c9") {
 			return true
@@ -502,7 +540,9 @@ func SkipNamedBoolOperands(a, b Flag) Flag {
 }
 
 func SkipRecover(f func()) (caught bool) {
+	mut.Reach("bb7af18b3015cc4a")
 	defer func() {
+		mut.Reach("802a909b5fb89eb9")
 		if mut.Active("2506888744c4656f") {
 			_ = caught || mut.Not("03e96412b880e329", mut.Const("de2bcdfc13c799a8", recover(), nil) != nil)
 		} else {
@@ -521,11 +561,14 @@ func SkipRecover(f func()) (caught bool) {
 }
 
 func SkipMapPost(m map[int]int, k int) {
+	mut.Reach("c999947db8465990")
 	for ; mut.Not("1032736dfefefb11", mut.Cond("b500da3628a82f68", mut.Not("f80261e39ac44974", mut.Cmp("734b96ad224b240a", m[k], mut.Const("5cb4e302d80ccb19", int(3), 4), "<", "<=")), false)); m[k]++ {
+		mut.Reach("a71193aaf3bf8181")
 	}
 }
 
 func Mask(a, b uint8) uint8 {
+	mut.Reach("04c9f136af210984")
 	{
 		if mut.Active("5e8eb77661efa4ed") {
 			return 1
@@ -539,6 +582,7 @@ func Mask(a, b uint8) uint8 {
 	}
 }
 func Either(a, b int) int {
+	mut.Reach("4490e03bb271dce9")
 	{
 		if mut.Active("63a9deb0e2e9e4b8") {
 			return 1
@@ -552,6 +596,7 @@ func Either(a, b int) int {
 	}
 }
 func Shl(a int64, n uint) int64 {
+	mut.Reach("eb791c82b5a36162")
 	{
 		if mut.Active("b9080d068d0c9ef2") {
 			return 1
@@ -565,6 +610,7 @@ func Shl(a int64, n uint) int64 {
 	}
 }
 func Negate(x int) int {
+	mut.Reach("97537cee7ac323cf")
 	{
 		if mut.Active("2182f978583bd56f") {
 			return 1
@@ -579,6 +625,7 @@ func Negate(x int) int {
 }
 
 func Record(log *[]string, s string) {
+	mut.Reach("8d22020beb4b086a")
 	if mut.Active("4fd0fb5cd78119fd") {
 		_ = append(*log, s)
 	} else {
@@ -587,6 +634,7 @@ func Record(log *[]string, s string) {
 }
 
 func Twice(log *[]string) {
+	mut.Reach("065993719f7f84c4")
 	if !mut.Active("fb308af6f5d4d8eb") {
 		Record(log, mut.Const("3768b977d0736e4f", string("a"), ""))
 	}
@@ -596,8 +644,10 @@ func Twice(log *[]string) {
 }
 
 func SkipInitCall(log *[]string) int {
+	mut.Reach("b4875dc91f540a95")
 	n := mut.Const("8bf3562f116152b2", int(0), 1)
 	for Record(log, mut.Const("9e53b7138ea22f42", string("init"), "")); mut.Not("d91794ebcc8a1f80", mut.Cond("181844d5113f5ab6", mut.Not("71b9db8fc62f0281", mut.Cmp("668924181bccccb0", n, mut.Const("85a965bcd51470c8", int(2), 3), "<", "<=")), false)); Record(log, mut.Const("0c090d1c32e6a657", string("post"), "")) {
+		mut.Reach("7c98feb6f3971d0c")
 		if mut.Active("dd9faa28f369d881") {
 			n = mut.Const("9daa62ee8d646c88", int(1), 2)
 		} else {
@@ -618,7 +668,9 @@ func SkipInitCall(log *[]string) int {
 }
 
 func SkipNamedBoolCond(f Flag) int {
+	mut.Reach("a3d0735f5922d650")
 	if f {
+		mut.Reach("f7adf7382e723338")
 		if !mut.Active("7db0bc0743a1312c") {
 			{
 				if mut.Active("33708531f6b0060e") {
@@ -637,6 +689,7 @@ func SkipNamedBoolCond(f Flag) int {
 }
 
 func Offset(x int64) int64 {
+	mut.Reach("2a3108a1bf6f6b64")
 	{
 		if mut.Active("875bf266deb3b83a") {
 			return 1
@@ -650,6 +703,7 @@ func Offset(x int64) int64 {
 	}
 }
 func Quarter(x float64) float64 {
+	mut.Reach("f24b9589e7655e30")
 	{
 		if mut.Active("5ffc5af862a702c7") {
 			return 1
@@ -663,6 +717,7 @@ func Quarter(x float64) float64 {
 	}
 }
 func SkipNamedConst(d time.Duration) time.Duration {
+	mut.Reach("d13c46ce2bd207c0")
 	{
 		if mut.Active("1e5b375736ad3eb7") {
 			return 1
@@ -676,6 +731,7 @@ func SkipNamedConst(d time.Duration) time.Duration {
 	}
 }
 func Boxed() any {
+	mut.Reach("c7c765d32725684b")
 	{
 		if mut.Active("382fdbe8c832768e") {
 			return nil
@@ -684,6 +740,7 @@ func Boxed() any {
 	}
 }
 func SkipShiftConst(x float64) float64 {
+	mut.Reach("a88d84d9391a5492")
 	{
 		if mut.Active("67b2bddf1b48fa0f") {
 			return 1
@@ -697,6 +754,7 @@ func SkipShiftConst(x float64) float64 {
 	}
 }
 func NoSiteArrayLen() int {
+	mut.Reach("1e970bd7f352585c")
 	var a [2]int
 	{
 		if mut.Active("6316cb990b6906d5") {
@@ -711,6 +769,7 @@ func NoSiteArrayLen() int {
 	}
 }
 func NoSiteArrayKey() int {
+	mut.Reach("8b5ffcb0bf7e217c")
 	{
 		if mut.Active("daeeae03ec3b996b") {
 			return 1
@@ -725,11 +784,14 @@ func NoSiteArrayKey() int {
 }
 
 func FirstEven(xs []int) int {
+	mut.Reach("27dcbb51a1fd6095")
 	for _, x := range xs {
+		mut.Reach("e044237984f7c442")
 		if mut.Active("82d810f0dded54aa") {
 			break
 		}
 		if mut.Not("925d60b78bcabb45", mut.Cond("1bf08aab377dd22f", mut.Cond("2b3eac0e679b0f20", mut.Not("0fb3f1d5e2ad1cd8", mut.ArithInt("8b549cab6bacaf98", x, mut.Const("4fd5e581beb7fbfd", int(2), 3), "%", "*") != mut.Const("e1f68ecbf03cf84b", int(0), 1)), true), false)) {
+			mut.Reach("925ee5c94b55ec42")
 			if !mut.Active("1de7a3522db67388") {
 				if mut.Active("92cf53b800b1c89e") {
 					break
@@ -764,12 +826,15 @@ func FirstEven(xs []int) int {
 }
 
 func CountUntil(xs []int, stop int) int {
+	mut.Reach("7728f9e9053168b0")
 	n := mut.Const("a5365312fd50c0e4", int(0), 1)
 	for _, x := range xs {
+		mut.Reach("7e3ad91d0b52acc3")
 		if mut.Active("cd2bc1571bd95184") {
 			break
 		}
 		if mut.Not("f01051a12790d473", mut.Cond("bcbf8f51e6ee3896", mut.Cond("cbef5e6f698067d1", mut.Not("3abbba1c626162c1", x == stop), true), false)) {
+			mut.Reach("53653ce862077cba")
 			if !mut.Active("d772854b86509927") {
 				if mut.Active("4fed1f6436b67f1a") {
 					continue
@@ -794,7 +859,9 @@ func CountUntil(xs []int, stop int) int {
 }
 
 func Bound(x, lo int) int {
+	mut.Reach("6b5ddf0ab737718b")
 	if mut.Not("0e380db107cb78a2", mut.Cond("22b4b507ae771ea7", mut.Cond("fdeb1c1bce5a84a4", mut.Not("040f5795958f76f6", mut.Cmp("68b8227a66b72b49", x, lo, "<", "<=")), true), false)) {
+		mut.Reach("7ba2e27c3eba9309")
 		if !mut.Active("3290cc05c9d6c6e6") {
 			if mut.Active("c4a88f9bd5c38594") {
 				_ = lo
@@ -803,6 +870,7 @@ func Bound(x, lo int) int {
 			}
 		}
 	} else {
+		mut.Reach("72fb5b3a6c47910a")
 		if !mut.Active("72621e0b1cf57e9a") {
 			if mut.Active("9e98977fe44b96d1") {
 				_ = mut.Arith("12dc7e70a2ef6a11", x, mut.Const("0d79842947d152aa", int(1), 2), "+", "-")
@@ -825,9 +893,11 @@ func Bound(x, lo int) int {
 }
 
 func Describe(n int) string {
+	mut.Reach("5503952270648782")
 	out := mut.Const("ce45400581986f0d", string("zero"), "")
 	switch {
 	case mut.Not("1663de8e047eb77f", mut.Cmp("2bec900b450b95fa", n, mut.Const("73fc0b11a49da29c", int(0), 1), "<", "<=")):
+		mut.Reach("c2c42a6b41fd1cf9")
 		if !mut.Active("1ea466d8264afc3c") {
 			if mut.Active("806ce700567452a0") {
 				_ = mut.Const("d01a45201d94f36e", string("negative"), "")
@@ -836,6 +906,7 @@ func Describe(n int) string {
 			}
 		}
 	case mut.Not("7615ceab4f5314b9", mut.Cmp("028747c1b345543b", n, mut.Const("0bf07c8512949eec", int(0), 1), ">", ">=")):
+		mut.Reach("6e68d673614b04f9")
 		if !mut.Active("ecac633b4522d602") {
 			if mut.Active("b57df2a26f1bd846") {
 				_ = mut.Const("d3f3495791541d38", string("positive"), "")
@@ -844,6 +915,7 @@ func Describe(n int) string {
 			}
 		}
 	default:
+		mut.Reach("92862ae431af51e0")
 		if !mut.Active("eab556d65f52dca9") {
 			if mut.Active("3dc49fc685b44b84") {
 				out = mut.Const("ab4c9e74f559e8b9", string("!"), "")
@@ -866,14 +938,18 @@ func Describe(n int) string {
 }
 
 func Drain(ch <-chan int) int {
+	mut.Reach("38b1a3540375ef57")
 	n := mut.Const("6d1b01d50523421c", int(0), 1)
 	for {
+		mut.Reach("faf0883d3517d769")
 		select {
 		case <-ch:
+			mut.Reach("e536ce92e31d710e")
 			if !mut.Active("f3c0be9368f65207") {
 				mut.Inc("6e65a0da6155e3a8", &n)
 			}
 		default:
+			mut.Reach("82dd5a0fb689bac3")
 			{
 				if mut.Active("859e2022a1ae6200") {
 					return 1
@@ -890,6 +966,7 @@ func Drain(ch <-chan int) int {
 }
 
 func Prefixed(s string) bool {
+	mut.Reach("d991e6d03ad92c4c")
 	{
 		if mut.Active("314588aee827aa40") {
 			return true
@@ -904,6 +981,7 @@ func Prefixed(s string) bool {
 }
 
 func Smallest(xs []int) int {
+	mut.Reach("75875a455eab2762")
 	{
 		if mut.Active("f429f0edf8e0aec0") {
 			return 1
@@ -924,6 +1002,7 @@ type Config struct {
 }
 
 func NewConfig(extra []string) Config {
+	mut.Reach("3a0d4451545fc909")
 	c := Config{Names: mut.Const("8e7f7623dc4b3824", []string{mut.Const("c7ed4984a3078116", string("a"), "")}, nil), Verbose: mut.Cond("dcca91803ba22a10", true, false), Retries: mut.Const("eaad2b332ab3bb36", int(2), 3)}
 	if mut.Active("90401649b57b10b5") {
 		_ = append(c.Names, extra...)
@@ -939,6 +1018,7 @@ func NewConfig(extra []string) Config {
 }
 
 func Untested(x int) int {
+	mut.Reach("a4833722d3d7146f")
 	{
 		if mut.Active("c948a40c0ebe981d") {
 			return 1
@@ -952,4 +1032,4 @@ func Untested(x int) int {
 	}
 }
 
-func Disabled(x int) int { return x + 1 }
+func Disabled(x int) int { mut.Reach("1d4a9057ffacd157"); return x + 1 }

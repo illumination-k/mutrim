@@ -149,6 +149,9 @@ type Options struct {
 	bins []Binary
 	// hashes holds the hashes of each of bins' test functions, by name.
 	hashes []map[string]string
+	// sites holds the IDs of Mutants, which tell a traced site from a
+	// traced block.
+	sites map[string]bool
 }
 
 // row is a row of the report: a test of one of Options.bins, by its name
@@ -212,7 +215,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	ref := baseline{flaky: map[string]bool{}, sites: map[string][]string{}}
 	for i, t := range tests {
 		durations[t.Name] = t.DurationMS
-		ref.sites[t.Name] = t.Sites
+		ref.sites[t.Name] = slices.Concat(t.Sites, t.Blocks)
 		for _, id := range t.Sites {
 			reachers[id] = append(reachers[id], names[i])
 		}
@@ -331,10 +334,12 @@ func (o *Options) setup() error {
 	if o.Sample < 0 || o.Sample > 1 {
 		return fmt.Errorf("runner: -sample %g is out of range 0..1", o.Sample)
 	}
+	o.sites = map[string]bool{}
 	for _, m := range o.Mutants {
 		if _, err := strconv.ParseUint(m.ID, 16, 64); err != nil {
 			return fmt.Errorf("runner: mutant ID %q is not a hex hash", m.ID)
 		}
+		o.sites[m.ID] = true
 	}
 	for _, t := range o.Tests {
 		if strings.Contains(t, "/") {

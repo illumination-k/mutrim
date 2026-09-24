@@ -4,8 +4,9 @@ description: "Build once with every mutant embedded, run them all, and minimize 
 ---
 
 ```bash
-# Write sources with every mutant embedded, plus overlay.json and mutants.json.
-go run ./cmd/mutrim gen -schemata out -o mutants.json ./path/to/pkg
+# Write sources with every mutant embedded and every block traced, plus
+# overlay.json, mutants.json and blocks.json.
+go run ./cmd/mutrim gen -schemata out -blocks blocks.json -o mutants.json ./path/to/pkg
 
 # Build the test binary once from the schemata sources.
 go test -c -overlay out/overlay.json -o pkg.test ./path/to/pkg
@@ -13,8 +14,9 @@ go test -c -overlay out/overlay.json -o pkg.test ./path/to/pkg
 # Re-execute it once per mutant and write report.json.
 go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json -dir ./path/to/pkg -out report.json
 
-# Report redundant tests and functions whose mutants survive. Never deletes anything.
-go run ./cmd/mutrim minimize -mutants mutants.json -srcs ./path/to/pkg report.json
+# Report redundant tests, functions whose mutants survive and functions no test
+# runs. Never deletes anything.
+go run ./cmd/mutrim minimize -mutants mutants.json -blocks blocks.json -srcs ./path/to/pkg report.json
 
 # Render the run for another tool: Stryker JSON, its HTML viewer, CI annotations.
 go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
@@ -34,8 +36,21 @@ passes its `srcs`.
 `run` first runs every top-level test on its own with `GOMUTANT_TRACE` set, which makes the
 `mut` runtime record the mutant sites the test reaches. Each mutant then runs only against
 the tests reaching it, and `report.json` holds the per-test kill matrix: `tests` (name,
-duration, reached sites) and, per mutant, every test that killed it. A mutant no test reaches
-is `NO_COVERAGE` and never executed.
+duration, reached sites and blocks) and, per mutant, every test that killed it. A mutant no
+test reaches is `NO_COVERAGE` and never executed.
+
+Site coverage is blind to code without a mutant site: a function of straight-line calls and
+assignments has none, so a test that only exercises it would satisfy nothing and be called
+redundant. The schemata sources therefore also call `mut.Reach(id)` at the head of every
+block (function and function-literal bodies, `if` / `else` / `for` / `range` bodies, `case`
+and `select` clauses). It is a trace-only site, never a mutant: untraced it does nothing, and
+traced it records the block like a site, so `tests[].blocks` is exact per-test block coverage
+under `go test` and Bazel alike, with no `-cover` involved. `gen -blocks` lists the blocks
+(`blocks.json`: ID, function, position). `minimize` adds each reached block as a requirement
+(`-w-block`, default 1, next to `-w-site` 1 and `-w-kill` 5), and with `-blocks blocks.json`
+lists under `uncovered` the functions with a block no test reaches (`blocks`, `unreached`, the
+first unreached `line`), next to `weak_spots`: a function with no mutant is never a weak spot,
+but it can be uncovered.
 
 `totals` reports the run's scores next to its counts. `score` is the mutation score, (killed +
 timeout) / (killed + timeout + lived + no_coverage): how much is untested. `covered_score` is
