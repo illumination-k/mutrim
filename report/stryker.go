@@ -57,7 +57,7 @@ type Mutant struct {
 	// TestsCompleted is absent for a mutant that never ran, which the
 	// viewer shows differently from one that ran against no test.
 	TestsCompleted *int  `json:"testsCompleted,omitempty"`
-	Duration       int64 `json:"duration,omitempty"`
+	Duration       int64 `json:"duration,omitzero"`
 }
 
 // Location is the mutated span, one-based lines and columns, with end

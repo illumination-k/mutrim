@@ -40,7 +40,7 @@ type Options struct {
 type Selection struct {
 	Name string `json:"name"`
 	// Protected tests are selected first, before any gain is computed.
-	Protected bool `json:"protected,omitempty"`
+	Protected bool `json:"protected,omitzero"`
 	// New counts the requirements no earlier selection satisfied.
 	New int `json:"new"`
 	// Gain is the weight of those requirements per millisecond of the
@@ -49,7 +49,7 @@ type Selection struct {
 	// Essential marks a test that satisfies a requirement no other test
 	// in the whole suite does: dropping it loses that requirement. The
 	// greedy selects it anyway; this is reporting only.
-	Essential bool `json:"essential,omitempty"`
+	Essential bool `json:"essential,omitzero"`
 	// Unique lists, by label, the requirements no other test in the
 	// whole suite satisfies.
 	Unique []string `json:"unique"`

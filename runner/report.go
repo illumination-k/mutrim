@@ -2,7 +2,7 @@ package runner
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -95,7 +95,7 @@ type Test struct {
 	// runs against the unmutated package and passed in others. Its
 	// failures are no kills (they land in Result.SuspiciousBy), and
 	// minimize leaves it out of the cover entirely.
-	Flaky bool `json:"flaky,omitempty"`
+	Flaky bool `json:"flaky,omitzero"`
 }
 
 // Result is one entry of report.json.
@@ -119,10 +119,10 @@ type Result struct {
 	DurationMS   int64    `json:"duration_ms"`
 	// TimeoutMS is the timeout each of the mutant's test processes ran
 	// under, so a TIMEOUT can be audited; zero when nothing ran.
-	TimeoutMS int64 `json:"timeout_ms,omitempty"`
+	TimeoutMS int64 `json:"timeout_ms,omitzero"`
 	// Changed says the mutant lies on a line the diff scoping the run
 	// adds (Options.InDiff), as opposed to one only its tests reach.
-	Changed bool `json:"changed,omitempty"`
+	Changed bool `json:"changed,omitzero"`
 }
 
 // Totals summarizes a report. Score is (killed + timeout) / (killed +
@@ -206,7 +206,7 @@ type Report struct {
 	TimeoutMS int64 `json:"timeout_ms"`
 	// CountSuspect says SUSPECT_EQUIVALENT mutants count as survivors:
 	// in the score, the weak spots and the exported reports.
-	CountSuspect bool     `json:"count_suspect,omitempty"`
+	CountSuspect bool     `json:"count_suspect,omitzero"`
 	Tests        []Test   `json:"tests"`
 	Results      []Result `json:"results"`
 	Totals       Totals   `json:"totals"`

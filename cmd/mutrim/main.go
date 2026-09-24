@@ -6,7 +6,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -936,12 +937,10 @@ func writeTo(path string, stdout io.Writer, write func(io.Writer) error) error {
 
 func writeJSON(path string, stdout io.Writer, v any) error {
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
+	if err := json.MarshalWrite(&buf, v, json.Deterministic(true), jsontext.WithIndent("  ")); err != nil {
 		return err
 	}
+	buf.WriteByte('\n')
 	if path != "" {
 		return os.WriteFile(filepath.Clean(path), buf.Bytes(), 0o600)
 	}

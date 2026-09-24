@@ -3,7 +3,8 @@ package runner_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -465,7 +466,7 @@ func TestReadReportErrors(t *testing.T) {
 // writeJSON writes v as indented JSON, the way mutrim run does.
 func writeJSON(t *testing.T, path string, v any) error {
 	t.Helper()
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
