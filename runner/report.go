@@ -96,7 +96,18 @@ type Test struct {
 	// failures are no kills (they land in Result.SuspiciousBy), and
 	// minimize leaves it out of the cover entirely.
 	Flaky bool `json:"flaky,omitzero"`
+	// Status is TestFailing for a test that fails without a mutant, which
+	// Options.SkipFailing keeps out of the run instead of failing it; empty
+	// otherwise. Such a test reaches nothing and kills nothing, and
+	// minimize leaves it out of the cover.
+	Status TestStatus `json:"status,omitempty"`
 }
+
+// TestStatus is the state of a Test other than a passing one.
+type TestStatus string
+
+// TestFailing marks a test that fails without a mutant (Options.SkipFailing).
+const TestFailing TestStatus = "failing"
 
 // Result is one entry of report.json.
 type Result struct {

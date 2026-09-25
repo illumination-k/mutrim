@@ -65,6 +65,8 @@ commands:
             run to the mutants a unified diff's added lines and their
             tests reach (-diff-expand=false: the lines alone); -confirm-kills and
             -confirm-baseline rerun to keep flaky tests out of the matrix;
+            -skip-failing runs without the tests that fail on their own
+            instead of stopping;
             -extra-test adds the tests of a package importing it; a
             survivor that left every test's trace unchanged is reported
             SUSPECT_EQUIVALENT and scored only with -count-suspect;
@@ -75,8 +77,8 @@ commands:
   minimize  from report.json files (the shards of a package, or several
             packages), list the tests a greedy set cover over the sites,
             blocks and kills finds redundant, the functions whose mutants
-            survive, those with blocks no test reaches (-blocks), and the
-            tests found flaky
+            survive, those with blocks no test reaches (-blocks), the
+            tests found flaky, and those excluded as failing
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations
@@ -316,6 +318,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 	subtests := fs.Bool("subtests", false, "make each subtest (TestX/case) a row of the kill matrix: traced on its own and named in killed_by; subtest names must be stable across runs")
 	confirmKills := fs.Int("confirm-kills", 1, "rerun a mutant's killing tests until each has failed this many runs; a kill that does not reproduce is recorded in suspicious_by instead of killed_by")
 	confirmBaseline := fs.Int("confirm-baseline", 1, "run each test this many times while tracing; one that fails in some runs and passes in others is marked flaky, and its failures are never kills")
+	skipFailing := fs.Bool("skip-failing", false, "record a test that fails without a mutant as \"status\": \"failing\" and run the mutants without it, instead of failing the run; the run fails only when no test passes")
 	countSuspect := fs.Bool("count-suspect", false, "count SUSPECT_EQUIVALENT mutants (survivors whose tests reached the same sites as without them) as survivors in the score and the reports")
 	threshold := fs.Float64("threshold", 0, "fail after writing the report when the score is below this (0..1); 0 is off")
 	thresholdCovered := fs.Float64("threshold-covered", 0, "fail after writing the report when the score over the covered mutants (covered_score) is below this (0..1); 0 is off")
@@ -363,7 +366,7 @@ func runRun(ctx context.Context, args []string, stdout, stderr io.Writer) error 
 
 	opts := runner.Options{
 		TestBin: *testBin, ExtraTests: extra, Dir: *dir, Args: fs.Args(), Subtests: *subtests,
-		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, CountSuspect: *countSuspect,
+		ConfirmKills: *confirmKills, ConfirmBaseline: *confirmBaseline, SkipFailing: *skipFailing, CountSuspect: *countSuspect,
 		Sample: *sample, Seed: *seed,
 		Timeout: *timeout, TimeoutFactor: *timeoutFactor, TimeoutConst: *timeoutConst, MinTimeout: *minTimeout, Jobs: *jobs, Log: stderr,
 	}
@@ -427,6 +430,9 @@ type minimizeOutput struct {
 	// They take no part in the cover, so they are neither selected nor
 	// called redundant; deciding about them needs the flakiness fixed first.
 	Flaky []string `json:"flaky_tests"`
+	// Excluded lists the tests `run -skip-failing` found failing without a
+	// mutant. Like the flaky ones they take no part in the cover.
+	Excluded []string `json:"excluded"`
 }
 
 // minimizeTotals counts the kill requirements before and after the
@@ -499,10 +505,12 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		}
 		return rowName{name: test, local: test}
 	}
-	// A flaky test's observations are not trustworthy, so flakyOf and
-	// inputsOf leave it out of the matrix entirely; see their comments.
-	flaky := flakyOf(reports, row)
-	in := inputsOf(reports, row, flaky)
+	// A flaky or failing test's observations are not trustworthy, so
+	// rowsWhere and inputsOf leave it out of the matrix entirely; see
+	// their comments.
+	flaky := rowsWhere(reports, row, func(t runner.Test) bool { return t.Flaky })
+	failing := rowsWhere(reports, row, func(t runner.Test) bool { return t.Status == runner.TestFailing })
+	in := inputsOf(reports, row, union(flaky, failing))
 	kills := in.kills
 	dominators := kills.Dominators()
 	compose := func(kills criteria.Mutation) *criteria.Matrix {
@@ -549,6 +557,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		WeakSpots: []runner.Spot{},
 		Uncovered: []runner.Gap{},
 		Flaky:     slices.Sorted(maps.Keys(flaky)),
+		Excluded:  slices.Sorted(maps.Keys(failing)),
 	}
 	if *mutantsPath != "" {
 		var mutants []mutator.Mutant
@@ -614,21 +623,29 @@ func rowNames(reports []*runner.Report, qualify bool) []map[string]rowName {
 	return out
 }
 
-// flakyOf returns the set of matrix rows that are flaky in any report.
-// A flaky test's observations are not trustworthy, so it is left out of
-// the matrix entirely: it covers nothing, is never selected and is never
-// called redundant, and is reported on its own instead. Its suspicious
-// pairs are out already, since the runner keeps them out of killed_by.
-func flakyOf(reports []*runner.Report, row func(i int, test string) rowName) map[string]bool {
-	flaky := map[string]bool{}
+// rowsWhere returns the set of matrix rows whose test is, in any report,
+// one pick selects: a flaky or a failing one. Such a test's observations
+// are not trustworthy, so it is left out of the matrix entirely: it
+// covers nothing, is never selected and is never called redundant, and
+// is reported on its own instead. Its failures are out already, since the
+// runner keeps them out of killed_by.
+func rowsWhere(reports []*runner.Report, row func(i int, test string) rowName, pick func(runner.Test) bool) map[string]bool {
+	out := map[string]bool{}
 	for i, r := range reports {
 		for _, t := range r.Tests {
-			if t.Flaky {
-				flaky[row(i, t.Name).name] = true
+			if pick(t) {
+				out[row(i, t.Name).name] = true
 			}
 		}
 	}
-	return flaky
+	return out
+}
+
+// union is the union of two sets.
+func union(a, b map[string]bool) map[string]bool {
+	out := maps.Clone(a)
+	maps.Copy(out, b)
+	return out
 }
 
 // inputs are the inputs of the minimize matrix, per row.
@@ -663,15 +680,15 @@ func (r reached) sorted() map[string][]string {
 }
 
 // inputsOf collects the inputs of the minimize matrix from the reports,
-// skipping every flaky row. A RUN_ERROR mutant is no requirement either:
+// skipping every row in skip. A RUN_ERROR mutant is no requirement either:
 // no test failed, so it keeps no test alive, and its function is a weak
 // spot only through its other mutants.
-func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, flaky map[string]bool) inputs {
+func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, skip map[string]bool) inputs {
 	in := inputs{durations: map[string]int64{}, sites: reached{}, blocks: reached{}, local: map[string]string{}, kills: criteria.Mutation{}}
 	for i, r := range reports {
 		for _, t := range r.Tests {
 			n := row(i, t.Name)
-			if flaky[n.name] {
+			if skip[n.name] {
 				continue
 			}
 			in.local[n.name] = n.local
@@ -681,7 +698,7 @@ func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, fl
 		}
 		for _, res := range r.Results {
 			for _, t := range res.KilledBy {
-				if n := row(i, t).name; !flaky[n] {
+				if n := row(i, t).name; !skip[n] {
 					in.kills[n] = append(in.kills[n], res.MutantID)
 				}
 			}

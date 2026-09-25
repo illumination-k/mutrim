@@ -369,6 +369,7 @@ def mutation_test(
         subtests = False,
         confirm_kills = 1,
         confirm_baseline = 1,
+        skip_failing = False,
         count_suspect = False,
         threshold = None,
         threshold_covered = None,
@@ -484,6 +485,10 @@ def mutation_test(
             (`mutrim run -confirm-baseline`); one that fails in some runs and
             passes in others is marked flaky and takes no part in the kill
             matrix or the cover. 1 trusts the first run.
+        skip_failing: records a test that fails without a mutant as
+            failing and runs the mutants without it, instead of failing
+            (`mutrim run -skip-failing`); `minimize.json` lists it under
+            `excluded`. `<name>_schemata_test` still fails with it.
         count_suspect: counts `SUSPECT_EQUIVALENT` mutants (survivors whose
             tests reached the same sites as without them) as survivors
             (`mutrim run -count-suspect`); by default they count towards no
@@ -581,6 +586,7 @@ def mutation_test(
                (["-subtests"] if subtests else []) +
                (["-confirm-kills={}".format(confirm_kills)] if confirm_kills > 1 else []) +
                (["-confirm-baseline={}".format(confirm_baseline)] if confirm_baseline > 1 else []) +
+               (["-skip-failing"] if skip_failing else []) +
                (["-count-suspect"] if count_suspect else []) +
                (["-jobs={}".format(jobs)] if jobs != None else []) +
                (["-min-timeout={}".format(min_timeout)] if min_timeout != None else []) +

@@ -69,6 +69,7 @@ func TestReusable(t *testing.T) {
 		"kill, killer deleted":      {killed, []string{"TestB"}, map[string]Test{"TestB": before["TestB"]}, false},
 		"kill, killer unreaching":   {killed, []string{"TestB"}, before, false},
 		"kill, killer now flaky":    {killed, []string{"TestA", "TestB"}, map[string]Test{"TestA": {Hash: "a", Flaky: true}, "TestB": before["TestB"]}, false},
+		"kill, killer now failing":  {killed, []string{"TestA", "TestB"}, map[string]Test{"TestA": {Hash: "a", Status: TestFailing}, "TestB": before["TestB"]}, false},
 		"timeout without killers":   {Result{Status: Timeout}, []string{"TestA", "TestB"}, before, true},
 		"survivor, unchanged":       {lived, []string{"TestA", "TestB"}, before, true},
 		"survivor, test rewritten":  {lived, []string{"TestA", "TestB"}, map[string]Test{"TestA": before["TestA"], "TestB": {Hash: "b2"}}, false},

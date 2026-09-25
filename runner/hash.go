@@ -59,7 +59,7 @@ func reusable(id string, prev Result, reaching []string, now, before map[string]
 		for _, k := range prev.KilledBy {
 			t, ok := now[k]
 			b, was := before[k]
-			if !ok || !was || t.Flaky || t.Hash != b.Hash || !slices.Contains(reaching, k) {
+			if !ok || !was || t.Flaky || t.Status == TestFailing || t.Hash != b.Hash || !slices.Contains(reaching, k) {
 				return false
 			}
 		}

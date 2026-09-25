@@ -905,11 +905,11 @@ func TestReport(t *testing.T) {
 	}
 }
 
-// minimize leaves a flaky test out of the matrix altogether: it is neither
-// selected nor called redundant, only listed as flaky, and the
-// requirements only it reached disappear with it. A suspicious pair is no
+// minimize leaves a flaky or failing test out of the matrix altogether: it
+// is neither selected nor called redundant, only listed as flaky or
+// excluded, and the requirements only it reached disappear with it. A suspicious pair is no
 // kill either, so it never becomes a requirement.
-func TestMinimizeExcludesFlakyTests(t *testing.T) {
+func TestMinimizeExcludesFlakyAndFailingTests(t *testing.T) {
 	dir := t.TempDir()
 	reportPath := filepath.Join(dir, "report.json")
 	if err := writeJSON(reportPath, nil, runner.Report{
@@ -917,6 +917,7 @@ func TestMinimizeExcludesFlakyTests(t *testing.T) {
 		Tests: []runner.Test{
 			{Name: "TestStable", DurationMS: 1, Sites: []string{"1", "2"}},
 			{Name: "TestFlaky", DurationMS: 1, Sites: []string{"1", "2", "3"}, Flaky: true},
+			{Name: "TestBroken", DurationMS: 1, Sites: []string{}, Status: runner.TestFailing},
 		},
 		Results: []runner.Result{
 			{MutantID: "1", Status: runner.Killed, KilledBy: []string{"TestStable"}},
@@ -938,8 +939,11 @@ func TestMinimizeExcludesFlakyTests(t *testing.T) {
 	if !slices.Equal(result.Flaky, []string{"TestFlaky"}) {
 		t.Errorf("flaky_tests = %v, want TestFlaky", result.Flaky)
 	}
+	if !slices.Equal(result.Excluded, []string{"TestBroken"}) {
+		t.Errorf("excluded = %v, want TestBroken", result.Excluded)
+	}
 	if len(result.Selected) != 1 || result.Selected[0].Name != "TestStable" || len(result.Redundant) != 0 {
-		t.Errorf("selected = %+v, redundant = %+v; want TestStable alone and the flaky test nowhere", result.Selected, result.Redundant)
+		t.Errorf("selected = %+v, redundant = %+v; want TestStable alone and the flaky and failing tests nowhere", result.Selected, result.Redundant)
 	}
 
 	var matrix criteria.Matrix
