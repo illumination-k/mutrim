@@ -46,7 +46,7 @@ var notEmbedded = map[string]bool{
 func TestSchemataIdentity(t *testing.T) {
 	pkg := load(t, "schemata")
 	mutants := mutator.Generate(pkg, mutator.Options{TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants, mutator.Blocks(pkg))
+	sch, err := mutator.Lower(pkg, mutants, mutator.Blocks(pkg), mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestSchemataOptInIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants, nil)
+	sch, err := mutator.Lower(pkg, mutants, nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestSchemataConcurrency(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants, nil)
+	sch, err := mutator.Lower(pkg, mutants, nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestSchemataCompiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			pkg := load(t, fixture.name)
-			sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true}), mutator.Blocks(pkg))
+			sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true}), mutator.Blocks(pkg), mutator.RuntimePath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -226,7 +226,7 @@ func TestSchemataCompiles(t *testing.T) {
 // whether bound in the package scope or inside a function.
 func TestSchemataRuntimeNameAvoidsCollision(t *testing.T) {
 	pkg := load(t, "mutname")
-	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil)
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,12 +238,27 @@ func TestSchemataRuntimeNameAvoidsCollision(t *testing.T) {
 	}
 }
 
+// An injected runtime (mutrim test) is imported from the path Lower is given.
+func TestSchemataRuntimePath(t *testing.T) {
+	const injected = "example.com/m/internal/mutrimrt"
+	pkg := load(t, "killable")
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, injected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range sch.Files {
+		if s := string(src); !strings.Contains(s, `"`+injected+`"`) || strings.Contains(s, mutator.RuntimePath) {
+			t.Errorf("want the runtime imported from %s only:\n%s", injected, s)
+		}
+	}
+}
+
 // Comment groups are dropped from schemata sources unless they hold a
 // //go: directive, which keeps its meaning because declarations stay
 // where they were.
 func TestSchemataKeepsDirectives(t *testing.T) {
 	pkg := load(t, "mutname")
-	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil)
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +278,7 @@ func TestSchemataKeepsDirectives(t *testing.T) {
 // it a second time under a fresh name.
 func TestLowerSkipsAndReimports(t *testing.T) {
 	pkg := load(t, "excluded")
-	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil)
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +300,7 @@ func TestLowerSkipsAndReimports(t *testing.T) {
 		t.Fatalf("loaded %s, want %s", runtime.PkgPath, mutator.RuntimePath)
 	}
 	mutants := mutator.Generate(runtime, mutator.Options{TypeCheck: true})
-	sch, err = mutator.Lower(runtime, mutants, nil)
+	sch, err = mutator.Lower(runtime, mutants, nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +309,7 @@ func TestLowerSkipsAndReimports(t *testing.T) {
 	}
 
 	pkg = load(t, "importsmut")
-	sch, err = mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil)
+	sch, err = mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +328,7 @@ func TestLowerSkipsAndReimports(t *testing.T) {
 // format is no longer constant, which go test and nogo reject (#67).
 func TestSchemataVetPrintf(t *testing.T) {
 	pkg := load(t, "literal")
-	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil)
+	sch, err := mutator.Lower(pkg, mutator.Generate(pkg, mutator.Options{TypeCheck: true}), nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +349,7 @@ func TestSchemataErrPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutants := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants, nil)
+	sch, err := mutator.Lower(pkg, mutants, nil, mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}

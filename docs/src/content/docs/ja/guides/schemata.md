@@ -22,8 +22,9 @@ go run ./cmd/mutrim minimize -mutants mutants.json -blocks blocks.json -srcs ./p
 go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
 ```
 
+これらの手順は [`mutrim test`](../test/) がパッケージごとに実行するものである。手で実行する場合、
 スキーマタのソースは `github.com/illumination-k/mutrim/mut` を import するので、対象モジュールは
-mutrim を依存に持つ必要がある。`run` は `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` と
+mutrim を依存に持つ必要がある。`mutrim test` は代わりにランタイムを overlay で注入する。`run` は `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` と
 `TEST_UNDECLARED_OUTPUTS_DIR` に従い、`-previous report.json` は以前の結果を引き継ぐので、
 新しいミュータントだけが実行される。`-test-srcs` (パッケージの `_test.go` ファイル。
 `-extra-test` には `-extra-test-srcs pkg=files`) を指定すると、`report.json` の各テストはその

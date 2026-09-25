@@ -12,7 +12,8 @@ const LoadMode = packages.NeedName |
 	packages.NeedFiles |
 	packages.NeedTypes |
 	packages.NeedTypesInfo |
-	packages.NeedSyntax
+	packages.NeedSyntax |
+	packages.NeedModule
 
 // Load loads the packages matching patterns relative to dir.
 // It fails if any package has errors, since mutants of a broken package

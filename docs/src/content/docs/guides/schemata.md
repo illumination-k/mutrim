@@ -22,8 +22,9 @@ go run ./cmd/mutrim minimize -mutants mutants.json -blocks blocks.json -srcs ./p
 go run ./cmd/mutrim report -mutants mutants.json -srcs ./path/to/pkg report.json
 ```
 
-The schemata sources import `github.com/illumination-k/mutrim/mut`, so the target module
-needs mutrim as a dependency. `run` honors `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` and
+These steps are what [`mutrim test`](../test/) runs per package. Run by hand, the schemata
+sources import `github.com/illumination-k/mutrim/mut`, so the target module needs mutrim
+as a dependency; `mutrim test` injects the runtime through the overlay instead. `run` honors `TEST_SHARD_INDEX` / `TEST_TOTAL_SHARDS` and
 `TEST_UNDECLARED_OUTPUTS_DIR`, and `-previous report.json` copies earlier results forward
 so only new mutants execute. With `-test-srcs` (the package's `_test.go` files;
 `-extra-test-srcs pkg=files` for an `-extra-test`) each test in `report.json` carries the

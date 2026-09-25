@@ -552,6 +552,12 @@ func TestCommandErrors(t *testing.T) {
 		"gen bad arid":               {"gen", "-arid", "[-]", fixture},
 		"gen unwritable output":      {"gen", "-o", notADir, fixture},
 		"gen unwritable schemata":    {"gen", "-schemata", notADir, fixture},
+		"test bad flag":              {"test", "-bogus"},
+		"test bad threshold":         {"test", "-threshold", "2", fixture},
+		"test bad report format":     {"test", "-report", "bogus", fixture},
+		"test bad operators":         {"test", "-operators", "bogus", fixture},
+		"test bad package":           {"test", "-out", dir, "./does/not/exist"},
+		"test no tests":              {"test", "-out", dir, "../../mutator/testdata/broken"},
 		"overlay bad flag":           {"overlay", "-bogus"},
 		"overlay without id":         {"overlay", fixture},
 		"overlay bad package":        {"overlay", "-id", "0000000000000000", "./does/not/exist"},
@@ -1097,5 +1103,61 @@ func TestRunExtraTestThenMinimize(t *testing.T) {
 		if err := run(t.Context(), args, &stdout, &stderr); err == nil {
 			t.Errorf("bazel-test -extra-test %s: want an error", m)
 		}
+	}
+}
+
+// TestTest runs `mutrim test` on a module that does not depend on mutrim:
+// the runtime comes through the overlay, every output is written, the
+// second run copies the results forward, and -threshold fails after
+// writing them.
+func TestTest(t *testing.T) {
+	dir := t.TempDir()
+	for path, src := range map[string]string{
+		"go.mod":      "module example.com/m\n\ngo 1.24\n",
+		"a/a.go":      "package a\n\nfunc IsPositive(x int) bool { return x > 0 }\n\nfunc Double(x int) int { return x * 2 }\n",
+		"a/a_test.go": "package a\n\nimport \"testing\"\n\nfunc TestIsPositive(t *testing.T) {\n\tif IsPositive(0) || !IsPositive(1) {\n\t\tt.Fatal()\n\t}\n}\n",
+		"notest/n.go": "package notest\n\nfunc N() int { return 1 }\n",
+	} {
+		path = filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
+
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"test", "-minimize", "-report", "stryker,html,github", "./..."}, &stdout, &stderr); err != nil {
+		t.Fatalf("test: %v\n%s", err, stderr.String())
+	}
+	var out testOutput
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatalf("test output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if len(out.Packages) != 1 || out.Packages[0].Pkg != "example.com/m/a" {
+		t.Fatalf("packages = %+v, want example.com/m/a alone", out.Packages)
+	}
+	if tot := out.Totals; tot.Killed == 0 || tot.NoCoverage == 0 || tot.Score != out.Packages[0].Totals.Score {
+		t.Errorf("totals = %+v, want kills and Double uncovered, as in the package", tot)
+	}
+	for _, f := range []string{"example.com/m/a/report.json", "mutants.json", "blocks.json", "minimize.json", "mutation-report.json", "mutation-report.html", "annotations.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, ".mutrim", f)); err != nil {
+			t.Errorf("output %s: %v", f, err)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err := run(t.Context(), []string{"test", "-threshold", "0.99", "./..."}, &stdout, &stderr)
+	if !errors.As(err, new(thresholdError)) {
+		t.Fatalf("second run: got %v, want a threshold error\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "(previous)") {
+		t.Errorf("second run copied nothing forward:\n%s", stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Errorf("a failed threshold must still print the totals:\n%s", stdout.String())
 	}
 }

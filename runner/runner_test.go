@@ -63,7 +63,7 @@ func buildPkgOverlay(t testing.TB, dir string) (bin string, mutants []mutator.Mu
 	}
 	pkg := pkgs[0]
 	mutants = mutator.Generate(pkg, mutator.Options{TypeCheck: true})
-	sch, err := mutator.Lower(pkg, mutants, mutator.Blocks(pkg))
+	sch, err := mutator.Lower(pkg, mutants, mutator.Blocks(pkg), mutator.RuntimePath)
 	if err != nil {
 		t.Fatal(err)
 	}
