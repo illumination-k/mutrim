@@ -225,6 +225,22 @@ func ReadReport(path string) (*Report, error) {
 	return &r, nil
 }
 
+// Merge joins the results of several reports (the packages of one `mutrim
+// test` run) into one report with their combined totals, which a Threshold
+// can check. Tests are left out: the rows of different packages are only
+// joined by minimize. SUSPECT_EQUIVALENT counts as a survivor when it does
+// in any of the reports.
+func Merge(reports ...*Report) *Report {
+	m := &Report{Tests: []Test{}, Results: []Result{}}
+	for _, r := range reports {
+		m.CountSuspect = m.CountSuspect || r.CountSuspect
+		m.Results = append(m.Results, r.Results...)
+	}
+	m.total()
+	m.Totals.Sampled = 1 // the driver runs no sample
+	return m
+}
+
 func (r *Report) total() {
 	t := Totals{Classes: map[string]ClassTotals{}}
 	var diff DiffTotals

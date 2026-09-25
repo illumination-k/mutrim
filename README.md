@@ -6,6 +6,16 @@ Pre-alpha.
 **Documentation: <https://illumination-k.github.io/mutrim/>** (English / 日本語; sources in
 [`docs/`](docs/), an Astro Starlight site).
 
+## Quick start
+
+```bash
+go install github.com/illumination-k/mutrim/cmd/mutrim@latest
+mutrim test -minimize -report html ./...   # results under .mutrim/, totals as JSON on stdout
+```
+
+`mutrim test` runs gen, build and run per package with the runtime injected through the
+build overlay, so the tested module never depends on mutrim.
+
 ## Usage (non-Bazel dev loop)
 
 ```bash

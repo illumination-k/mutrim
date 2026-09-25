@@ -94,7 +94,7 @@ func TestFilterRules(t *testing.T) {
 					t.Errorf("%s %q: ignored=%q, want %q", m.Func, m.Description, m.Ignored, tc.want)
 				}
 			}
-			sch, err := mutator.Lower(pkg, ms, nil)
+			sch, err := mutator.Lower(pkg, ms, nil, mutator.RuntimePath)
 			if err != nil {
 				t.Fatal(err)
 			}

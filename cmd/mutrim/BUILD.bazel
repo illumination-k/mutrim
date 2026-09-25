@@ -2,15 +2,20 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "mutrim_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "test.go",
+    ],
     importpath = "github.com/illumination-k/mutrim/cmd/mutrim",
     visibility = ["//visibility:private"],
     deps = [
         "//criteria",
         "//minimize",
+        "//mut",
         "//mutator",
         "//report",
         "//runner",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_tools//go/packages",
         "@rules_go//go/runfiles",
     ],

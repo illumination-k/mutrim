@@ -2,7 +2,11 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "mut",
-    srcs = ["mut.go"],
+    srcs = [
+        "mut.go",
+        "source.go",
+    ],
+    embedsrcs = ["mut.go"],
     importpath = "github.com/illumination-k/mutrim/mut",
     visibility = ["//visibility:public"],
 )

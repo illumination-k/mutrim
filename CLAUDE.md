@@ -81,7 +81,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | Package    | Responsibility                                                                                                                                                                                                                                                                                                             | Depends on                          |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` / `blocks.json` output, schemata lowering. Bazel-independent                                                                                                                                            | `go/ast`, `go/types`, `go/packages` |
-| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites, and blocks through `Reach`                                                                                                                                                                    | stdlib only                         |
+| `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites, and blocks through `Reach`; `Source` embeds `mut.go` for injection                                                                                                                            | stdlib only                         |
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), sharding, random sampling (`-sample`), `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
 | `criteria` | `Criterion` interface with `SiteCoverage` / `BlockCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                          | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                  | `criteria`, `bitset`, `go/parser`   |
@@ -107,6 +107,13 @@ status and the tests that killed it, `Tests` the rows with the sites and blocks 
 over `SiteCoverage`, `BlockCoverage` and `Mutation`), and `report` renders the same reports for humans
 (Stryker JSON, HTML, GitHub annotations). Every artifact in this chain is per-run output
 and never committed (see Conventions).
+
+`mutrim test ./...` is the one-shot driver for go test users and only composes those steps:
+per package (`go list`), gen, `go test -c -overlay` and run, in parallel across packages
+(`-p`), into `.mutrim/<pkg>/`, whose `report.json` is the next run's `-previous`; it prints
+the combined totals (`runner.Merge`), and `-minimize` / `-report` chain the other commands.
+The schemata import the runtime from `<module>/internal/mutrimrt`, which exists only in the
+overlay (`mut.Source`, `Lower`'s runtime path), so the target's `go.mod` never changes.
 
 ### Mutation engine
 

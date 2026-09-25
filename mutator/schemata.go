@@ -15,7 +15,9 @@ import (
 )
 
 // RuntimePath is the import path of the runtime package that schemata
-// sources call into.
+// sources call into by default: package mut of mutrim, which the target
+// module must then depend on. A driver that injects a copy of the runtime
+// (mut.Source) into the build passes that copy's import path to Lower.
 const RuntimePath = "github.com/illumination-k/mutrim/mut"
 
 // schemataHeader marks generated files so a later gen run excludes them.
@@ -30,7 +32,7 @@ type Lowering struct {
 	// ID is the mutant being embedded.
 	ID string
 
-	runtime string   // import name of RuntimePath in this file
+	runtime string   // import name of the runtime in this file
 	current ast.Node // the node's lowering so far
 }
 
@@ -74,11 +76,13 @@ type Schemata struct {
 
 // Lower rewrites pkg so that every viable mutant in mutants that is not Excluded
 // is embedded and selected by GOMUTANT_ID, and every block in blocks (see
-// Blocks) records itself through mut.Reach. The package's syntax trees are
-// rewritten in place and must not be reused afterwards.
-func Lower(pkg *packages.Package, mutants []Mutant, blocks []Block) (*Schemata, error) {
+// Blocks) records itself through mut.Reach. The rewritten files import the
+// runtime from runtimePath, RuntimePath or an injected copy of it. The
+// package's syntax trees are rewritten in place and must not be reused
+// afterwards.
+func Lower(pkg *packages.Package, mutants []Mutant, blocks []Block, runtimePath string) (*Schemata, error) {
 	out := &Schemata{Files: map[string][]byte{}, Embedded: map[string]bool{}}
-	if pkg.PkgPath == RuntimePath {
+	if pkg.PkgPath == runtimePath {
 		return out, nil // the runtime cannot import itself
 	}
 
@@ -133,9 +137,9 @@ func Lower(pkg *packages.Package, mutants []Mutant, blocks []Block) (*Schemata, 
 			return true
 		})
 		// runtimeName never reuses a name the file already binds, so the
-		// import is always added (a second import of RuntimePath under a
-		// new name when the package already uses the runtime).
-		astutil.AddNamedImport(pkg.Fset, f, runtime, RuntimePath)
+		// import is always added (a second import of the runtime under a
+		// new name when the package already uses it).
+		astutil.AddNamedImport(pkg.Fset, f, runtime, runtimePath)
 		keepDirectives(f)
 
 		var buf bytes.Buffer

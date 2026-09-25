@@ -43,6 +43,11 @@ const aridUsage = `comma-separated globs over the callee ("(*Metrics).Observe", 
 const usage = `usage: mutrim <command> [flags] [packages]
 
 commands:
+  test      mutation-test the packages in one go, without adding mutrim to
+            the module: gen, build and run per package, the mut runtime
+            injected through the overlay; writes .mutrim/<pkg>/report.json,
+            which the next run copies results forward from, and prints the
+            combined totals; -minimize and -report chain those commands
   gen       list mutants of the packages as JSON; -operators selects the
             operators and -match / -files / -exclude-files / -exclude-re /
             -arid narrow the sites (a filtered mutant is reported, and
@@ -102,6 +107,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runMinimize(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "test":
+		return runTest(ctx, args[1:], stdout, stderr)
 	case "bazel-test":
 		return runBazelTest(ctx, args[1:], stdout, stderr)
 	default:
@@ -174,7 +181,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter, Diff: diff})
 		bs := mutator.Blocks(pkg)
 		if *schemata != "" {
-			if err := writeSchemata(*schemata, pkg, ms, bs, &overlay); err != nil {
+			if err := writeSchemata(*schemata, pkg, ms, bs, mutator.RuntimePath, &overlay); err != nil {
 				return err
 			}
 		}
@@ -201,8 +208,9 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 // viable, so the runner never selects them; ignored and equivalent
 // mutants are not embedded either, but keep their status. Every block
 // records itself when reached, so the runner's traces hold block coverage.
-func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, blocks []mutator.Block, overlay *mutator.Overlay) error {
-	sch, err := mutator.Lower(pkg, ms, blocks)
+// The sources import the runtime from runtimePath.
+func writeSchemata(dir string, pkg *packages.Package, ms []mutator.Mutant, blocks []mutator.Block, runtimePath string, overlay *mutator.Overlay) error {
+	sch, err := mutator.Lower(pkg, ms, blocks, runtimePath)
 	if err != nil {
 		return err
 	}

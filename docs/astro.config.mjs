@@ -24,6 +24,7 @@ export default defineConfig({
           label: "Guides",
           translations: { ja: "ガイド" },
           items: [
+            "guides/test",
             "guides/getting-started",
             "guides/inline-directives",
             "guides/schemata",
