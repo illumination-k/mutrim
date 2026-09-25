@@ -28,6 +28,16 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
   -confirm-baseline 3 -confirm-kills 3 -out report.json
 ```
 
+A test that fails without any mutant stops the run by default. `run -skip-failing` (PIT's
+`skipFailingTests`, cargo-mutants' `--baseline=skip`) runs without it instead: a test that
+fails in the baseline or on its own is recorded with `"status": "failing"` in `tests[]`,
+reaches nothing, and runs against no mutant, so it never appears in `killed_by`. A failing
+baseline is rerun with its failing top-level tests skipped (`-test.skip`) until it passes, so a
+test that panics does not hide the ones after it. The run fails only when no test passes.
+`minimize` never selects a failing test nor calls it redundant, and lists it under `excluded`.
+The flag is for exploring a package and for CI on a branch with known-red tests; the strict
+default keeps a broken suite from passing unnoticed.
+
 Each mutant's timeout follows the tests reaching it: `-timeout-factor` (3) × their traced
 durations + `-timeout-const` (2s), at least `-min-timeout` (10s) and at most
 `-timeout-factor` × the baseline run, so a mutant looping forever in a hot function reached by

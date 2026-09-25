@@ -93,6 +93,14 @@ type Options struct {
 	// is marked Test.Flaky rather than failing the run; one that fails
 	// every time is an error, as a failing baseline always is.
 	ConfirmBaseline int
+	// SkipFailing keeps a failing test from stopping the run: a row that
+	// fails without a mutant, in the baseline or when run on its own, is
+	// recorded with Test.Status TestFailing and runs against no mutant, so
+	// it kills none. The baseline is rerun without the failing top-level
+	// tests until it passes, so a panicking test does not hide the tests
+	// after it. Run still fails when no row passes. Without it any such
+	// failure fails the run.
+	SkipFailing bool
 	// Timeout per test process (one per mutant, or with Subtests one per
 	// parent of the rows reaching it) overrides the derived one. Zero
 	// derives it per mutant from the traced durations of the rows reaching
@@ -181,7 +189,7 @@ func (o Options) qualifyAll(rows []row) []string {
 
 // Run executes every viable mutant of the shard against the tests that
 // reach it and returns the report. The baseline (no mutant) must pass
-// first, or Run fails; its output names the tests, which are the rows of
+// first, or Run fails (see Options.SkipFailing); its output names the tests, which are the rows of
 // the report (the subtests too with o.Subtests). Then every row runs once
 // on its own with GOMUTANT_TRACE set to learn which sites it reaches, so a
 // mutant only runs the tests that can kill it and the report holds a
@@ -196,7 +204,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	logger := log.New(o.Log, "", 0)
 
 	// The baseline runs every binary; its output names the rows.
-	names, baseMS, err := o.baselines(ctx)
+	names, failing, baseMS, err := o.baselines(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +214,11 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	logger.Printf("baseline %dms, timeout at most %s, %d tests", baseMS, maxTimeout, len(names))
 
-	tests, err := o.traceTests(ctx, names)
+	tests, err := o.traceTests(ctx, names, failing)
 	if err != nil {
+		return nil, err
+	}
+	if err = logFailing(logger, tests); err != nil {
 		return nil, err
 	}
 	reachers := map[string][]row{}
@@ -376,26 +387,75 @@ func (o *Options) setup() error {
 
 // baselines runs every binary once without a mutant: the baseline must
 // pass, or Run fails with its output. It returns the rows the baselines'
-// output names and how long the runs took.
-func (o Options) baselines(ctx context.Context) (names []row, ms int64, err error) {
+// output names, the rows that failed in it (by their name in the report),
+// and how long the runs took. With Options.SkipFailing a failing baseline
+// is rerun without the top-level tests of its failing rows, until it
+// passes or no failing row is left to skip; the rows are the union of the
+// runs', in the order they first started.
+func (o Options) baselines(ctx context.Context) (names []row, failing map[string]bool, ms int64, err error) {
+	failing = map[string]bool{}
 	for i, b := range o.bins {
 		pattern := ""
 		if i == 0 {
 			pattern = testPattern(o.Tests)
 		}
-		base, err := o.exec(ctx, b, "", "", pattern, 0)
-		if err != nil {
-			return nil, 0, err
-		}
-		if base.Status != Lived {
-			return nil, 0, fmt.Errorf("runner: baseline run of %s failed (%s); the tests must pass without a mutant\n%s", b.Path, base.Status, base.output)
-		}
-		ms += base.DurationMS
-		for _, name := range rows(started(base.output), o.Subtests) {
-			names = append(names, row{bin: i, name: name})
+		seen := map[string]bool{}
+		var skip []string
+		for {
+			base, err := o.exec(ctx, b, "", "", pattern, testPattern(skip), 0)
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			ms += base.DurationMS
+			ran := rows(started(base.output), o.Subtests)
+			for _, name := range ran {
+				if !seen[name] {
+					seen[name] = true
+					names = append(names, row{bin: i, name: name})
+				}
+			}
+			if base.Status == Lived {
+				break
+			}
+			fail := func() error {
+				return fmt.Errorf("runner: baseline run of %s failed (%s); the tests must pass without a mutant\n%s", b.Path, base.Status, base.output)
+			}
+			if !o.SkipFailing {
+				return nil, nil, 0, fail()
+			}
+			_, failed := parseOutput(base.output, base.Status == Timeout, ran)
+			more := false
+			for _, name := range failed {
+				failing[o.qualify(row{i, name})] = true
+				if top, _, _ := strings.Cut(name, "/"); !slices.Contains(skip, top) {
+					skip = append(skip, top)
+					more = true
+				}
+			}
+			if !more {
+				// Nothing the run blames on a test is left to skip.
+				return nil, nil, 0, fail()
+			}
 		}
 	}
-	return names, ms, nil
+	return names, failing, ms, nil
+}
+
+// logFailing logs the rows Options.SkipFailing kept out of the run, and
+// fails when no row is left.
+func logFailing(logger *log.Logger, tests []Test) error {
+	passing := 0
+	for _, t := range tests {
+		if t.Status == TestFailing {
+			logger.Printf("%s fails without a mutant; skipped", t.Name)
+		} else {
+			passing++
+		}
+	}
+	if passing == 0 && len(tests) > 0 {
+		return errors.New("runner: every test fails without a mutant; nothing is left to run against the mutants")
+	}
+	return nil
 }
 
 // diffScope returns the mutants on the lines Options.InDiff adds, and the

@@ -45,6 +45,7 @@ mutrim test -in-diff origin/main -threshold 0.8 ./...
 | `-in-diff <ref>`     | `git diff --merge-base <ref>` に実行を絞る。commit-relevant ミュータントを含む `run -in-diff` と同じ            |
 | `-threshold`         | 合算した `score` がこれ未満なら、すべての出力を書いた後に失敗する                                               |
 | `-threshold-covered` | 合算した `covered_score` について同様                                                                           |
+| `-skip-failing`      | 単独で失敗するテストを除いて実行を続ける。`run -skip-failing` と同じ                                            |
 | `-p`                 | 同時にビルド・実行するパッケージ数 (既定 GOMAXPROCS)                                                            |
 | `-jobs`              | パッケージあたりのテストプロセス数 (既定 GOMAXPROCS / `-p`)                                                     |
 | `-minimize`          | 全パッケージにわたる `minimize.json` を書く (`minimize -blocks`)                                                |

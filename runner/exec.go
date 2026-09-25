@@ -25,10 +25,12 @@ import (
 // ConfirmBaseline repeats each row, and the results are merged: the sites
 // of every run, the longest duration, and Flaky when the row failed in
 // some runs but not all. A row that fails every run is an error, like a
-// failing baseline. A row whose run dies from infrastructure is an
+// failing baseline, unless Options.SkipFailing records it TestFailing;
+// a row in failing (failed in the baseline) is recorded so without being
+// traced. A row whose run dies from infrastructure is an
 // error too: nothing was observed, so flakiness cannot be told from a
 // broken trace and the run stops.
-func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
+func (o Options) traceTests(ctx context.Context, rows []row, failing map[string]bool) ([]Test, error) {
 	dir, err := os.MkdirTemp("", "mutrim-trace-")
 	if err != nil {
 		return nil, err
@@ -40,6 +42,10 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(o.jobs())
 	for i, rw := range rows {
+		if failing[o.qualify(rw)] {
+			tests[i] = o.failingTest(rw)
+			continue
+		}
 		g.Go(func() error {
 			t, err := o.traceTest(ctx, rw, runs, func(run int) string {
 				return filepath.Join(dir, fmt.Sprintf("%d-%d.trace", i, run))
@@ -57,17 +63,13 @@ func (o Options) traceTests(ctx context.Context, rows []row) ([]Test, error) {
 // traceTest runs row rw runs times on its own, tracing run k to trace(k),
 // and merges the runs as traceTests describes.
 func (o Options) traceTest(ctx context.Context, rw row, runs int, trace func(run int) string) (Test, error) {
-	name := o.qualify(rw)
-	top, _, _ := strings.Cut(rw.name, "/")
-	t := Test{Name: name, Pkg: o.bins[rw.bin].Pkg, Hash: o.hashes[rw.bin][top]}
-	if p := parent(rw.name); p != "" {
-		t.Parent = o.qualify(row{rw.bin, p})
-	}
+	t := o.test(rw)
+	name := t.Name
 	sites := map[string]bool{}
 	var failures int
 	var failed *execResult
 	for run := range runs {
-		res, err := o.exec(ctx, o.bins[rw.bin], "", trace(run), testPattern([]string{rw.name}), 0)
+		res, err := o.exec(ctx, o.bins[rw.bin], "", trace(run), testPattern([]string{rw.name}), "", 0)
 		if err != nil {
 			return Test{}, err
 		}
@@ -86,6 +88,9 @@ func (o Options) traceTest(ctx context.Context, rw row, runs int, trace func(run
 		t.DurationMS = max(t.DurationMS, res.DurationMS)
 	}
 	if failures == runs {
+		if o.SkipFailing {
+			return o.failingTest(rw), nil
+		}
 		return Test{}, fmt.Errorf("runner: %s fails when run on its own (%s); the tests must pass without a mutant\n%s", name, failed.Status, failed.output)
 	}
 	t.Flaky = failures > 0
@@ -99,6 +104,24 @@ func (o Options) traceTest(ctx context.Context, rw row, runs int, trace func(run
 		}
 	}
 	return t, nil
+}
+
+// test is row rw's entry in the report, before it is traced.
+func (o Options) test(rw row) Test {
+	top, _, _ := strings.Cut(rw.name, "/")
+	t := Test{Name: o.qualify(rw), Pkg: o.bins[rw.bin].Pkg, Hash: o.hashes[rw.bin][top], Sites: []string{}, Blocks: []string{}}
+	if p := parent(rw.name); p != "" {
+		t.Parent = o.qualify(row{rw.bin, p})
+	}
+	return t
+}
+
+// failingTest is the entry of row rw failing without a mutant: it reaches
+// nothing, so it runs against no mutant.
+func (o Options) failingTest(rw row) Test {
+	t := o.test(rw)
+	t.Status = TestFailing
+	return t
 }
 
 // readTrace reads the sites a GOMUTANT_TRACE file lists and removes the
@@ -194,7 +217,7 @@ func (b baseline) reached(rows []string) map[string]bool {
 func (o Options) runGroup(ctx context.Context, r *Result, bin int, group []string, timeout time.Duration, ref baseline) (status Status, changed bool, err error) {
 	b := o.bins[bin]
 	trace := filepath.Join(ref.traceDir, r.MutantID+".trace")
-	res, err := o.exec(ctx, b, r.MutantID, trace, testPattern(group), timeout)
+	res, err := o.exec(ctx, b, r.MutantID, trace, testPattern(group), "", timeout)
 	if err != nil {
 		return "", false, err
 	}
@@ -257,7 +280,7 @@ func (o Options) confirmKills(ctx context.Context, b Binary, id string, killers 
 		if len(still) == 0 {
 			break
 		}
-		res, err := o.exec(ctx, b, id, "", testPattern(still), timeout)
+		res, err := o.exec(ctx, b, id, "", testPattern(still), "", timeout)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -295,8 +318,10 @@ var (
 
 // exec runs the tests of binary b the -test.run pattern selects (all when
 // empty) with mutant id active (none when empty), tracing to the trace
-// file when given, and classifies the exit. A zero timeout means none.
-func (o Options) exec(ctx context.Context, b Binary, id, trace, pattern string, timeout time.Duration) (*execResult, error) {
+// file when given, and classifies the exit. The -test.skip pattern skip
+// (none when empty) drops tests from the selection. A zero timeout means
+// none.
+func (o Options) exec(ctx context.Context, b Binary, id, trace, pattern, skip string, timeout time.Duration) (*execResult, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -305,6 +330,9 @@ func (o Options) exec(ctx context.Context, b Binary, id, trace, pattern string, 
 	args := []string{"-test.v"}
 	if pattern != "" {
 		args = append(args, "-test.run", pattern)
+	}
+	if skip != "" {
+		args = append(args, "-test.skip", skip)
 	}
 	args = append(args, o.Args...)
 

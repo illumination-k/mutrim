@@ -25,6 +25,7 @@ mutation_test(
     subtests = True,                       # optional; `mutrim run -subtests`
     confirm_kills = 3,                     # optional; `mutrim run -confirm-kills`
     confirm_baseline = 3,                  # optional; `mutrim run -confirm-baseline`
+    skip_failing = True,                   # optional; `mutrim run -skip-failing`
     extra_tests = ["//app:app_test"],      # optional; `mutrim run -extra-test`
     threshold = 0.8,                       # optional; `mutrim run -threshold`
     sample = 0.2,                          # optional; `mutrim run -sample`

@@ -48,6 +48,7 @@ Add `.mutrim/` to `.gitignore`.
 | `-in-diff <ref>`     | scope the run to `git diff --merge-base <ref>`, as `run -in-diff` with the commit-relevant mutants                 |
 | `-threshold`         | fail, after writing every output, when the combined `score` is below it                                            |
 | `-threshold-covered` | the same for the combined `covered_score`                                                                          |
+| `-skip-failing`      | run without the tests that fail on their own instead of stopping, as `run -skip-failing`                           |
 | `-p`                 | packages built and run at once (default GOMAXPROCS)                                                                |
 | `-jobs`              | test processes per package (default GOMAXPROCS / `-p`)                                                             |
 | `-minimize`          | write `minimize.json` over every package (`minimize -blocks`)                                                      |

@@ -28,6 +28,16 @@ go run ./cmd/mutrim run -test-bin pkg.test -mutants mutants.json \
   -confirm-baseline 3 -confirm-kills 3 -out report.json
 ```
 
+ミュータントなしで失敗するテストは、既定では実行を止める。`run -skip-failing` (PIT の
+`skipFailingTests`、cargo-mutants の `--baseline=skip`) は代わりにそのテストを除いて実行する。
+ベースラインまたは単独実行で失敗したテストは `tests[]` に `"status": "failing"` として記録され、
+どこにも到達せず、どのミュータントに対しても実行されないので、`killed_by` に現れることはない。
+失敗したベースラインは、失敗したトップレベルのテストをスキップして (`-test.skip`) 成功するまで
+再実行されるので、panic するテストがその後のテストを隠すことはない。成功するテストが 1 つも
+なければ実行は失敗する。`minimize` は失敗するテストを選択することも redundant とすることもなく、
+`excluded` に列挙する。このフラグはパッケージの探索と、既知の失敗テストがあるブランチの CI のための
+ものである。厳格な既定の動作は、壊れたスイートが気づかれずに通ることを防ぐ。
+
 各ミュータントのタイムアウトは、それに到達するテストに従う。`-timeout-factor` (3) × それらの
 トレースされた所要時間 + `-timeout-const` (2s) で、下限は `-min-timeout` (10s)、上限は
 `-timeout-factor` × ベースライン実行である。したがって、1 つの速いテストが到達するホットな関数で

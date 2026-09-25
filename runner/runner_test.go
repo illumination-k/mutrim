@@ -1204,3 +1204,60 @@ func TestRunEquivalent(t *testing.T) {
 		t.Errorf("weak spots = %+v, want Max counted with CountSuspect", spots)
 	}
 }
+
+// With -skip-failing a test that fails without a mutant is recorded as
+// failing and left out of the mutants' runs instead of stopping the run:
+// one failing everywhere, one panicking (which hides the tests after it
+// until the baseline skips it), one failing only in the whole baseline
+// and one only on its own. Without it the run stops at the baseline, and
+// with no test left passing it stops too.
+func TestRunSkipFailing(t *testing.T) {
+	const dir = "./testdata/failing"
+	bin, mutants := buildPkg(t, dir)
+	t.Setenv("MUTRIM_FAILING", "1")
+	run := func(o runner.Options) (*runner.Report, error) {
+		o.TestBin, o.Mutants, o.Dir, o.Timeout = bin, mutants, dir, 5*time.Second
+		return runner.Run(t.Context(), o)
+	}
+
+	if _, err := run(runner.Options{}); err == nil || !strings.Contains(err.Error(), "baseline run") {
+		t.Errorf("err = %v, want the baseline failing", err)
+	}
+	if _, err := run(runner.Options{SkipFailing: true, Tests: []string{"TestBroken"}}); err == nil || !strings.Contains(err.Error(), "every test fails") {
+		t.Errorf("err = %v, want no test left", err)
+	}
+
+	rep, err := run(runner.Options{SkipFailing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]runner.TestStatus{}
+	for _, tt := range rep.Tests {
+		status[tt.Name] = tt.Status
+		if tt.Status == runner.TestFailing && len(tt.Sites)+len(tt.Blocks) > 0 {
+			t.Errorf("%s is failing but reaches %v %v", tt.Name, tt.Sites, tt.Blocks)
+		}
+	}
+	want := map[string]runner.TestStatus{
+		"TestDouble": "", "TestAfter": "",
+		"TestBroken": runner.TestFailing, "TestPanics": runner.TestFailing,
+		"TestOrder": runner.TestFailing, "TestAlone": runner.TestFailing,
+	}
+	if !maps.Equal(status, want) {
+		t.Errorf("test statuses = %v, want %v", status, want)
+	}
+	killed := 0
+	for _, res := range rep.Results {
+		for _, k := range slices.Concat(res.KilledBy, res.SuspiciousBy) {
+			if want[k] == runner.TestFailing {
+				t.Errorf("mutant %s names the failing test %s", res.MutantID, k)
+			}
+		}
+		if res.Status == runner.Killed {
+			killed++
+		}
+	}
+	if killed == 0 {
+		t.Error("no mutant killed; want the passing tests' kills")
+	}
+}

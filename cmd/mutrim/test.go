@@ -72,6 +72,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	thresholdCovered := fs.Float64("threshold-covered", 0, "fail after writing the outputs when the combined covered_score is below this (0..1); 0 is off")
 	parallel := fs.Int("p", runtime.GOMAXPROCS(0), "packages built and run at once")
 	jobs := fs.Int("jobs", 0, "test processes per package run at once (default: GOMAXPROCS / -p)")
+	skipFailing := fs.Bool("skip-failing", false, "run the mutants without the tests that fail on their own instead of stopping (see run -skip-failing)")
 	doMinimize := fs.Bool("minimize", false, "also write <out>/minimize.json over every package")
 	formats := fs.String("report", "", `comma-separated report formats to write to <out>: "stryker" (mutation-report.json), "html" (mutation-report.html), "github" (annotations.txt)`)
 	if err := fs.Parse(args); err != nil {
@@ -133,7 +134,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		g.Go(func() error {
 			opts := runner.Options{
 				Mutants: u.mutants, Dir: u.pkg.Dir, TestSrcs: u.testSrcs, InDiff: diff, DiffExpand: true,
-				TimeoutConst: 2 * time.Second, Jobs: *jobs, Log: log,
+				TimeoutConst: 2 * time.Second, SkipFailing: *skipFailing, Jobs: *jobs, Log: log,
 			}
 			var err error
 			if opts.TestBin, err = buildUnit(gctx, u); err != nil {
