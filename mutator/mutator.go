@@ -6,6 +6,7 @@
 package mutator
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -41,7 +42,8 @@ type Mutant struct {
 	// embedded nor executed, and counts towards no score.
 	Ignored string `json:"ignored,omitempty"`
 	// Reason is the text an inline directive gave for ignoring the
-	// mutant; filters give none.
+	// mutant; filters give none. For an extra mutant (GenerateExtra) it is
+	// the type error that made it not viable, or the mutant it duplicates.
 	Reason string `json:"reason,omitempty"`
 	// Equivalent names the static rule proving that the mutant computes
 	// what the original does, so no test can kill it; empty when no rule
@@ -72,6 +74,9 @@ type site struct {
 	// arid marks a site on or inside a node the Filter's arid rules
 	// cover; only the walk knows the enclosing nodes.
 	arid bool
+	// key replaces Description in the ID when the description is free
+	// text that does not identify the rewrite (an Extra's).
+	key string
 }
 
 func (s site) position() token.Pos {
@@ -130,48 +135,76 @@ func Generate(pkg *packages.Package, opts Options) []Mutant {
 		sites = append(sites, collectSites(f, ctx, ops, opts.Filter)...)
 	}
 
-	d := &differ{fset: pkg.Fset, ctx: opts.Diff, files: map[*ast.File][]string{}, funcs: map[*ast.FuncDecl][]string{}}
+	b := newBuilder(pkg, opts, dis)
 	mutants := make([]Mutant, 0, len(sites))
 	for _, s := range sites {
-		pos, end := pkg.Fset.Position(s.position()), pkg.Fset.Position(s.end())
-		m := Mutant{
-			ID:          mutantID(pkg.PkgPath, s),
-			Pkg:         pkg.PkgPath,
-			File:        pos.Filename,
-			Line:        pos.Line,
-			Col:         pos.Column,
-			EndLine:     end.Line,
-			EndCol:      end.Column,
-			Func:        s.funcName,
-			Operator:    s.Operator,
-			Description: s.Description,
-			Viable:      true,
-			Class:       s.class(),
-			site:        s,
-		}
-		// A directive states the author's intent at the site, so it is
-		// read before the run-wide filter; the operator's own rule is the
-		// fallback.
-		if m.Ignored, m.Reason = dis[s.file].find(pos.Line, s.Operator); m.Ignored == "" {
-			m.Ignored = opts.Filter.ignore(&m)
-		}
-		if m.Ignored == "" {
-			m.Ignored = s.Ignored
-		}
-		if m.Ignored == "" {
-			m.Equivalent = s.Equivalent
-		}
-		if !m.Excluded() && opts.TypeCheck && s.Check != nil {
-			s.Apply()
-			m.Viable = s.Check() == nil
-			s.Undo()
-		}
-		if opts.Diff != DiffNone && m.Ignored == "" && m.Viable {
-			m.Diff = d.diff(m.File, s)
-		}
+		m, _ := b.mutant(s)
 		mutants = append(mutants, m)
 	}
 	return mutants
+}
+
+// builder turns sites into mutants: the directives, the filter, the type
+// check and the diff, shared by Generate and GenerateExtra.
+type builder struct {
+	pkg  *packages.Package
+	opts Options
+	dis  map[*ast.File]disables
+	d    *differ
+}
+
+func newBuilder(pkg *packages.Package, opts Options, dis map[*ast.File]disables) *builder {
+	return &builder{
+		pkg:  pkg,
+		opts: opts,
+		dis:  dis,
+		d:    &differ{fset: pkg.Fset, ctx: opts.Diff, files: map[*ast.File][]string{}, funcs: map[*ast.FuncDecl][]string{}},
+	}
+}
+
+// mutant builds the mutant of s, and returns the error of its type check
+// when that made it not viable.
+func (b *builder) mutant(s site) (Mutant, error) {
+	pkg, opts := b.pkg, b.opts
+	pos, end := pkg.Fset.Position(s.position()), pkg.Fset.Position(s.end())
+	m := Mutant{
+		ID:          mutantID(pkg.PkgPath, s),
+		Pkg:         pkg.PkgPath,
+		File:        pos.Filename,
+		Line:        pos.Line,
+		Col:         pos.Column,
+		EndLine:     end.Line,
+		EndCol:      end.Column,
+		Func:        s.funcName,
+		Operator:    s.Operator,
+		Description: s.Description,
+		Viable:      true,
+		Class:       s.class(),
+		site:        s,
+	}
+	// A directive states the author's intent at the site, so it is
+	// read before the run-wide filter; the operator's own rule is the
+	// fallback.
+	if m.Ignored, m.Reason = b.dis[s.file].find(pos.Line, s.Operator); m.Ignored == "" {
+		m.Ignored = opts.Filter.ignore(&m)
+	}
+	if m.Ignored == "" {
+		m.Ignored = s.Ignored
+	}
+	if m.Ignored == "" {
+		m.Equivalent = s.Equivalent
+	}
+	var err error
+	if !m.Excluded() && opts.TypeCheck && s.Check != nil {
+		s.Apply()
+		err = s.Check()
+		s.Undo()
+		m.Viable = err == nil
+	}
+	if opts.Diff != DiffNone && m.Ignored == "" && m.Viable {
+		m.Diff = b.d.diff(m.File, s)
+	}
+	return m, err
 }
 
 // Excluded reports whether the mutant is kept out of the run, ignored or
@@ -183,7 +216,7 @@ func (m Mutant) Excluded() bool {
 // mutantID hashes everything that identifies a mutant except its source
 // position, so that edits elsewhere in the file keep the ID stable.
 func mutantID(pkgPath string, s site) string {
-	return hashID(pkgPath, s.funcName, s.astPath, s.Operator, s.Description)
+	return hashID(pkgPath, s.funcName, s.astPath, s.Operator, cmp.Or(s.key, s.Description))
 }
 
 // hashID is the 64-bit hex hash of parts, the form of every site ID.

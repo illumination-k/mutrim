@@ -35,6 +35,13 @@ import (
 const operatorsUsage = `comma-separated operators to apply: names, "default", ` +
 	`and "-name" to remove one (default: the default set, which leaves out the opt-in ones)`
 
+// extraUsage documents the -extra flag of gen and test.
+const extraUsage = `JSON file of externally proposed mutants (an LLM's, or rewrites mined ` +
+	`from bug fixes): [{"file", "func", "line", "col", "original", "replacement", ` +
+	`"description"}], each type-checked, deduplicated against the generated mutants ` +
+	`and embedded as operator "extra"; an entry naming no single site is reported ` +
+	`on stderr and skipped`
+
 // aridUsage documents the -arid flag of gen.
 const aridUsage = `comma-separated globs over the callee ("(*Metrics).Observe", ` +
 	`"(*slog.Logger).Info") extending the built-in arid rules: a matching call ` +
@@ -82,6 +89,12 @@ commands:
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations
+  export-survivors
+            from report.json files, list each mutant no test killed with
+            its diff, the source of its function and of the tests reaching
+            it: the input of an external loop (an LLM) that writes a
+            killing test or judges the mutant equivalent; its proposed
+            mutants go back in through gen -extra
   bazel-test
             the test executable of the mutation_test macro: run, then
             minimize and report into TEST_UNDECLARED_OUTPUTS_DIR, with
@@ -109,6 +122,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runMinimize(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "export-survivors":
+		return runExportSurvivors(args[1:], stdout, stderr)
 	case "test":
 		return runTest(ctx, args[1:], stdout, stderr)
 	case "bazel-test":
@@ -137,6 +152,7 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	importcfg := fs.String("importcfg", "", "dependencies' export data in go build -importcfg format (with -importpath)")
 	stdlib := fs.String("stdlib", "", "directory of compiled standard-library packages, <dir>/<goos_goarch>/<path>.a (with -importpath)")
 	tags := fs.String("tags", "", "comma-separated build tags (with -importpath)")
+	extraPath := fs.String("extra", "", extraUsage)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -156,6 +172,10 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		Arid:         *arid,
 		NoArid:       *noArid,
 	}.Compile()
+	if err != nil {
+		return err
+	}
+	extras, err := readExtras(*extraPath)
 	if err != nil {
 		return err
 	}
@@ -180,7 +200,11 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 	mutants, blocks := []mutator.Mutant{}, []mutator.Block{}
 	overlay := mutator.Overlay{Replace: map[string]string{}}
 	for _, pkg := range pkgs {
-		ms := mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter, Diff: diff})
+		opts := mutator.Options{Operators: ops, TypeCheck: !*noCheck, Filter: filter, Diff: diff}
+		ms := mutator.Generate(pkg, opts)
+		var mine []mutator.Extra
+		mine, extras = mutator.PackageExtras(pkg, extras)
+		ms = append(ms, generateExtra(pkg, ms, mine, opts, stderr)...)
 		bs := mutator.Blocks(pkg)
 		if *schemata != "" {
 			if err := writeSchemata(*schemata, pkg, ms, bs, mutator.RuntimePath, &overlay); err != nil {
@@ -189,6 +213,9 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		}
 		mutants = append(mutants, ms...)
 		blocks = append(blocks, bs...)
+	}
+	for _, e := range extras {
+		_, _ = fmt.Fprintf(stderr, "mutrim: gen -extra: %s: no loaded package has this file\n", e.File)
 	}
 	if *schemata != "" {
 		if err := writeJSON(filepath.Join(*schemata, "overlay.json"), nil, overlay); err != nil {
@@ -201,6 +228,29 @@ func runGen(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	return writeJSON(*out, stdout, mutants)
+}
+
+// readExtras reads the proposals of gen -extra; an empty path is none.
+func readExtras(path string) ([]mutator.Extra, error) {
+	var extras []mutator.Extra
+	if path == "" {
+		return extras, nil
+	}
+	return extras, readJSON(path, &extras)
+}
+
+// generateExtra adds the extras of pkg to its generated mutants. An entry
+// naming no single site is reported on stderr, not fatal: externally
+// proposed mutants are often wrong.
+func generateExtra(pkg *packages.Package, generated []mutator.Mutant, extras []mutator.Extra, opts mutator.Options, stderr io.Writer) []mutator.Mutant {
+	if len(extras) == 0 {
+		return nil
+	}
+	ms, errs := mutator.GenerateExtra(pkg, generated, extras, opts)
+	for _, err := range errs {
+		_, _ = fmt.Fprintln(stderr, "mutrim: gen -extra:", err)
+	}
+	return ms
 }
 
 // writeSchemata writes the complete package under dir/<import path>/:
@@ -728,24 +778,9 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() == 0 {
 		return errors.New("report: at least one report.json is required")
 	}
-	var mutants []mutator.Mutant
-	if err := readJSON(*mutantsPath, &mutants); err != nil {
+	mutants, reports, sources, err := readRun(*mutantsPath, fs.Args(), *srcs)
+	if err != nil {
 		return err
-	}
-	var reports []*runner.Report
-	for _, path := range fs.Args() {
-		r, err := runner.ReadReport(path)
-		if err != nil {
-			return err
-		}
-		reports = append(reports, r)
-	}
-	var sources *report.Sources
-	if *srcs != "" {
-		var err error
-		if sources, err = report.NewSources(strings.Split(*srcs, ",")); err != nil {
-			return err
-		}
 	}
 
 	switch *format {
@@ -762,6 +797,53 @@ func runReport(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("report: unknown -format %q", *format)
 	}
+}
+
+// runExportSurvivors is `mutrim export-survivors`: the survivors of the
+// reports with the sources an external test-writing or equivalence-judging
+// loop needs (report.ExportSurvivors).
+func runExportSurvivors(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("export-survivors", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	mutantsPath := fs.String("mutants", "", "mutants.json of the reports (required)")
+	srcs := fs.String("srcs", "", "comma-separated files or directories holding the mutated sources and their _test.go files")
+	out := fs.String("o", "", "write survivors.json here instead of stdout")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *mutantsPath == "" {
+		return errors.New("export-survivors: -mutants is required")
+	}
+	if fs.NArg() == 0 {
+		return errors.New("export-survivors: at least one report.json is required")
+	}
+	mutants, reports, sources, err := readRun(*mutantsPath, fs.Args(), *srcs)
+	if err != nil {
+		return err
+	}
+	return writeJSON(*out, stdout, report.ExportSurvivors(mutants, reports, sources))
+}
+
+// readRun reads what report and export-survivors render: mutants.json,
+// the reports, and the sources indexed from srcs (nil when empty).
+func readRun(mutantsPath string, reportPaths []string, srcs string) ([]mutator.Mutant, []*runner.Report, *report.Sources, error) {
+	var mutants []mutator.Mutant
+	if err := readJSON(mutantsPath, &mutants); err != nil {
+		return nil, nil, nil, err
+	}
+	var reports []*runner.Report
+	for _, path := range reportPaths {
+		r, err := runner.ReadReport(path)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		reports = append(reports, r)
+	}
+	if srcs == "" {
+		return mutants, reports, nil, nil
+	}
+	sources, err := report.NewSources(strings.Split(srcs, ","))
+	return mutants, reports, sources, err
 }
 
 // runBazelTest is `mutrim bazel-test`, the test executable of the

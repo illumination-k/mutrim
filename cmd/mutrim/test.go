@@ -74,6 +74,7 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	jobs := fs.Int("jobs", 0, "test processes per package run at once (default: GOMAXPROCS / -p)")
 	skipFailing := fs.Bool("skip-failing", false, "run the mutants without the tests that fail on their own instead of stopping (see run -skip-failing)")
 	doMinimize := fs.Bool("minimize", false, "also write <out>/minimize.json over every package")
+	extraPath := fs.String("extra", "", extraUsage)
 	formats := fs.String("report", "", `comma-separated report formats to write to <out>: "stryker" (mutation-report.json), "html" (mutation-report.html), "github" (annotations.txt)`)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -102,13 +103,19 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		}
 	}
 
+	extras, err := readExtras(*extraPath)
+	if err != nil {
+		return err
+	}
 	pkgs, err := mutator.Load(".", patterns(fs)...)
 	if err != nil {
 		return err
 	}
 	var units []*testUnit
 	for _, pkg := range pkgs {
-		u, err := genUnit(pkg, *out, ops)
+		var mine []mutator.Extra
+		mine, extras = mutator.PackageExtras(pkg, extras)
+		u, err := genUnit(pkg, *out, ops, mine, stderr)
 		if err != nil {
 			return err
 		}
@@ -117,6 +124,9 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 			continue
 		}
 		units = append(units, u)
+	}
+	for _, e := range extras {
+		_, _ = fmt.Fprintf(stderr, "mutrim: test -extra: %s: no loaded package has this file\n", e.File)
 	}
 	if len(units) == 0 {
 		return errors.New("test: no package with tests")
@@ -172,9 +182,9 @@ func runTest(ctx context.Context, args []string, stdout, stderr io.Writer) error
 
 // genUnit generates the mutants of pkg and writes its schemata sources, the
 // injected runtime, overlay.json, mutants.json and blocks.json under
-// <out>/<pkg>. A package without _test.go files returns nil: it has no
-// test binary to run.
-func genUnit(pkg *packages.Package, out string, ops []mutator.Operator) (*testUnit, error) {
+// <out>/<pkg>, extras (gen -extra) included. A package without _test.go
+// files returns nil: it has no test binary to run.
+func genUnit(pkg *packages.Package, out string, ops []mutator.Operator, extras []mutator.Extra, stderr io.Writer) (*testUnit, error) {
 	testSrcs, err := filepath.Glob(filepath.Join(pkg.Dir, "*_test.go"))
 	if err != nil || len(testSrcs) == 0 {
 		return nil, err
@@ -186,7 +196,9 @@ func genUnit(pkg *packages.Package, out string, ops []mutator.Operator) (*testUn
 	if err := os.RemoveAll(filepath.Join(u.dir, "schemata")); err != nil {
 		return nil, err
 	}
-	u.mutants = mutator.Generate(pkg, mutator.Options{Operators: ops, TypeCheck: true, Diff: mutator.DiffStmt})
+	opts := mutator.Options{Operators: ops, TypeCheck: true, Diff: mutator.DiffStmt}
+	u.mutants = mutator.Generate(pkg, opts)
+	u.mutants = append(u.mutants, generateExtra(pkg, u.mutants, extras, opts, stderr)...)
 	blocks := mutator.Blocks(pkg)
 	schemata := filepath.Join(u.dir, "schemata")
 	overlay := mutator.Overlay{Replace: map[string]string{}}

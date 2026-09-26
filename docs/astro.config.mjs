@@ -36,6 +36,7 @@ export default defineConfig({
             "guides/flaky-tests",
             "guides/diff",
             "guides/sampling",
+            "guides/external-mutants",
             "guides/reporting",
           ],
         },

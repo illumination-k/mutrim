@@ -8,6 +8,7 @@ go_library(
         "diff.go",
         "directive.go",
         "equivalent.go",
+        "extra.go",
         "filter.go",
         "load.go",
         "loadfiles.go",

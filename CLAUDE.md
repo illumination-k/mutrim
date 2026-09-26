@@ -80,12 +80,12 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 
 | Package    | Responsibility                                                                                                                                                                                                                                                                                                                                                      | Depends on                          |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, `mutants.json` / `blocks.json` output, schemata lowering. Bazel-independent                                                                                                                                                                                     | `go/ast`, `go/types`, `go/packages` |
+| `mutator`  | AST rewriting (`go/ast` + `go/format`), `go/types` pre-check, inline `//mutrim:disable` directives, external mutants (`GenerateExtra`), `mutants.json` / `blocks.json` output, schemata lowering. Bazel-independent                                                                                                                                                 | `go/ast`, `go/types`, `go/packages` |
 | `mut`      | Runtime imported by schemata sources; reads `GOMUTANT_ID` once, identity when unset; `GOMUTANT_TRACE` records reached sites, and blocks through `Reach`; `Source` embeds `mut.go` for injection                                                                                                                                                                     | stdlib only                         |
 | `runner`   | Per-test trace run, re-exec a test binary per mutant against the tests reaching it, other packages' test binaries (`-extra-test`), subtest rows (`-subtests`), confirmation reruns (`-confirm-kills` / `-confirm-baseline`), failing tests skipped (`-skip-failing`), sharding, random sampling (`-sample`), `-jobs` parallel processes, `report.json`, incremental | `mutator` (for `Mutant`)            |
 | `criteria` | `Criterion` interface with `SiteCoverage` / `BlockCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                                                   | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                                                           | `criteria`, `bitset`, `go/parser`   |
-| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations. Bazel-independent                                                                                                                                                                                                                          | `mutator`, `runner`                 |
+| `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations, survivors with their sources (`ExportSurvivors`). Bazel-independent                                                                                                                                                                        | `mutator`, `runner`                 |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -105,7 +105,10 @@ writes `report.json`, one per run (a shard, a package): `Results` carries each m
 status and the tests that killed it, `Tests` the rows with the sites and blocks they reached.
 `minimize` joins several reports into one `test × requirement` matrix (`criteria.Compose`
 over `SiteCoverage`, `BlockCoverage` and `Mutation`), and `report` renders the same reports for humans
-(Stryker JSON, HTML, GitHub annotations). Every artifact in this chain is per-run output
+(Stryker JSON, HTML, GitHub annotations). `export-survivors` hands the survivors, with
+the sources of their function and reaching tests, to an external loop (an LLM writing a
+killing test or judging equivalence), and `gen -extra` takes externally proposed mutants
+back in (see External mutants below). Every artifact in this chain is per-run output
 and never committed (see Conventions).
 
 `mutrim test ./...` is the one-shot driver for go test users and only composes those steps:
@@ -155,6 +158,15 @@ overlay (`mut.Source`, `Lower`'s runtime path), so the target's `go.mod` never c
   `mutation_test`, and `run -confirm-kills`); `gen -operators` (the `operators` attribute of
   `mutation_test`) selects a subset or adds an opt-in one, e.g. `default,-constant` or
   `default,call`.
+- External mutants (issue #63, opt-in): `gen -extra` / `test -extra` read
+  `[{file, func, line, col, original, replacement, description}]`, find the site by its
+  canonical source text, and make each an `extra` mutant (`mutator.GenerateExtra`, run
+  after `Generate` on the same trees and before `Lower`). The check re-checks the whole
+  package with the rewrite applied (`recheck`), not just the expression; a failure is
+  `viable: false` with the error in `reason`. A rewrite another mutant makes (the function
+  prints the same) is ignored as `duplicate`. Expressions lower to a closure spelling the
+  result type, statements to `if mut.Active(id) { repl } else { orig }`. mutrim calls no
+  model.
 - Every mutant has a class (`mutator.Class*`, `class` in `mutants.json` and `report.json`):
   its operator's (`errpath`, `concurrency`, else `default`) unless the site sets
   `Site.Class`, as a `return` result → `nil` and a forced nil check (`condition`) do for

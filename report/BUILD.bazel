@@ -7,6 +7,7 @@ go_library(
         "html.go",
         "sources.go",
         "stryker.go",
+        "survivors.go",
     ],
     importpath = "github.com/illumination-k/mutrim/report",
     visibility = ["//visibility:public"],
@@ -18,7 +19,10 @@ go_library(
 
 go_test(
     name = "report_test",
-    srcs = ["report_test.go"],
+    srcs = [
+        "report_test.go",
+        "survivors_test.go",
+    ],
     deps = [
         ":report",
         "//mutator",
