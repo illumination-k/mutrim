@@ -61,6 +61,7 @@ func parseDisables(fset *token.FileSet, f *ast.File) disables {
 	for _, op := range DefaultOperators {
 		known[op.Name()] = true
 	}
+	known[ExtraOperator] = true
 	line := func(p token.Pos) int { return fset.Position(p).Line }
 	lastLine := fset.File(f.Package).LineCount()
 

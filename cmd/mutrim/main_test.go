@@ -1165,3 +1165,86 @@ func TestTest(t *testing.T) {
 		t.Errorf("a failed threshold must still print the totals:\n%s", stdout.String())
 	}
 }
+
+// External mutants go in through gen -extra, run like generated ones, and
+// the survivors come out of export-survivors with the sources an external
+// test-writing loop needs.
+func TestGenExtraThenExportSurvivors(t *testing.T) {
+	const extraFixture = "../../mutator/testdata/extra"
+	dir := t.TempDir()
+	extraPath := filepath.Join(dir, "extra.json")
+	extras := []mutator.Extra{
+		{File: "extra.go", Func: "Clamp", Line: 11, Original: "hi", Replacement: "hi - 1"},
+		{File: "extra.go", Func: "Words", Original: "strings.Fields(s)", Replacement: `strings.Split(s, " ")`, Description: "split on single spaces"},
+		{File: "extra.go", Original: "y + 1", Replacement: "y"},
+	}
+	if err := writeJSON(extraPath, nil, extras); err != nil {
+		t.Fatal(err)
+	}
+	mutantsPath := filepath.Join(dir, "mutants.json")
+	var stdout, stderr bytes.Buffer
+	if err := run(t.Context(), []string{"gen", "-extra", extraPath, "-schemata", dir, "-o", mutantsPath, extraFixture}, &stdout, &stderr); err != nil {
+		t.Fatalf("gen -extra: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "original not found") {
+		t.Errorf("the entry naming no site must be reported on stderr:\n%s", stderr.String())
+	}
+	var mutants []mutator.Mutant
+	if err := readJSON(mutantsPath, &mutants); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{} // description -> ID of the extra mutants
+	for _, m := range mutants {
+		if m.Operator == mutator.ExtraOperator {
+			ids[m.Description] = m.ID
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("want two extra mutants, got %v", ids)
+	}
+
+	bin := filepath.Join(dir, "extra.test")
+	cmd := exec.CommandContext(t.Context(), "go", "test", "-c", "-overlay", filepath.Join(dir, "overlay.json"), "-o", bin, extraFixture) //nolint:gosec // test-controlled args
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -c: %v\n%s", err, out)
+	}
+	reportPath := filepath.Join(dir, "report.json")
+	if err := run(t.Context(), []string{"run", "-test-bin", bin, "-mutants", mutantsPath, "-dir", extraFixture, "-timeout", "1s", "-out", reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("run: %v\n%s", err, stderr.String())
+	}
+	var ran runner.Report
+	if err := readJSON(reportPath, &ran); err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]runner.Status{}
+	for _, r := range ran.Results {
+		status[r.MutantID] = r.Status
+	}
+	if got := status[ids["hi -> hi-1"]]; got != runner.Killed {
+		t.Errorf("hi -> hi-1: %s, want KILLED", got)
+	}
+	split := ids["split on single spaces"]
+	// The split leaves every trace as it was, so it may be suspect
+	// equivalent; export-survivors lists it either way.
+	if got := status[split]; got != runner.Lived && got != runner.SuspectEquivalent {
+		t.Errorf("split: %s, want a survivor", got)
+	}
+
+	stdout.Reset()
+	if err := run(t.Context(), []string{"export-survivors", "-mutants", mutantsPath, "-srcs", extraFixture, reportPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("export-survivors: %v\n%s", err, stderr.String())
+	}
+	var survivors []report.Exported
+	if err := json.Unmarshal(stdout.Bytes(), &survivors); err != nil {
+		t.Fatalf("export-survivors output is not JSON: %v\n%s", err, stdout.String())
+	}
+	i := slices.IndexFunc(survivors, func(s report.Exported) bool { return s.ID == split })
+	if i < 0 {
+		t.Fatalf("the surviving extra mutant is not exported: %+v", survivors)
+	}
+	s := survivors[i]
+	if !strings.Contains(s.Diff, `strings.Split(s, " ")`) || !strings.HasPrefix(s.FuncSource, "// Words counts") ||
+		len(s.Tests) != 1 || s.Tests[0].Name != "TestWords" || !strings.HasPrefix(s.Tests[0].Source, "func TestWords(") {
+		t.Errorf("survivor = %+v", s)
+	}
+}

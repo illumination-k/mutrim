@@ -259,17 +259,23 @@ func displayPath(cwd, file string) string {
 // Survivors lists the mutants of reports that no test killed, in source
 // order, paired with the status that says why.
 func Survivors(mutants []mutator.Mutant, reports []*runner.Report) []Survivor {
+	return survivors(mutants, reports, (*runner.Report).Survived)
+}
+
+// survivors is Survivors with the statuses that count as survived in a
+// report decided by survived.
+func survivors(mutants []mutator.Mutant, reports []*runner.Report, survived func(*runner.Report, runner.Status) bool) []Survivor {
 	results := map[string]runner.Status{}
-	survived := map[string]bool{}
+	kept := map[string]bool{}
 	for _, r := range reports {
 		for _, res := range r.Results {
 			results[res.MutantID] = res.Status
-			survived[res.MutantID] = r.Survived(res.Status)
+			kept[res.MutantID] = survived(r, res.Status)
 		}
 	}
 	out := []Survivor{}
 	for _, m := range mutants {
-		if survived[m.ID] {
+		if kept[m.ID] {
 			out = append(out, Survivor{Mutant: m, Status: results[m.ID]})
 		}
 	}
