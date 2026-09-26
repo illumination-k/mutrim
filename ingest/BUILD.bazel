@@ -1,0 +1,27 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ingest",
+    srcs = [
+        "cargomutants.go",
+        "demangle.go",
+        "ingest.go",
+        "istanbul.go",
+        "junit.go",
+        "llvmcov.go",
+        "stryker.go",
+    ],
+    importpath = "github.com/illumination-k/mutrim/ingest",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "ingest_test",
+    srcs = [
+        "cargomutants_internal_test.go",
+        "demangle_test.go",
+        "ingest_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":ingest"],
+)

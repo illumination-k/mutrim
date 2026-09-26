@@ -1,0 +1,22 @@
+*** src/lib.rs:2:5: replace clamp -> i32 with 0
+*** mutation diff:
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo test --no-run --verbose --package=rsdemo@0.1.0
+     Running `/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc --crate-name rsdemo --edition=2024 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=10ff778a2e6e5650 -C extra-filename=-a7a38e2e2c14651f --out-dir /tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps -C incremental=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/incremental -L dependency=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps`
+     Running `/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc --crate-name rsdemo --edition=2024 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=a3f872e14bbd184e -C extra-filename=-304d2332cc655084 --out-dir /tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps -C incremental=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/incremental -L dependency=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps`
+     Running `/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc --crate-name sign --edition=2024 tests/sign.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' -C metadata=3ab16456f6a4b3a0 -C extra-filename=-f73ffd1f575932ac --out-dir /tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps -C incremental=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/incremental -L dependency=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps --extern rsdemo=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps/librsdemo-a7a38e2e2c14651f.rlib`
+*** result: Success
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo test --verbose --package=rsdemo@0.1.0 --no-fail-fast
+     Running `/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps/rsdemo-304d2332cc655084`
+test tests::low ... ok
+test tests::mid_again ... FAILED
+test tests::high ... FAILED
+test tests::mid ... FAILED
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running `/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps/sign-f73ffd1f575932ac`
+test neg ... ok
+test pos ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests rsdemo
+     Running `/root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc --edition=2024 --crate-type lib --color auto --crate-name rsdemo --test src/lib.rs --test-run-directory /tmp/cargo-mutants-rsdemo-pQMnlk.tmp --extern rsdemo=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps/librsdemo-a7a38e2e2c14651f.rlib -L dependency=/tmp/cargo-mutants-rsdemo-pQMnlk.tmp/target/debug/deps -C embed-bitcode=no --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values())' --error-format human`
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+*** result: Failure(101)

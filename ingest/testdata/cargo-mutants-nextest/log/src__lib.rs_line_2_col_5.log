@@ -1,0 +1,21 @@
+*** src/lib.rs:2:5: replace clamp -> i32 with 0
+*** mutation diff:
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo nextest run --no-run --verbose --package=rsdemo@0.1.0
+*** result: Success
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo nextest run --verbose --package=rsdemo@0.1.0 --no-fail-fast
+        PASS [   0.012s] (1/6) rsdemo tests::low
+        PASS [   0.008s] (2/6) rsdemo::sign neg
+        PASS [   0.008s] (3/6) rsdemo::sign pos
+        FAIL [   0.087s] (4/6) rsdemo tests::mid
+    test tests::mid ... FAILED
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.08s
+        FAIL [   0.097s] (5/6) rsdemo tests::mid_again
+    test tests::mid_again ... FAILED
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.09s
+        FAIL [   0.103s] (6/6) rsdemo tests::high
+    test tests::high ... FAILED
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.09s
+        FAIL [   0.087s] (4/6) rsdemo tests::mid
+        FAIL [   0.097s] (5/6) rsdemo tests::mid_again
+        FAIL [   0.103s] (6/6) rsdemo tests::high
+*** result: Failure(100)

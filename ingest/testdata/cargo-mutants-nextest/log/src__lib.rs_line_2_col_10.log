@@ -1,0 +1,15 @@
+*** src/lib.rs:2:10: replace < with == in clamp
+*** mutation diff:
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo nextest run --no-run --verbose --package=rsdemo@0.1.0
+*** result: Success
+*** /root/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo nextest run --verbose --package=rsdemo@0.1.0 --no-fail-fast
+        PASS [   0.006s] (1/6) rsdemo tests::mid
+        PASS [   0.006s] (2/6) rsdemo tests::mid_again
+        PASS [   0.007s] (3/6) rsdemo tests::high
+        PASS [   0.005s] (4/6) rsdemo::sign neg
+        PASS [   0.007s] (5/6) rsdemo::sign pos
+        FAIL [   0.083s] (6/6) rsdemo tests::low
+    test tests::low ... FAILED
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.07s
+        FAIL [   0.083s] (6/6) rsdemo tests::low
+*** result: Failure(100)

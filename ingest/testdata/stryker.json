@@ -1,0 +1,589 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  },
+  "files": {
+    "src/calc.ts": {
+      "language": "typescript",
+      "source": "export function clamp(x: number, lo: number, hi: number): number {\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n\nexport function sign(x: number): string {\n  if (x > 0) return \"pos\";\n  if (x < 0) return \"neg\";\n  return \"zero\";\n}\n",
+      "mutants": [
+        {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "expected undefined to be +0 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 4,
+          "killedBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "coveredBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 5
+            },
+            "start": {
+              "column": 66,
+              "line": 1
+            }
+          }
+        },
+        {
+          "id": "1",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "expected +0 to be 10 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 4,
+          "killedBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "coveredBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "expected -1 to be +0 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 4,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x <= lo",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 4,
+          "coveredBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          }
+        },
+        {
+          "id": "4",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x >= lo",
+          "statusReason": "expected -1 to be +0 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 4,
+          "killedBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "coveredBy": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 2
+            },
+            "start": {
+              "column": 7,
+              "line": 2
+            }
+          }
+        },
+        {
+          "id": "5",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "expected 10 to be 5 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 3,
+          "killedBy": [
+            "3",
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 3
+            },
+            "start": {
+              "column": 7,
+              "line": 3
+            }
+          }
+        },
+        {
+          "id": "6",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "expected 11 to be 10 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 3,
+          "killedBy": [
+            "2"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 3
+            },
+            "start": {
+              "column": 7,
+              "line": 3
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x >= hi",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 3,
+          "coveredBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 3
+            },
+            "start": {
+              "column": 7,
+              "line": 3
+            }
+          }
+        },
+        {
+          "id": "8",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x <= hi",
+          "statusReason": "expected 11 to be 10 // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 3,
+          "killedBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 3
+            },
+            "start": {
+              "column": 7,
+              "line": 3
+            }
+          }
+        },
+        {
+          "id": "9",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "expected undefined to be 'pos' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "5",
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 11
+            },
+            "start": {
+              "column": 41,
+              "line": 7
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "expected 'pos' to be 'neg' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 8
+            },
+            "start": {
+              "column": 7,
+              "line": 8
+            }
+          }
+        },
+        {
+          "id": "11",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "expected 'zero' to be 'pos' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 8
+            },
+            "start": {
+              "column": 7,
+              "line": 8
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x >= 0",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 8
+            },
+            "start": {
+              "column": 7,
+              "line": 8
+            }
+          }
+        },
+        {
+          "id": "13",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x <= 0",
+          "statusReason": "expected 'pos' to be 'neg' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "0",
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 8
+            },
+            "start": {
+              "column": 7,
+              "line": 8
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "expected '' to be 'pos' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 8
+            },
+            "start": {
+              "column": 21,
+              "line": 8
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          }
+        },
+        {
+          "id": "16",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "expected 'zero' to be 'neg' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x <= 0",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x >= 0",
+          "statusReason": "expected 'zero' to be 'neg' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 12,
+              "line": 9
+            },
+            "start": {
+              "column": 7,
+              "line": 9
+            }
+          }
+        },
+        {
+          "id": "19",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "expected '' to be 'neg' // Object.is equality",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 9
+            },
+            "start": {
+              "column": 21,
+              "line": 9
+            }
+          }
+        },
+        {
+          "id": "20",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "NoCoverage",
+          "static": false,
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 10
+            },
+            "start": {
+              "column": 10,
+              "line": 10
+            }
+          }
+        }
+      ]
+    }
+  },
+  "testFiles": {
+    "src/other.test.ts": {
+      "tests": [
+        {
+          "id": "0",
+          "name": "sign neg"
+        }
+      ]
+    },
+    "src/calc.test.ts": {
+      "tests": [
+        {
+          "id": "1",
+          "name": "clamp low"
+        },
+        {
+          "id": "2",
+          "name": "clamp high"
+        },
+        {
+          "id": "3",
+          "name": "clamp mid"
+        },
+        {
+          "id": "4",
+          "name": "clamp mid again"
+        },
+        {
+          "id": "5",
+          "name": "sign pos"
+        }
+      ]
+    }
+  }
+}
