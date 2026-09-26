@@ -24,14 +24,15 @@ tools:
   istanbul       one test's coverage-final.json (vitest, jest; -test):
                  the statements it executes
   llvm-cov       one test's llvm-cov JSON export (cargo llvm-cov --json;
-                 -test): the code regions it executes
+                 -test): the lines (or -regions) it executes
   junit          a JUnit XML report (-runner vitest|nextest): the test
                  durations`
 
 // importFlags are the flags of `mutrim import`; each tool registers
 // those it reads.
 type importFlags struct {
-	test, root, excludeFiles, excludeFn, runner string
+	test, root, files, excludeFiles, excludeFn, runner string
+	regions                                            bool
 }
 
 // runImport is `mutrim import`: it reads another language's tool output
@@ -52,8 +53,10 @@ func runImport(args []string, stdout, stderr io.Writer) error {
 		excludeFiles := ""
 		if tool == "llvm-cov" {
 			excludeFiles = `(^|/)(tests|benches|examples)/`
-			fs.StringVar(&f.excludeFn, "exclude-fn", `(^|::)tests(::|$)`, "regexp over the demangled path of the functions to leave out (the test code)")
+			fs.StringVar(&f.excludeFn, "exclude-fn", `(^|::)(tests|test_support|test_utils)(::|$)`, "regexp over the demangled path of the functions to leave out (the test code)")
+			fs.BoolVar(&f.regions, "regions", false, "a block per llvm-cov region instead of per line")
 		}
+		fs.StringVar(&f.files, "files", "", "regexp over the relative path of the files to keep (e.g. the package under test of a workspace); empty keeps every file")
 		fs.StringVar(&f.excludeFiles, "exclude-files", excludeFiles, "regexp over the relative path of the files to leave out")
 	case "junit":
 		fs.StringVar(&f.runner, "runner", "", `the runner that wrote the report, which the row names follow: "vitest" or "nextest" (required)`)
@@ -103,11 +106,15 @@ func importFile(tool string, data []byte, f importFlags) (*ingest.Observations, 
 	if err != nil {
 		return nil, err
 	}
+	includeFile, err := optionalRegexp(f.files)
+	if err != nil {
+		return nil, fmt.Errorf("import %s: -files: %w", tool, err)
+	}
 	excludeFile, err := optionalRegexp(f.excludeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("import %s: -exclude-files: %w", tool, err)
 	}
-	paths := ingest.Paths{Root: root, Exclude: excludeFile}
+	paths := ingest.Paths{Root: root, Include: includeFile, Exclude: excludeFile}
 	if tool == "istanbul" {
 		return ingest.Istanbul(data, f.test, paths)
 	}
@@ -115,7 +122,7 @@ func importFile(tool string, data []byte, f importFlags) (*ingest.Observations, 
 	if err != nil {
 		return nil, fmt.Errorf("import %s: -exclude-fn: %w", tool, err)
 	}
-	return ingest.LLVMCov(data, f.test, paths, excludeFn)
+	return ingest.LLVMCov(data, f.test, paths, excludeFn, f.regions)
 }
 
 // optionalRegexp compiles re into a matcher; empty matches nothing.

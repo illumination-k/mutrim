@@ -13,7 +13,7 @@ files next to (or instead of) Go `report.json` files. mutrim runs none of those 
 | StrykerJS (mutation-testing-elements)  | `stryker`       | sites reached, mutants killed          |
 | cargo-mutants (`mutants.out`)          | `cargo-mutants` | mutants killed, durations with nextest |
 | vitest / jest coverage (Istanbul JSON) | `istanbul`      | statements one test executes           |
-| `cargo llvm-cov --json`                | `llvm-cov`      | code regions one test executes         |
+| llvm-cov JSON export                   | `llvm-cov`      | lines one test executes                |
 | JUnit XML (vitest, nextest)            | `junit`         | durations                              |
 
 The files of one suite merge by test name, so each adapter names a test the same way:
@@ -23,9 +23,9 @@ The files of one suite merge by test name, so each adapter names a test the same
 - Rust: `<crate>::<test path>`, the crate being the test binary's: the library's for a
   unit test, the file's for an integration test (`rsdemo::tests::low`, `sign::pos`).
 
-Requirements are labeled by source range (`src/calc.ts:2:7-2:13`) or by mutant
-(`src/lib.rs:2:10: replace < with == in clamp`), so the rows of two files that share a
-label share a requirement.
+Requirements are labeled by source range (`src/calc.ts:2:7-2:13`), by line (`src/lib.rs:2`)
+or by mutant (`src/lib.rs:2:10: replace < with == in clamp`), so the rows of two files that
+share a label share a requirement.
 
 ## TypeScript: vitest + StrykerJS
 
@@ -90,17 +90,27 @@ mutrim import cargo-mutants -o obs/mutants.json mutants.out
 
 A caught mutant whose log names no failing test (a crash, a doctest harness failing) is
 reported on stderr and kills nothing; timeouts and unviable mutants are left out; missed
-ones count as survivors.
+ones count as survivors. cargo-mutants names each mutant's function, so the survivors also
+come out as `weak_spots` of `minimize`, as for Go.
 
-Coverage per test, with the library crate named in `lib`:
+Coverage per test: build the test binaries once with `-C instrument-coverage` (in a target
+directory of their own), then run each test alone and export its profile with the
+`llvm-profdata` / `llvm-cov` of the `llvm-tools-preview` component. One `cargo llvm-cov` per
+test works too, but rebuilds and reports each time: several times slower.
 
 ```sh
-lib=rsdemo
+pkg=rsdemo
+export CARGO_TARGET_DIR=target/cov RUSTFLAGS="-C instrument-coverage" LLVM_PROFILE_FILE=/dev/null
+cargo test -p "$pkg" --no-run --message-format=json |
+  jq -r 'select(.executable != null and .profile.test) | "\(.target.name | gsub("-"; "_")) \(.executable)"' >bins.txt
+llvm=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin
 jq -r '.tests[].name' obs/mutants.json | while IFS= read -r t; do
   crate=${t%%::*} path=${t#*::}
-  if [ "$crate" = "$lib" ]; then target=--lib; else target="--test $crate"; fi
-  cargo llvm-cov --json --output-path cov.json $target -- --exact "$path"
-  mutrim import llvm-cov -test "$t" -o "obs/cov-$t.json" cov.json
+  exe=$(awk -v c="$crate" '$1 == c { print $2 }' bins.txt)
+  LLVM_PROFILE_FILE=cov.profraw "$exe" --exact "$path" --quiet >/dev/null
+  "$llvm/llvm-profdata" merge -sparse cov.profraw -o cov.profdata
+  "$llvm/llvm-cov" export -format=text -instr-profile cov.profdata "$exe" >cov.json
+  mutrim import llvm-cov -test "$t" -o "obs/cov-$(printf '%s' "$t" | md5sum | cut -c1-8).json" cov.json
 done
 
 mutrim minimize obs/*.json
@@ -108,13 +118,20 @@ mutrim minimize obs/*.json
 
 A test's own body is executed by that test alone and would make every test essential, so
 `import llvm-cov` leaves out the test code: files under `tests/`, `benches/` and `examples/`
-(`-exclude-files`) and functions whose demangled path has a `tests` module
-(`-exclude-fn '(^|::)tests(::|$)'`). Adjust both to the project's layout.
+(`-exclude-files`) and functions whose demangled path has a `tests`, `test_support` or
+`test_utils` module (`-exclude-fn`). Adjust both to the project's layout. In a workspace,
+`-files '^crates/rsdemo/src/'` keeps only the package under test: its dependencies' code is
+their own tests' to cover, and would otherwise make a test essential for reaching it.
+
+A block is a line (`src/lib.rs:2`), each executed region counted on its first line.
+llvm-cov splits a line into a region per operand of `&&` or a call, which would weigh a line
+by its operators; `-regions` keeps the regions (`src/lib.rs:2:8-2:14`) instead.
 
 ## What minimize reports
 
 The selection, the redundant tests with the tests subsuming them, the essential tests and
 the dominator totals are computed exactly as for Go. `-keep` (a regexp over the row name)
-protects tests; `-tag`, `-mutants` (weak spots) and `-blocks` (uncovered functions) read Go
-sources and artifacts, and have nothing to read here. The weights (`-w-site`, `-w-block`,
+protects tests; `-tag`, `-mutants` and `-blocks` (uncovered functions) read Go sources and
+artifacts, and have nothing to read here; the weak spots of an imported run come from
+cargo-mutants on its own. The weights (`-w-site`, `-w-block`,
 `-w-kill`) apply to the imported sites, blocks and kills.

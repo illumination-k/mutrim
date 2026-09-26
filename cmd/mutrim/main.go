@@ -631,6 +631,10 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		}
 		result.WeakSpots = runner.WeakSpots(mutants, reports...)
 	}
+	if spots := observedWeakSpots(observed, kills, survived); len(spots) > 0 {
+		result.WeakSpots = append(result.WeakSpots, spots...)
+		runner.SortSpots(result.WeakSpots)
+	}
 	if *blocksPath != "" {
 		var blocks []mutator.Block
 		if err := readJSON(*blocksPath, &blocks); err != nil {
@@ -808,6 +812,46 @@ func (in inputs) observe(observed []*ingest.Observations) map[string]bool {
 		}
 	}
 	return survived
+}
+
+// observedWeakSpots lists the functions of the observations' placed
+// mutants (ingest.Observations.Mutants) that have a survivor, as
+// runner.WeakSpots does for a Go run from mutants.json.
+func observedWeakSpots(observed []*ingest.Observations, kills criteria.Mutation, survived map[string]bool) []runner.Spot {
+	killed := map[string]bool{}
+	for _, id := range kills.Mutants() {
+		killed[id] = true
+	}
+	spots := map[[2]string]*runner.Spot{}
+	seen := map[string]bool{}
+	for _, o := range observed {
+		for _, m := range o.Mutants {
+			if seen[m.ID] {
+				continue
+			}
+			seen[m.ID] = true
+			key := [2]string{m.File, m.Func}
+			s, ok := spots[key]
+			if !ok {
+				s = &runner.Spot{Func: m.Func, File: m.File, Line: m.Line}
+				spots[key] = s
+			}
+			s.Line = min(s.Line, m.Line)
+			switch {
+			case killed[m.ID]:
+				s.Killed++
+			case survived[m.ID]:
+				s.Lived++
+			}
+		}
+	}
+	var out []runner.Spot
+	for _, s := range spots {
+		if s.Lived > 0 {
+			out = append(out, *s)
+		}
+	}
+	return out
 }
 
 // runReport is `mutrim report`: it renders the reports of a run (the

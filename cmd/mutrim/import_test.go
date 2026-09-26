@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/illumination-k/mutrim/ingest"
+	"github.com/illumination-k/mutrim/runner"
 )
 
 // A Stryker report of three tests: b kills what a kills and more, c
@@ -101,15 +102,23 @@ func TestMinimizeObservations(t *testing.T) {
 
 func TestImportLLVMCovAndCargoMutants(t *testing.T) {
 	dir := t.TempDir()
-	// clamp's region is reached; the test's own body, in its tests
-	// module, is not a block.
-	cov := importTo(t, dir, "llvm-cov", `{"type": "llvm.coverage.json.export", "data": [{"functions": [
-		{"name": "_RNvCsjJghpr7hpzZ_6rsdemo5clamp", "filenames": ["/p/src/lib.rs"], "regions": [[1, 1, 1, 46, 1, 0, 0, 0]]},
-		{"name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_3low", "filenames": ["/p/src/lib.rs"], "regions": [[26, 5, 26, 13, 1, 0, 0, 0]]}
-	]}]}`, "-root", "/p", "-test", "rsdemo::tests::low")
+	// clamp's line is reached, once for its two regions; the test's own
+	// body, in its tests module, is not a block, nor is a test_support
+	// helper.
+	export := `{"type": "llvm.coverage.json.export", "data": [{"functions": [
+		{"name": "_RNvCsjJghpr7hpzZ_6rsdemo5clamp", "filenames": ["/p/src/lib.rs"], "regions": [[1, 1, 1, 46, 1, 0, 0, 0], [1, 8, 1, 14, 1, 0, 0, 0]]},
+		{"name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_3low", "filenames": ["/p/src/lib.rs"], "regions": [[26, 5, 26, 13, 1, 0, 0, 0]]},
+		{"name": "_RNvNtCsjJghpr7hpzZ_6rsdemo12test_support5parse", "filenames": ["/p/src/test_support.rs"], "regions": [[3, 1, 3, 20, 1, 0, 0, 0]]}
+	]}]}`
+	cov := importTo(t, dir, "llvm-cov", export, "-root", "/p", "-test", "rsdemo::tests::low")
 	o := readObservations(t, cov)
-	if len(o.Tests) != 1 || !slices.Equal(o.Tests[0].Blocks, []string{"src/lib.rs:1:1-1:46"}) {
+	if len(o.Tests) != 1 || !slices.Equal(o.Tests[0].Blocks, []string{"src/lib.rs:1"}) {
 		t.Errorf("llvm-cov observations = %+v", o)
+	}
+	// -regions keeps the regions; -files leaves out the other files.
+	o = readObservations(t, importTo(t, dir, "llvm-cov", export, "-root", "/p", "-test", "x", "-regions", "-exclude-fn", "", "-files", "^src/test_"))
+	if len(o.Tests) != 1 || !slices.Equal(o.Tests[0].Blocks, []string{"src/test_support.rs:3:1-3:20"}) {
+		t.Errorf("llvm-cov -regions -files observations = %+v", o)
 	}
 
 	mutants := filepath.Join(dir, "mutants.out")
@@ -117,8 +126,11 @@ func TestImportLLVMCovAndCargoMutants(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"outcomes.json": `{"outcomes": [{"scenario": {"Mutant": {"name": "src/lib.rs:2:10: replace < with == in clamp"}}, "summary": "CaughtMutant", "log_path": "log/m.log"}]}`,
-		"log/m.log":     "     Running `target/debug/deps/rsdemo-0123456789abcdef`\ntest tests::low ... FAILED\n",
+		"outcomes.json": `{"outcomes": [
+			{"scenario": {"Mutant": {"name": "src/lib.rs:2:10: replace < with == in clamp", "file": "src/lib.rs", "function": {"function_name": "clamp"}, "span": {"start": {"line": 2}}}}, "summary": "CaughtMutant", "log_path": "log/m.log"},
+			{"scenario": {"Mutant": {"name": "src/lib.rs:2:10: replace < with <= in clamp", "file": "src/lib.rs", "function": {"function_name": "clamp"}, "span": {"start": {"line": 2}}}}, "summary": "MissedMutant", "log_path": "log/n.log"}
+		]}`,
+		"log/m.log": "     Running `target/debug/deps/rsdemo-0123456789abcdef`\ntest tests::low ... FAILED\n",
 	} {
 		if err := os.WriteFile(filepath.Join(mutants, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
@@ -132,6 +144,19 @@ func TestImportLLVMCovAndCargoMutants(t *testing.T) {
 	o = readObservations(t, out)
 	if len(o.Tests) != 1 || o.Tests[0].Name != "rsdemo::tests::low" || len(o.Tests[0].Kills) != 1 {
 		t.Errorf("cargo-mutants observations = %+v", o)
+	}
+
+	// The missed mutant makes clamp a weak spot.
+	stdout.Reset()
+	if err := run(t.Context(), []string{"minimize", out, cov}, &stdout, &stderr); err != nil {
+		t.Fatalf("minimize: %v\n%s", err, stderr.String())
+	}
+	var result minimizeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if want := []runner.Spot{{Func: "clamp", File: "src/lib.rs", Line: 2, Killed: 1, Lived: 1}}; !slices.Equal(result.WeakSpots, want) {
+		t.Errorf("weak spots = %+v, want %+v", result.WeakSpots, want)
 	}
 }
 
@@ -165,6 +190,7 @@ func TestImportErrors(t *testing.T) {
 		{[]string{"junit", in}, "-runner is required"},
 		{[]string{"llvm-cov", "-test", "x", "-exclude-fn", "(", in}, "-exclude-fn"},
 		{[]string{"istanbul", "-test", "x", "-exclude-files", "(", in}, "-exclude-files"},
+		{[]string{"llvm-cov", "-test", "x", "-files", "(", in}, "-files"},
 		{[]string{"stryker", filepath.Join(dir, "missing.json")}, "no such file"},
 	} {
 		var stdout, stderr bytes.Buffer

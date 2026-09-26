@@ -125,6 +125,10 @@ func TestCargoMutants(t *testing.T) {
 			if want := []string{"src/lib.rs:2:10: replace < with <= in clamp", "src/lib.rs:14:17: replace < with <= in sign"}; !slices.Equal(o.Survived, want) {
 				t.Errorf("survived = %q, want %q", o.Survived, want)
 			}
+			// The caught and missed mutants are placed in their functions.
+			if len(o.Mutants) != 9 || !slices.Contains(o.Mutants, ingest.Mutant{ID: "src/lib.rs:14:17: replace < with <= in sign", File: "src/lib.rs", Func: "sign", Line: 14}) {
+				t.Errorf("mutants = %+v", o.Mutants)
+			}
 			// Only nextest reports durations.
 			if got := r["rsdemo::tests::mid_again"].DurationMS; (tool == "nextest") != (got > 0) {
 				t.Errorf("duration = %d", got)
@@ -171,7 +175,7 @@ func TestCargoMutantsCaughtWithoutFailingTest(t *testing.T) {
 func TestLLVMCov(t *testing.T) {
 	tests := regexp.MustCompile(`(^|::)tests(::|$)`).MatchString
 	testFiles := regexp.MustCompile(`(^|/)tests/`).MatchString
-	o, err := ingest.LLVMCov(read(t, "llvm-cov.json"), "rsdemo::tests::high", ingest.Paths{Root: "/project", Exclude: testFiles}, tests)
+	o, err := ingest.LLVMCov(read(t, "llvm-cov.json"), "rsdemo::tests::high", ingest.Paths{Root: "/project", Exclude: testFiles}, tests, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,21 +190,36 @@ func TestLLVMCov(t *testing.T) {
 		t.Errorf("blocks = %q, want %q", got, want)
 	}
 
+	// By default a block is a line, each region counted on its first.
+	o, err = ingest.LLVMCov(read(t, "llvm-cov.json"), "rsdemo::tests::high", ingest.Paths{Root: "/project", Exclude: testFiles}, tests, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"src/lib.rs:1", "src/lib.rs:2", "src/lib.rs:4", "src/lib.rs:5", "src/lib.rs:6", "src/lib.rs:9"}; !slices.Equal(o.Tests[0].Blocks, want) {
+		t.Errorf("line blocks = %q, want %q", o.Tests[0].Blocks, want)
+	}
+
 	// Without the exclusions, the test's body is a block too.
-	o, err = ingest.LLVMCov(read(t, "llvm-cov.json"), "rsdemo::tests::high", ingest.Paths{Root: "/project"}, nil)
+	o, err = ingest.LLVMCov(read(t, "llvm-cov.json"), "rsdemo::tests::high", ingest.Paths{Root: "/project"}, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(o.Tests[0].Blocks, "src/lib.rs:30:5-30:14") {
 		t.Errorf("blocks without exclusions = %q", o.Tests[0].Blocks)
 	}
-	// Files outside the root are left out.
-	o, err = ingest.LLVMCov(read(t, "llvm-cov.json"), "x", ingest.Paths{Root: "/elsewhere"}, nil)
-	if err != nil || len(o.Tests[0].Blocks) != 0 {
-		t.Errorf("blocks outside the root = %q, %v", o.Tests[0].Blocks, err)
+	// Files outside the root are left out, and so are those include does
+	// not match.
+	for _, paths := range []ingest.Paths{
+		{Root: "/elsewhere"},
+		{Root: "/project", Include: regexp.MustCompile(`^crates/`).MatchString},
+	} {
+		o, err = ingest.LLVMCov(read(t, "llvm-cov.json"), "x", paths, nil, false)
+		if err != nil || len(o.Tests[0].Blocks) != 0 {
+			t.Errorf("blocks with %+v = %q, %v", paths.Root, o.Tests[0].Blocks, err)
+		}
 	}
 
-	if _, err := ingest.LLVMCov([]byte(`{"type": "other"}`), "x", ingest.Paths{}, nil); err == nil {
+	if _, err := ingest.LLVMCov([]byte(`{"type": "other"}`), "x", ingest.Paths{}, nil, false); err == nil {
 		t.Error("not an export: no error")
 	}
 }
