@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="6" failures="0" errors="0" time="0.005125399">
+    <testsuite name="src/calc.test.ts" timestamp="2026-09-26T12:23:23.410Z" hostname="vm" tests="5" failures="0" errors="0" skipped="0" time="0.003104595">
+        <testcase classname="src/calc.test.ts" name="clamp &gt; low" time="0.000978215">
+        </testcase>
+        <testcase classname="src/calc.test.ts" name="clamp &gt; high" time="0.00027087">
+        </testcase>
+        <testcase classname="src/calc.test.ts" name="clamp &gt; mid" time="0.000106786">
+        </testcase>
+        <testcase classname="src/calc.test.ts" name="clamp &gt; mid again" time="0.000280136">
+        </testcase>
+        <testcase classname="src/calc.test.ts" name="sign pos" time="0.000238977">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/other.test.ts" timestamp="2026-09-26T12:23:23.413Z" hostname="vm" tests="1" failures="0" errors="0" skipped="0" time="0.002020804">
+        <testcase classname="src/other.test.ts" name="sign neg" time="0.001121839">
+        </testcase>
+    </testsuite>
+</testsuites>

@@ -16,6 +16,10 @@ mutrim test -minimize -report html ./...   # results under .mutrim/, totals as J
 `mutrim test` runs gen, build and run per package with the runtime injected through the
 build overlay, so the tested module never depends on mutrim.
 
+The minimizer also takes TypeScript and Rust suites: `mutrim import` reads Stryker,
+cargo-mutants, Istanbul / llvm-cov per-test coverage and JUnit into files `mutrim minimize`
+accepts (see [Other languages](https://illumination-k.github.io/mutrim/guides/other-languages/)).
+
 ## Usage (non-Bazel dev loop)
 
 ```bash

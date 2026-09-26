@@ -86,6 +86,7 @@ The tool lives in this repo; it is consumed from a separate Bazel monorepo via
 | `criteria` | `Criterion` interface with `SiteCoverage` / `BlockCoverage` / `Mutation` implementations, `Mutation.Dominators`; `Compose` → weighted test × requirement `Matrix`                                                                                                                                                                                                   | `bits-and-blooms/bitset`            |
 | `minimize` | Weighted greedy set cover, subsumption per redundant test, essential/unique reporting (`Exclusives`), protection rules (name regexp, `//mutrim:keep` tag)                                                                                                                                                                                                           | `criteria`, `bitset`, `go/parser`   |
 | `report`   | Export a run: Stryker `mutation-testing-report-schema` v2 JSON, its single-file HTML viewer, GitHub Actions annotations, survivors with their sources (`ExportSurvivors`). Bazel-independent                                                                                                                                                                        | `mutator`, `runner`                 |
+| `ingest`   | Other languages' tool output into observations (rows of `sites` / `blocks` / `kills` by test name) for `minimize`: Stryker JSON, cargo-mutants `mutants.out` (libtest / nextest logs), Istanbul `coverage-final.json`, llvm-cov JSON export (Rust demangling for `-exclude-fn`), JUnit durations                                                                    | stdlib only                         |
 
 Bazel-specific logic is confined to Starlark (`defs.bzl`, `bazel/mutation_test.bzl`) and a
 thin CLI. `mutator` must keep working without Bazel via `go test -overlay` so the fast dev
@@ -110,6 +111,12 @@ the sources of their function and reaching tests, to an external loop (an LLM wr
 killing test or judging equivalence), and `gen -extra` takes externally proposed mutants
 back in (see External mutants below). Every artifact in this chain is per-run output
 and never committed (see Conventions).
+
+Other languages enter at `minimize` only: `import` reads Stryker or cargo-mutants reports
+(kills, and Stryker's per-test `coveredBy` as sites), per-test Istanbul or llvm-cov coverage
+(blocks) and JUnit (durations) into observations files (`ingest.Observations`, told apart
+from a `report.json` by their `source`), whose rows merge with the reports' by test name
+(`<test file>#<name>` for TypeScript, `<crate>::<path>` for Rust).
 
 `mutrim test ./...` is the one-shot driver for go test users and only composes those steps:
 per package (`go list`), gen, `go test -c -overlay` and run, in parallel across packages

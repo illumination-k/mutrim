@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/illumination-k/mutrim/criteria"
+	"github.com/illumination-k/mutrim/ingest"
 	"github.com/illumination-k/mutrim/minimize"
 	"github.com/illumination-k/mutrim/mutator"
 	"github.com/illumination-k/mutrim/report"
@@ -82,10 +83,15 @@ commands:
             -threshold / -threshold-covered fail the run, after writing
             the report, when its score is below them
   minimize  from report.json files (the shards of a package, or several
-            packages), list the tests a greedy set cover over the sites,
-            blocks and kills finds redundant, the functions whose mutants
-            survive, those with blocks no test reaches (-blocks), the
-            tests found flaky, and those excluded as failing
+            packages) and observations files (import), list the tests a
+            greedy set cover over the sites, blocks and kills finds
+            redundant, the functions whose mutants survive, those with
+            blocks no test reaches (-blocks), the tests found flaky, and
+            those excluded as failing
+  import    read another language's tool output into an observations
+            file for minimize: Stryker and cargo-mutants reports for the
+            kills, Istanbul and llvm-cov per-test coverage for the blocks,
+            JUnit XML for the durations
   report    render report.json in an interchange format: the Stryker
             mutation-testing-elements JSON, its single-file HTML viewer,
             or GitHub Actions annotations
@@ -120,6 +126,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runRun(ctx, args[1:], stdout, stderr)
 	case "minimize":
 		return runMinimize(args[1:], stdout, stderr)
+	case "import":
+		return runImport(args[1:], stdout, stderr)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
 	case "export-survivors":
@@ -510,7 +518,8 @@ type minimizeTotals struct {
 // and so do the reports of several packages once each row is qualified by
 // its package (see rowNames), so a test of package b that `run
 // -extra-test` ran against package a's mutants is one row with the sites
-// and kills of both.
+// and kills of both. Observations files (`mutrim import`, another
+// language's tools) add their rows the same way, by name.
 func runMinimize(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("minimize", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -529,7 +538,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if fs.NArg() == 0 {
-		return errors.New("minimize: at least one report.json is required")
+		return errors.New("minimize: at least one report.json or observations file is required")
 	}
 	keepRE, err := regexp.Compile(*keep)
 	if err != nil {
@@ -537,11 +546,16 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	}
 
 	var reports []*runner.Report
+	var observed []*ingest.Observations
 	pkgs := map[string]bool{}
 	for _, path := range fs.Args() {
-		r, err := runner.ReadReport(path)
+		r, o, err := readMinimizeInput(path)
 		if err != nil {
 			return err
+		}
+		if o != nil {
+			observed = append(observed, o)
+			continue
 		}
 		reports = append(reports, r)
 		if r.Pkg != "" {
@@ -561,6 +575,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	flaky := rowsWhere(reports, row, func(t runner.Test) bool { return t.Flaky })
 	failing := rowsWhere(reports, row, func(t runner.Test) bool { return t.Status == runner.TestFailing })
 	in := inputsOf(reports, row, union(flaky, failing))
+	survived := in.observe(observed)
 	kills := in.kills
 	dominators := kills.Dominators()
 	compose := func(kills criteria.Mutation) *criteria.Matrix {
@@ -603,7 +618,7 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	minimize.Exclusives(matrix, &res)
 	result := minimizeOutput{
 		Result:    res,
-		Totals:    totalsOf(reports, kills, dominators),
+		Totals:    totalsOf(reports, survived, kills, dominators),
 		WeakSpots: []runner.Spot{},
 		Uncovered: []runner.Gap{},
 		Flaky:     slices.Sorted(maps.Keys(flaky)),
@@ -626,11 +641,30 @@ func runMinimize(args []string, stdout, stderr io.Writer) error {
 	return writeJSON(*out, stdout, result)
 }
 
+// readMinimizeInput reads a report.json, or an observations file (`mutrim
+// import`) told apart by its source.
+func readMinimizeInput(path string) (*runner.Report, *ingest.Observations, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ingest.IsObservations(data) {
+		r, rerr := runner.ReadReport(path)
+		return r, nil, rerr
+	}
+	o, err := ingest.Read(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("minimize: %s: %w", path, err)
+	}
+	return nil, o, nil
+}
+
 // totalsOf counts the killed mutants, the dominators among them and the
-// survivors of the reports, each mutant once however many reports carry it.
-func totalsOf(reports []*runner.Report, kills, dominators criteria.Mutation) minimizeTotals {
+// survivors of the reports and of the observations (survived), each mutant
+// once however many reports carry it.
+func totalsOf(reports []*runner.Report, survived map[string]bool, kills, dominators criteria.Mutation) minimizeTotals {
 	killed := kills.Mutants()
-	survived := map[string]bool{}
+	survived = maps.Clone(survived)
 	for _, r := range reports {
 		for _, res := range r.Results {
 			if r.Survived(res.Status) {
@@ -755,6 +789,25 @@ func inputsOf(reports []*runner.Report, row func(i int, test string) rowName, sk
 		}
 	}
 	return in
+}
+
+// observe adds the rows of observations files to in, and returns their
+// survivors.
+func (in inputs) observe(observed []*ingest.Observations) map[string]bool {
+	survived := map[string]bool{}
+	for _, o := range observed {
+		for _, t := range o.Tests {
+			in.local[t.Name] = t.Name
+			in.durations[t.Name] = max(in.durations[t.Name], t.DurationMS)
+			in.sites.add(t.Name, t.Sites)
+			in.blocks.add(t.Name, t.Blocks)
+			in.kills[t.Name] = append(in.kills[t.Name], t.Kills...)
+		}
+		for _, id := range o.Survived {
+			survived[id] = true
+		}
+	}
+	return survived
 }
 
 // runReport is `mutrim report`: it renders the reports of a run (the

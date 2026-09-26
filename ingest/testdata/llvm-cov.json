@@ -1,0 +1,136 @@
+{
+  "type": "llvm.coverage.json.export",
+  "version": "3.0.1",
+  "data": [
+    {
+      "functions": [
+        {
+          "name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_3low",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [26, 5, 26, 13, 0, 0, 0, 0],
+            [27, 9, 27, 19, 0, 0, 0, 0],
+            [27, 20, 27, 25, 0, 0, 0, 0],
+            [28, 5, 28, 6, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_3mid",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [34, 5, 34, 13, 0, 0, 0, 0],
+            [35, 9, 35, 19, 0, 0, 0, 0],
+            [35, 20, 35, 25, 0, 0, 0, 0],
+            [36, 5, 36, 6, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_4high",
+          "count": 1,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [30, 5, 30, 14, 1, 0, 0, 0],
+            [31, 9, 31, 19, 1, 0, 0, 0],
+            [31, 20, 31, 25, 1, 0, 0, 0],
+            [32, 5, 32, 6, 1, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvNtCsjJghpr7hpzZ_6rsdemo5testss_9mid_again",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [38, 5, 38, 19, 0, 0, 0, 0],
+            [39, 9, 39, 19, 0, 0, 0, 0],
+            [39, 20, 39, 25, 0, 0, 0, 0],
+            [40, 5, 40, 6, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsjJghpr7hpzZ_6rsdemo4sign",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [11, 1, 11, 36, 0, 0, 0, 0],
+            [12, 8, 12, 13, 0, 0, 0, 0],
+            [13, 9, 13, 14, 0, 0, 0, 0],
+            [14, 15, 14, 20, 0, 0, 0, 0],
+            [15, 9, 15, 14, 0, 0, 0, 0],
+            [17, 9, 17, 15, 0, 0, 0, 0],
+            [19, 1, 19, 2, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsjJghpr7hpzZ_6rsdemo5clamp",
+          "count": 1,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [1, 1, 1, 46, 1, 0, 0, 0],
+            [2, 8, 2, 14, 1, 0, 0, 0],
+            [3, 16, 3, 18, 0, 0, 0, 0],
+            [4, 5, 4, 6, 1, 0, 0, 0],
+            [5, 8, 5, 14, 1, 0, 0, 0],
+            [6, 16, 6, 18, 1, 0, 0, 0],
+            [7, 5, 7, 6, 0, 0, 0, 0],
+            [8, 5, 8, 6, 0, 0, 0, 0],
+            [9, 1, 9, 2, 1, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsbPI6GZpw7ws_4signs_3neg",
+          "count": 0,
+          "filenames": ["/project/tests/sign.rs"],
+          "regions": [
+            [9, 1, 9, 9, 0, 0, 0, 0],
+            [10, 5, 10, 15, 0, 0, 0, 0],
+            [10, 16, 10, 20, 0, 0, 0, 0],
+            [11, 1, 11, 2, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsbPI6GZpw7ws_4signs_3pos",
+          "count": 0,
+          "filenames": ["/project/tests/sign.rs"],
+          "regions": [
+            [4, 1, 4, 9, 0, 0, 0, 0],
+            [5, 5, 5, 15, 0, 0, 0, 0],
+            [5, 16, 5, 20, 0, 0, 0, 0],
+            [6, 1, 6, 2, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsaNxblzwuaPf_6rsdemo4sign",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [11, 1, 11, 36, 0, 0, 0, 0],
+            [12, 8, 12, 13, 0, 0, 0, 0],
+            [13, 9, 13, 14, 0, 0, 0, 0],
+            [14, 15, 14, 20, 0, 0, 0, 0],
+            [15, 9, 15, 14, 0, 0, 0, 0],
+            [17, 9, 17, 15, 0, 0, 0, 0],
+            [19, 1, 19, 2, 0, 0, 0, 0]
+          ]
+        },
+        {
+          "name": "_RNvCsaNxblzwuaPf_6rsdemo5clamp",
+          "count": 0,
+          "filenames": ["/project/src/lib.rs"],
+          "regions": [
+            [1, 1, 1, 46, 0, 0, 0, 0],
+            [2, 8, 2, 14, 0, 0, 0, 0],
+            [3, 16, 3, 18, 0, 0, 0, 0],
+            [4, 5, 4, 6, 0, 0, 0, 0],
+            [5, 8, 5, 14, 0, 0, 0, 0],
+            [6, 16, 6, 18, 0, 0, 0, 0],
+            [7, 5, 7, 6, 0, 0, 0, 0],
+            [8, 5, 8, 6, 0, 0, 0, 0],
+            [9, 1, 9, 2, 0, 0, 0, 0]
+          ]
+        }
+      ]
+    }
+  ]
+}

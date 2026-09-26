@@ -37,6 +37,7 @@ export default defineConfig({
             "guides/diff",
             "guides/sampling",
             "guides/external-mutants",
+            "guides/other-languages",
             "guides/reporting",
           ],
         },
