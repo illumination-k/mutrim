@@ -31,6 +31,18 @@ type Observations struct {
 	// Survived lists the mutants no test killed; they are no requirement,
 	// and only count in the minimize totals.
 	Survived []string `json:"survived,omitempty"`
+	// Mutants locates the killed and surviving mutants in their
+	// functions, for the minimize weak spots; only the adapters whose tool
+	// names the function (cargo-mutants) fill it.
+	Mutants []Mutant `json:"mutants,omitempty"`
+}
+
+// Mutant places one mutant, named by its label in Kills and Survived.
+type Mutant struct {
+	ID   string `json:"id"`
+	File string `json:"file"`
+	Func string `json:"func"`
+	Line int    `json:"line"`
 }
 
 // Test is one row: what a test reaches and kills. The labels are opaque
@@ -75,10 +87,13 @@ func span(file string, line, col, endLine, endCol int) string {
 }
 
 // Paths makes the files a coverage tool reports relative to root, and
-// leaves out those outside it or matched by exclude: code that is not the
-// suite's to test (dependencies, the standard library, the tests).
+// leaves out those outside it, those include does not match (when set) and
+// those exclude matches: code that is not the suite's to test
+// (dependencies, the standard library, other packages of a workspace, the
+// tests).
 type Paths struct {
 	Root    string
+	Include func(rel string) bool
 	Exclude func(rel string) bool
 }
 
@@ -93,7 +108,7 @@ func (p Paths) rel(path string) (string, bool) {
 		path = r
 	}
 	path = filepath.ToSlash(path)
-	if p.Exclude != nil && p.Exclude(path) {
+	if (p.Include != nil && !p.Include(path)) || (p.Exclude != nil && p.Exclude(path)) {
 		return "", false
 	}
 	return path, true

@@ -32,7 +32,13 @@ const llvmCodeRegion = 0
 // reached by that test alone, and would make every test essential.
 // Per-test coverage takes one coverage run per test. The same source
 // region compiled into several binaries is one block.
-func LLVMCov(data []byte, test string, paths Paths, exclude func(fn string) bool) (*Observations, error) {
+//
+// Unless regions is set, a block is a line ("<file>:<line>"), each region
+// counted on its first line: llvm-cov splits one line into a region per
+// operand of a short-circuit or a call, which would weigh a line by its
+// operators and list a dozen regions for one line an essential test alone
+// reaches. The kills already see what one operand of a line decides.
+func LLVMCov(data []byte, test string, paths Paths, exclude func(fn string) bool, regions bool) (*Observations, error) {
 	var e llvmExport
 	if err := json.Unmarshal(data, &e); err != nil {
 		return nil, fmt.Errorf("llvm-cov: %w", err)
@@ -54,7 +60,11 @@ func LLVMCov(data []byte, test string, paths Paths, exclude func(fn string) bool
 				if !ok {
 					continue
 				}
-				t.Blocks = append(t.Blocks, span(rel, int(r[0]), int(r[1]), int(r[2]), int(r[3])))
+				if regions {
+					t.Blocks = append(t.Blocks, span(rel, int(r[0]), int(r[1]), int(r[2]), int(r[3])))
+				} else {
+					t.Blocks = append(t.Blocks, fmt.Sprintf("%s:%d", rel, r[0]))
+				}
 			}
 		}
 	}

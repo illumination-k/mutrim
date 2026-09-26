@@ -415,11 +415,16 @@ func WeakSpots(mutants []mutator.Mutant, reports ...*Report) []Spot {
 			out = append(out, *s)
 		}
 	}
-	slices.SortFunc(out, func(a, b Spot) int {
+	SortSpots(out)
+	return out
+}
+
+// SortSpots orders weak spots most survivors first.
+func SortSpots(spots []Spot) {
+	slices.SortFunc(spots, func(a, b Spot) int {
 		// Same-named functions of two packages are told apart by file.
 		return cmp.Or(cmp.Compare(b.Lived+b.NoCoverage, a.Lived+a.NoCoverage), cmp.Compare(a.Func, b.Func), cmp.Compare(a.File, b.File))
 	})
-	return out
 }
 
 // Gap is a function with blocks no test reaches: code that no test

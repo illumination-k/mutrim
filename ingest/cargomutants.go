@@ -24,6 +24,30 @@ type cargoOutcomes struct {
 	} `json:"outcomes"`
 }
 
+// cargoMutant is the part of an outcome's mutant the adapter reads.
+type cargoMutant struct {
+	Name     string `json:"name"`
+	File     string `json:"file"`
+	Function *struct {
+		Name string `json:"function_name"`
+	} `json:"function"`
+	Span struct {
+		Start struct {
+			Line int `json:"line"`
+		} `json:"start"`
+	} `json:"span"`
+}
+
+// place is where m sits; a mutant outside any function (a constant, a
+// static) belongs to its file.
+func (m cargoMutant) place() Mutant {
+	p := Mutant{ID: m.Name, File: m.File, Line: m.Span.Start.Line}
+	if m.Function != nil {
+		p.Func = m.Function.Name
+	}
+	return p
+}
+
 // CargoMutants reads the mutants.out directory of a cargo-mutants run.
 // cargo-mutants runs the whole suite against every mutant and records
 // only whether it failed, so the killing tests are read back from each
@@ -35,7 +59,8 @@ type cargoOutcomes struct {
 // for the kill matrix to be complete; a caught mutant whose log names no
 // failing test (a crash, a doctest harness failing) is reported through
 // warn and kills nothing. A missed mutant is a survivor; a timeout or an
-// unviable mutant is left out.
+// unviable mutant is left out. The caught and missed mutants are placed
+// in their functions (Observations.Mutants).
 func CargoMutants(dir string, warn io.Writer) (*Observations, error) {
 	data, err := os.ReadFile(filepath.Clean(filepath.Join(dir, "outcomes.json")))
 	if err != nil {
@@ -55,9 +80,7 @@ func CargoMutants(dir string, warn io.Writer) (*Observations, error) {
 	o := &Observations{Source: "cargo-mutants"}
 	for _, out := range outcomes.Outcomes {
 		var mutant struct {
-			Mutant struct {
-				Name string `json:"name"`
-			}
+			Mutant cargoMutant
 		}
 		if json.Unmarshal(out.Scenario, &mutant) != nil {
 			// The baseline: every test that ran is a row.
@@ -91,6 +114,9 @@ func CargoMutants(dir string, warn io.Writer) (*Observations, error) {
 			}
 		case "MissedMutant":
 			o.Survived = append(o.Survived, name)
+		}
+		if out.Summary == "CaughtMutant" || out.Summary == "MissedMutant" {
+			o.Mutants = append(o.Mutants, mutant.Mutant.place())
 		}
 	}
 	o.Tests = sortedRows(rows)
