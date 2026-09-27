@@ -190,6 +190,12 @@ def _mutrim_relink_impl(ctx):
     library = ctx.attr.library.label
     test = ctx.attr.test
     root = test[GoArchive]
+    if root.source.mode.race != go.mode.race:
+        fail("mutation_test: {} builds {} the race detector; set race = {} on the mutation_test so the relink matches it".format(
+            test.label,
+            "with" if root.source.mode.race else "without",
+            root.source.mode.race,
+        ))
 
     # Every archive of the test binary, dependencies first. Archives are
     # keyed by importmap, which is unique within one link; the internal and
@@ -290,6 +296,20 @@ def _mutrim_relink_impl(ctx):
         ),
     )]
 
+_RACE = "@rules_go//go/config:race"
+
+# The relink has to land in the configuration of the test it relinks, or their
+# archives mix modes; go_test gets there with rules_go's go_transition, which
+# is private to rules_go, so this sets the one setting mutation_test exposes.
+def _race_transition_impl(settings, attr):
+    return {_RACE: True if attr.race else settings[_RACE]}
+
+_race_transition = transition(
+    implementation = _race_transition_impl,
+    inputs = [_RACE],
+    outputs = [_RACE],
+)
+
 mutrim_relink = go_rule(
     _mutrim_relink_impl,
     attrs = {
@@ -307,10 +327,17 @@ mutrim_relink = go_rule(
             providers = [GoArchive],
             doc = "The mutrim_schemata of that library.",
         ),
+        "race": attr.bool(
+            doc = "Builds the relink with the race detector.",
+        ),
         "_go_context_data": attr.label(
             default = "@rules_go//:go_context_data",
         ),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
     },
+    cfg = _race_transition,
     doc = """Relinks a go_test against the schemata of the library it imports.
 
 The output is a JSON manifest naming the package the test binary tests, the
@@ -419,7 +446,8 @@ def mutation_test(
     library. Each is relinked against the mutants (`<name>_extra<i>`), and
     its tests run against them too, named `<importpath>.TestX` in the
     report, so a mutant only a downstream package's tests catch is KILLED
-    instead of LIVED or NO_COVERAGE. It cannot be combined with `race` yet.
+    instead of LIVED or NO_COVERAGE. The relinks are built with `race`, so
+    an extra test with `race = "on"` needs `race = True` here.
 
     `threshold` and `threshold_covered` make the target a gate: it fails,
     after writing its outputs, when the mutation score (or the score over
@@ -522,10 +550,6 @@ def mutation_test(
     """
     if len(embed) != 1:
         fail("mutation_test: embed must name exactly one go_library, got {}".format(embed))
-    if race and extra_tests:
-        # The race transition of go_test does not reach the relinked tests,
-        # whose archives would then mix modes.
-        fail("mutation_test: race and extra_tests cannot be combined yet")
     schemata = name + "_schemata"
     mutants = name + ".mutants.json"
     blocks = name + ".blocks.json"
@@ -570,7 +594,11 @@ def mutation_test(
             test = test,
             library = embed[0],
             schemata = ":" + schemata,
+            race = race,
             testonly = True,
+            # Otherwise a `manual` mutation_test still has its relinks built
+            # by every wildcard pattern.
+            tags = kwargs.get("tags", []),
             visibility = ["//visibility:private"],
         )
         extra.append(":" + relinked)
