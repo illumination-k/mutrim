@@ -26,3 +26,12 @@ mutation_test(
     # regression rather than on the next added mutant.
     threshold = 0.5,
 )
+
+# An extra test built with the race detector: its relink has to follow it.
+mutation_test(
+    name = "mutant_calc_race",
+    srcs = ["calc_test.go"],
+    embed = [":calc"],
+    extra_tests = ["//examples/stats:stats_race_test"],
+    race = True,
+)
