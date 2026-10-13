@@ -3,10 +3,10 @@ module github.com/illumination-k/mutrim
 go 1.27.0
 
 require (
-	github.com/bazelbuild/rules_go v0.63.0
-	github.com/bits-and-blooms/bitset v1.25.0
-	golang.org/x/sync v0.23.0
-	golang.org/x/tools v0.50.0
+	github.com/bazelbuild/rules_go v0.64.1
+	github.com/bits-and-blooms/bitset v1.26.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/tools v0.51.0
 )
 
 require (
