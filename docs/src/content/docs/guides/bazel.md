@@ -5,7 +5,7 @@ description: "The mutation_test macro."
 
 ```python
 # MODULE.bazel
-bazel_dep(name = "mutrim", version = "0.1.0")
+bazel_dep(name = "mutrim", version = "0.2.0")
 local_path_override(module_name = "mutrim", path = "../mutrim")  # until it is published
 ```
 
